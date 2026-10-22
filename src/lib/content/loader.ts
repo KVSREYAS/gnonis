@@ -45,6 +45,8 @@ function checkSimReferences(id: string, ex: Exercise, file: string, issues: Cont
     const s = sim.sliders.find((x) => x.id === key);
     if (s?.options && !s.options.some((o) => o.value === value))
       issues.push({ file, message: `exercises.${id}: ${key}=${value} is not one of ${s.options.map((o) => o.value).join(", ")}` });
+    else if (s && !s.options && ((s.min !== undefined && value < s.min) || (s.max !== undefined && value > s.max)))
+      issues.push({ file, message: `exercises.${id}: ${key}=${value} is outside ${s.min}..${s.max}` });
   }
   if (ex.goal && !sim.outputs.some((o) => o.id === ex.goal!.output))
     issues.push({ file, message: `exercises.${id}: sim "${ex.sim}" has no output "${ex.goal.output}"` });
