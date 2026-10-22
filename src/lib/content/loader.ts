@@ -24,7 +24,7 @@ function formatZod(err: z.ZodError): string[] {
 
 function readYaml(file: string, issues: ContentIssue[]): unknown {
   try {
-    return YAML.parse(fs.readFileSync(file, "utf8"));
+    return YAML.parse(fs.readFileSync(/*turbopackIgnore: true*/ file, "utf8"));
   } catch (e) {
     issues.push({ file, message: `cannot parse YAML: ${(e as Error).message}` });
     return undefined;
@@ -57,7 +57,7 @@ export function loadLesson(
 ): LessonData | undefined {
   let parsed: matter.GrayMatterFile<string>;
   try {
-    parsed = matter(fs.readFileSync(file, "utf8"));
+    parsed = matter(fs.readFileSync(/*turbopackIgnore: true*/ file, "utf8"));
   } catch (e) {
     issues.push({ file, message: `cannot parse frontmatter: ${(e as Error).message}` });
     return undefined;
@@ -109,7 +109,7 @@ export function loadCourse(dir: string, issues: ContentIssue[]): CourseData | un
   const courseSlug = path.basename(dir);
   if (!SLUG.test(courseSlug)) issues.push({ file: dir, message: "course folder name must be kebab-case" });
   const courseFile = path.join(dir, "course.yaml");
-  if (!fs.existsSync(courseFile)) {
+  if (!fs.existsSync(/*turbopackIgnore: true*/ courseFile)) {
     issues.push({ file: courseFile, message: "missing course.yaml" });
     return undefined;
   }
@@ -123,7 +123,7 @@ export function loadCourse(dir: string, issues: ContentIssue[]): CourseData | un
   meta.data.modules.forEach((moduleSlug, mi) => {
     const mdir = path.join(dir, "modules", moduleSlug);
     const mfile = path.join(mdir, "module.yaml");
-    if (!fs.existsSync(mfile)) {
+    if (!fs.existsSync(/*turbopackIgnore: true*/ mfile)) {
       issues.push({ file: mfile, message: `module "${moduleSlug}" is listed in course.yaml but has no module.yaml` });
       return;
     }
@@ -137,7 +137,7 @@ export function loadCourse(dir: string, issues: ContentIssue[]): CourseData | un
     const lessons: LessonData[] = [];
     m.data.lessons.forEach((slug, li) => {
       const lfile = path.join(mdir, "lessons", `${slug}.mdx`);
-      if (!fs.existsSync(lfile)) {
+      if (!fs.existsSync(/*turbopackIgnore: true*/ lfile)) {
         issues.push({ file: lfile, message: `lesson "${slug}" is listed in module.yaml but the file is missing` });
         return;
       }
@@ -145,8 +145,8 @@ export function loadCourse(dir: string, issues: ContentIssue[]): CourseData | un
       if (lesson) lessons.push(lesson);
     });
     const ldir = path.join(mdir, "lessons");
-    if (fs.existsSync(ldir))
-      for (const f of fs.readdirSync(ldir))
+    if (fs.existsSync(/*turbopackIgnore: true*/ ldir))
+      for (const f of fs.readdirSync(/*turbopackIgnore: true*/ ldir))
         if (f.endsWith(".mdx") && !m.data.lessons.includes(f.replace(/\.mdx$/, "")))
           issues.push({ file: path.join(ldir, f), message: "lesson file is not listed in module.yaml" });
     modules.push({ slug: moduleSlug, courseSlug, index: mi + 1, ...m.data, lessons });
@@ -157,11 +157,11 @@ export function loadCourse(dir: string, issues: ContentIssue[]): CourseData | un
 
 export function loadAllCourses(root = DEFAULT_CONTENT_ROOT): { courses: CourseData[]; issues: ContentIssue[] } {
   const issues: ContentIssue[] = [];
-  if (!fs.existsSync(root)) return { courses: [], issues: [{ file: root, message: "content root not found" }] };
+  if (!fs.existsSync(/*turbopackIgnore: true*/ root)) return { courses: [], issues: [{ file: root, message: "content root not found" }] };
   const courses = fs
-    .readdirSync(root, { withFileTypes: true })
+    .readdirSync(/*turbopackIgnore: true*/ root, { withFileTypes: true })
     .filter((d) => d.isDirectory())
-    .map((d) => loadCourse(path.join(root, d.name), issues))
+    .map((d) => loadCourse(path.join(/*turbopackIgnore: true*/ root, d.name), issues))
     .filter((c): c is CourseData => !!c)
     .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title));
   return { courses, issues };
