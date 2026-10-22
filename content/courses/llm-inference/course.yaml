@@ -1,0 +1,21 @@
+title: LLM Inference
+tagline: From one token to a serving fleet.
+description: >-
+  Learn what actually happens when a large language model answers a prompt, and why serving it fast is
+  a memory problem first. Tokens, attention, the KV cache, GPU memory and the roofline, then batching,
+  paging, quantization and the systems that tie it together.
+order: 1
+level: intermediate
+modules:
+  - 01-tokens-forward-pass
+  - 02-attention
+  - 03-kv-cache
+  - 04-gpu-memory-roofline
+  - 05-batching
+  - 06-paged-attention
+  - 07-quantization
+  - 08-flash-attention
+  - 09-speculative-decoding
+  - 10-parallelism
+  - 11-serving-systems
+  - 12-capstone

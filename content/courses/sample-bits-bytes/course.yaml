@@ -1,0 +1,9 @@
+title: Bits & Bytes Warm-up
+tagline: A two-lesson sample pack. Drop a folder in, and a course appears.
+description: >-
+  A tiny warm-up on number formats and model-size maths. It also exists to prove the plug-in course
+  system: this whole course is just YAML and MDX files, with no code changes.
+order: 2
+level: intro
+modules:
+  - 01-number-formats
