@@ -57,7 +57,7 @@ export function withinTolerance(ex: Pick<PredictLike, "answer" | "tolerance">, v
 /** Accepts "1,300", "1.3k", "16e9", "2 GB" style input. */
 export function parseNumberInput(raw: string): number {
   const s = raw.trim().toLowerCase().replace(/,/g, "").replace(/_/g, "");
-  const m = s.match(/^(-?\d*\.?\d+(?:e-?\d+)?)\s*([kmbgt])?/);
+  const m = s.match(/^(-?\d*\.?\d+(?:e-?\d+)?)\s*(?:([kmbgt])b?(?![a-z]))?/);
   if (!m) return NaN;
   const mult: Record<string, number> = { k: 1e3, m: 1e6, b: 1e9, g: 1e9, t: 1e12 };
   return Number(m[1]) * (m[2] ? mult[m[2]] : 1);
