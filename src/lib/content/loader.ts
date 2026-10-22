@@ -91,7 +91,14 @@ export function loadLesson(
     kind: fm.data.kind,
     summary: fm.data.summary,
     xp: fm.data.xp,
-    minutes: fm.data.minutes ?? Math.max(2, Math.round(blocks.length * 1.5)),
+    minutes:
+      fm.data.minutes ??
+      Math.max(
+        2,
+        Math.round(
+          blocks.reduce((n, b) => n + (b.kind === "card" ? b.words : 0), 0) / 180 + Object.keys(exercises).length * 0.75,
+        ),
+      ),
     keyIdeas: fm.data.keyIdeas,
     blocks,
     exercises,

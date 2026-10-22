@@ -15,14 +15,14 @@ export type LessonData = {
   exercises: Record<string, Exercise>;
 };
 
-export type ModuleData = ModuleMeta & {
+export type ModuleData = Omit<ModuleMeta, "lessons"> & {
   slug: string;
   courseSlug: string;
   index: number;
   lessons: LessonData[];
 };
 
-export type CourseData = CourseMeta & {
+export type CourseData = Omit<CourseMeta, "modules"> & {
   slug: string;
   modules: ModuleData[];
 };

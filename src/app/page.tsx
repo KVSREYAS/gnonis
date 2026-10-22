@@ -1,69 +1,47 @@
-import Image from "next/image";
+import { Scene } from "@/components/art";
+import { CourseCard } from "@/components/course-card";
+import { getCourses } from "@/lib/content/loader";
+import { summarizeCourse } from "@/lib/content/types";
+
+const TIPS = [
+  "Decode at batch size 1 is a race against memory bandwidth, not FLOPs.",
+  "The KV cache, not the weights, usually decides how many users fit on a GPU.",
+  "Every lesson card is about two minutes. Every district ends with a boss.",
+];
 
 export default function Home() {
+  const courses = getCourses().map(summarizeCourse);
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="flex flex-1 flex-col">
+      <section className="relative isolate overflow-hidden border-b border-border">
+        <Scene art="skyline" className="absolute inset-0 -z-10 h-full w-full" />
+        <div className="decor absolute inset-0 -z-10 bg-gradient-to-t from-ink via-ink/40 to-transparent" />
+        <div className="mx-auto max-w-6xl px-4 pt-16 pb-10 sm:px-6 sm:pt-28 sm:pb-14">
+          <div className="max-w-2xl rounded-xl bg-ink/90 p-5 sm:p-7">
+            <p className="text-sm font-bold tracking-widest text-gold-ink uppercase">Inference Academy</p>
+            <h1 className="mt-1 font-display text-5xl leading-[0.95] tracking-wide text-foreground sm:text-7xl">
+              LEARN HOW MODELS <span className="text-gold-ink">ACTUALLY RUN</span>
+            </h1>
+            <p className="mt-4 max-w-[60ch] text-lg text-foreground">
+              Short cards, instant feedback, real numbers. Go from tokens and attention to KV caches and rooflines, one mission at a time.
+            </p>
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </section>
+
+      <section className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-12" aria-labelledby="packs">
+        <h2 id="packs" className="font-display text-3xl tracking-wide text-foreground">
+          CHOOSE A MISSION PACK
+        </h2>
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          {courses.map((c) => (
+            <CourseCard key={c.slug} course={c} />
+          ))}
         </div>
-      </main>
+        <p className="mt-8 border-t border-border pt-4 text-base text-muted-foreground">
+          <span className="font-display tracking-widest text-gold-ink">TIP:</span> {TIPS[0]}
+        </p>
+      </section>
     </div>
   );
 }
