@@ -32,7 +32,7 @@ npm run dev            # http://127.0.0.1:4317
 | --- | --- |
 | `npm run dev` | Dev server on port 4317 |
 | `npm run build` / `npm start` | Production build, then serve it on port 4317 (`next start -p 4317`) |
-| `npm run validate:content` | Parses and cross-checks every course pack, including ids against `origin/main`. Exits non-zero on any issue. `validate-content` is the same script. `convert:legacy` rewrites a `modules/` pack into the flat layout |
+| `npm run validate:content` | Parses and cross-checks every course pack, including ids against `origin/main` when that ref is available. If the ref is missing, or `VERCEL` is set, the progress-id diff is skipped with a warning and schema, registry, retired-id, and rename checks still run. Exits non-zero on any issue. `validate-content` is the same script. `convert:legacy` rewrites a `modules/` pack into the flat layout |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm test` | Vitest unit tests (schema, progress, merge rule, Supabase store, sign-in form logic, grading) |

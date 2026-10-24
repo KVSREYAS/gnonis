@@ -98,4 +98,4 @@ Shipped tags: `MCQ`, `Fill`, `Ordering`, `Predict`, `Simulator`, `Stepper`, `Cod
 
 Each exercise stores a hash of its answer-bearing fields next to the attempt. A wording fix does not change the hash. An answer change marks the exercise **Updated** and keeps the old attempt until the learner solves the new version. Code and debug solutions are stripped before they reach the browser. The hash is computed first.
 
-Fetch `origin/main` before validating. CI does this. `CONTENT_BASELINE_REF` overrides the ref. `CONTENT_SKIP_BASELINE=1` skips the diff for a local fixture.
+Fetch `origin/main` before validating. CI checks out full history and fetches `refs/heads/main` into `origin/main`. `CONTENT_BASELINE_REF` overrides the ref. `CONTENT_SKIP_BASELINE=1` skips the diff for a local fixture. When that ref is missing, or when `VERCEL` is set (Vercel’s shallow checkout has no `origin/main`), only the progress-id diff is skipped, with a warning. Schema, registry, retired-id, and rename checks still run.

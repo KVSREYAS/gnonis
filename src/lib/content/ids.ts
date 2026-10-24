@@ -72,7 +72,14 @@ export function collectIdsFromRoot(root: string): IdSet {
   return idsFromCourses(loadAllCourses(root).courses);
 }
 
-export function diffVanished(previous: IdSet, current: IdSet, retired: RetiredIds, renames: RenameMap): string[] {
+export function diffVanished(
+  previous: IdSet,
+  current: IdSet,
+  retired: RetiredIds,
+  renames: RenameMap,
+  options?: { baseline?: boolean },
+): string[] {
+  const baseline = options?.baseline !== false;
   const errors: string[] = [];
   const kinds = ["courses", "lessons", "exercises"] as const;
   const rewrite = {
@@ -85,23 +92,30 @@ export function diffVanished(previous: IdSet, current: IdSet, retired: RetiredId
     const cur = current[kind];
     const retiredList = retired[kind];
     const explicit = renames[kind];
-    for (const id of prev) {
-      if (cur.has(id)) continue;
-      if (retiredList.includes(id)) continue;
-      const next = rewrite[kind](id);
-      if (next !== id && cur.has(next)) continue;
-      errors.push(`${kind} id vanished: ${id}`);
+    if (baseline) {
+      for (const id of prev) {
+        if (cur.has(id)) continue;
+        if (retiredList.includes(id)) continue;
+        const next = rewrite[kind](id);
+        if (next !== id && cur.has(next)) continue;
+        errors.push(`${kind} id vanished: ${id}`);
+      }
     }
     for (const id of retiredList) {
       if (cur.has(id)) errors.push(`${kind} id ${id} is listed as retired but still in content`);
-      else if (!prev.has(id)) errors.push(`${kind} retired id ${id} is not an id on main`);
+      else if (baseline && !prev.has(id)) errors.push(`${kind} retired id ${id} is not an id on main`);
     }
     for (const [from, to] of Object.entries(explicit)) {
       if (from === to) errors.push(`${kind} rename ${from} does not change the id`);
       if (cur.has(from)) errors.push(`${kind} rename source ${from} is still in content`);
-      if (!prev.has(from)) errors.push(`${kind} rename source ${from} is not an id on main`);
+      if (baseline && !prev.has(from)) errors.push(`${kind} rename source ${from} is not an id on main`);
       if (!cur.has(to)) errors.push(`${kind} rename target ${to} is not in content`);
     }
   }
   return errors;
+}
+
+/** Retired-id and rename checks that do not need the baseline snapshot. */
+export function diffRetiredRenames(current: IdSet, retired: RetiredIds, renames: RenameMap): string[] {
+  return diffVanished(emptyIds(), current, retired, renames, { baseline: false });
 }
