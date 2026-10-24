@@ -215,5 +215,12 @@ describe("code runner harness", () => {
     const bad = run("def add(a, b):\n    return a - b\ns = ''\n", tests);
     expect(bad.tests[0]).toMatchObject({ passed: false, message: "wrong sum" });
     expect(run("def broken(:\n", tests).error).toMatch(/SyntaxError/);
+    const crashed = run("def add(a, b):\n    return a + b\n1 / 0\n", tests);
+    expect(crashed.error).toMatch(/Traceback \(most recent call last\):/);
+    expect(crashed.error).toMatch(/solution\.py/);
+    expect(crashed.error).toMatch(/ZeroDivisionError/);
+    const noisy = run("import sys\nsys.stderr.write('warn-token\\n')\ndef add(a, b):\n    return a + b\ns = 'it\\'s \"quoted\" \\\\ ok'\n", tests);
+    expect(noisy.error).toBeNull();
+    expect(noisy.stdout).toContain("warn-token");
   });
 });

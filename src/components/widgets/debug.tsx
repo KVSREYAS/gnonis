@@ -5,7 +5,7 @@ import { Bug } from "lucide-react";
 import type { ExerciseOf } from "@/lib/content/schema";
 import { gradeDebugLine, gradeTests } from "@/lib/grading";
 import { cn } from "@/lib/utils";
-import { CodeEditor, TestReport, useCodeRun } from "./code";
+import { CodeEditor, PythonRunFeedback, pythonActionLabel, useCodeRun } from "./code";
 import { Prompt } from "./inline-text";
 import type { WidgetProps } from "./types";
 import { usePrimaryAction } from "./useAction";
@@ -50,19 +50,24 @@ function LineMode({ id, exercise, setAction, onGrade, locked }: WidgetProps<Exer
 
 function CodeMode({ exercise, setAction, onGrade, locked }: WidgetProps<ExerciseOf<"debug">>) {
   const [code, setCode] = useState(exercise.code);
-  const { status, result, run } = useCodeRun(exercise.tests ?? "");
-  const busy = status !== "idle";
+  const { status, result, loadDetail, run, retry, warmed } = useCodeRun(exercise.tests ?? "");
+  const busy = status === "loading" || status === "running";
 
   usePrimaryAction(
     setAction,
     locked
       ? null
       : {
-          label: status === "loading" ? "Loading Python…" : busy ? "Running…" : "Run hidden tests",
+          label: pythonActionLabel(status),
           busy,
           disabled: busy,
           onPress: async () => {
+            if (status === "load-error") {
+              await retry();
+              return;
+            }
             const r = await run(code);
+            if (r.failure === "load") return;
             const g = gradeTests(r.tests, r.error);
             if (g.correct) onGrade({ correct: true, message: `${g.message} ${exercise.explanation}` });
           },
@@ -72,7 +77,7 @@ function CodeMode({ exercise, setAction, onGrade, locked }: WidgetProps<Exercise
   return (
     <>
       <CodeEditor value={code} onChange={setCode} disabled={locked} label="Buggy code, edit to fix" />
-      {result && <TestReport result={result} />}
+      <PythonRunFeedback status={status} result={result} loadDetail={loadDetail} warmed={warmed} onRetry={() => void retry()} />
     </>
   );
 }
