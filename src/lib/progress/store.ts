@@ -1,8 +1,8 @@
 import { emptyProgress, migrate, type ProgressState } from "./logic";
 
 /**
- * Persistence boundary for progress. The app only talks to this interface, so a remote
- * implementation (e.g. Supabase) can wrap or replace the local one later.
+ * Persistence boundary for progress. The app only talks to this interface: guests use
+ * `LocalProgressStore`, signed-in users `SupabaseProgressStore` (see ./supabase-store.ts).
  */
 export interface ProgressStore {
   load(): Promise<ProgressState>;
@@ -10,6 +10,8 @@ export interface ProgressStore {
   clear(): Promise<void>;
   /** Fires when progress changes outside this tab/session. Returns an unsubscribe function. */
   subscribe?(onChange: (state: ProgressState) => void): () => void;
+  /** Pushes anything not yet persisted remotely. Local-only stores have nothing to flush. */
+  flush?(): Promise<void>;
 }
 
 export const PROGRESS_KEY = "inference-academy:progress:v1";

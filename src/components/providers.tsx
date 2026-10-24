@@ -2,18 +2,23 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { Device } from "@/lib/content/schema";
+import type { User } from "@supabase/supabase-js";
 import {
   completeLesson as completeLessonPure,
   dayKey,
   emptyProgress,
   liveStreak,
   recordExercise as recordExercisePure,
+  resetProgress,
   type CompletionInput,
   type CompletionResult,
   type ProgressState,
 } from "@/lib/progress/logic";
 import { LocalProgressStore, type ProgressStore } from "@/lib/progress/store";
+import { SupabaseProgressStore, supabaseRemote, type SyncStatus } from "@/lib/progress/supabase-store";
 import { applySettingsToDocument, DEFAULT_SETTINGS, parseSettings, PHONE_QUERY, SETTINGS_KEY, type Settings } from "@/lib/settings";
+import { createClient } from "@/lib/supabase/client";
+import { isSupabaseConfigured } from "@/lib/supabase/env";
 
 /* ---------------- Settings ---------------- */
 
@@ -76,21 +81,110 @@ export function useReducedMotion(): boolean {
   return system;
 }
 
+/* ---------------- Auth ---------------- */
+
+export type AuthUser = { id: string; email: string | null; name: string };
+
+type AuthCtx = {
+  /** False when the Supabase env vars are missing: no accounts, local-only progress. */
+  configured: boolean;
+  /** True once the initial session is known (immediately when not configured). */
+  ready: boolean;
+  user: AuthUser | null;
+  signOut: () => Promise<void>;
+};
+
+const AuthContext = createContext<AuthCtx>({ configured: false, ready: true, user: null, signOut: async () => {} });
+
+function fallbackName(user: User): string {
+  const meta = user.user_metadata ?? {};
+  const full = typeof meta.full_name === "string" ? meta.full_name : typeof meta.name === "string" ? meta.name : "";
+  return full.trim() || user.email?.split("@")[0] || "Player";
+}
+
+function AuthProvider({ children }: { children: React.ReactNode }) {
+  const configured = isSupabaseConfigured();
+  const [session, setSession] = useState<{ ready: boolean; user: User | null }>({ ready: !configured, user: null });
+  const [profile, setProfile] = useState<{ id: string; name: string } | null>(null);
+
+  useEffect(() => {
+    const client = createClient();
+    if (!client) return;
+    const { data } = client.auth.onAuthStateChange((_event, s) => {
+      const user = s?.user ?? null;
+      setSession((prev) => (prev.ready && prev.user?.id === user?.id ? prev : { ready: true, user }));
+    });
+    return () => data.subscription.unsubscribe();
+  }, []);
+
+  const userId = session.user?.id;
+  useEffect(() => {
+    if (!userId) return;
+    let alive = true;
+    createClient()
+      ?.from("profiles")
+      .select("display_name")
+      .eq("id", userId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (alive && typeof data?.display_name === "string" && data.display_name.trim()) {
+          setProfile({ id: userId, name: data.display_name.trim() });
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, [userId]);
+
+  const signOut = useCallback(async () => {
+    await createClient()?.auth.signOut();
+  }, []);
+
+  const user = useMemo<AuthUser | null>(() => {
+    const u = session.user;
+    if (!u) return null;
+    return { id: u.id, email: u.email ?? null, name: profile?.id === u.id ? profile.name : fallbackName(u) };
+  }, [session.user, profile]);
+
+  const value = useMemo(() => ({ configured, ready: session.ready, user, signOut }), [configured, session.ready, user, signOut]);
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export const useAuth = () => useContext(AuthContext);
+
 /* ---------------- Progress ---------------- */
 
 type ProgressCtx = {
   state: ProgressState;
   loaded: boolean;
   streakDays: number;
+  /** True when progress is saved to the signed-in account rather than this device only. */
+  cloud: boolean;
+  syncStatus: SyncStatus;
   recordExercise: (key: string, correct: boolean) => void;
   completeLesson: (input: Omit<CompletionInput, "now">) => CompletionResult;
   reset: () => void;
+  /** Pushes pending changes to the account, e.g. before signing out. */
+  flush: () => Promise<void>;
 };
 
 const ProgressContext = createContext<ProgressCtx | null>(null);
 
-function ProgressProvider({ children, store }: { children: React.ReactNode; store?: ProgressStore }) {
-  const storeRef = useRef<ProgressStore>(store ?? new LocalProgressStore());
+function ProgressProvider({ children }: { children: React.ReactNode }) {
+  const { ready, user } = useAuth();
+  const userId = user?.id ?? null;
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
+
+  // Guests keep the existing localStorage store. Signed-in users get a local-first store synced to Supabase.
+  const store = useMemo<ProgressStore | null>(() => {
+    if (!ready) return null;
+    const client = userId ? createClient() : null;
+    if (!client || !userId) return new LocalProgressStore();
+    return new SupabaseProgressStore({ remote: supabaseRemote(client, userId), userId, onStatus: setSyncStatus });
+  }, [ready, userId]);
+
+  // Until auth is known, anything saved lands in guest storage, which a signed-in store then claims.
+  const storeRef = useRef<ProgressStore>(new LocalProgressStore());
   const [state, setState] = useState<ProgressState>(emptyProgress);
   const [loaded, setLoaded] = useState(false);
   const stateRef = useRef(state);
@@ -102,14 +196,17 @@ function ProgressProvider({ children, store }: { children: React.ReactNode; stor
   }, []);
 
   useEffect(() => {
+    if (!store) return;
+    storeRef.current = store;
     let alive = true;
-    storeRef.current.load().then((s) => {
+    store.load().then((s) => {
       if (!alive) return;
       stateRef.current = s;
       setState(s);
       setLoaded(true);
     });
-    const unsub = storeRef.current.subscribe?.((s) => {
+    const unsub = store.subscribe?.((s) => {
+      if (!alive) return;
       stateRef.current = s;
       setState(s);
     });
@@ -117,7 +214,7 @@ function ProgressProvider({ children, store }: { children: React.ReactNode; stor
       alive = false;
       unsub?.();
     };
-  }, []);
+  }, [store]);
 
   const recordExercise = useCallback(
     (key: string, correct: boolean) => commit(recordExercisePure(stateRef.current, key, correct)),
@@ -134,15 +231,22 @@ function ProgressProvider({ children, store }: { children: React.ReactNode; stor
   );
 
   const reset = useCallback(() => {
+    const next = resetProgress(stateRef.current, new Date());
     void storeRef.current.clear();
-    commit(emptyProgress());
+    commit(next);
   }, [commit]);
 
+  const flush = useCallback(async () => {
+    await storeRef.current.flush?.();
+  }, []);
+
   const streakDays = loaded ? liveStreak(state.streak, dayKey(new Date())) : 0;
+  const cloud = !!userId;
+  const status: SyncStatus = cloud ? syncStatus : "idle";
 
   const value = useMemo(
-    () => ({ state, loaded, streakDays, recordExercise, completeLesson, reset }),
-    [state, loaded, streakDays, recordExercise, completeLesson, reset],
+    () => ({ state, loaded, streakDays, cloud, syncStatus: status, recordExercise, completeLesson, reset, flush }),
+    [state, loaded, streakDays, cloud, status, recordExercise, completeLesson, reset, flush],
   );
   return <ProgressContext.Provider value={value}>{children}</ProgressContext.Provider>;
 }
@@ -156,7 +260,9 @@ export function useProgress() {
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <SettingsProvider>
-      <ProgressProvider>{children}</ProgressProvider>
+      <AuthProvider>
+        <ProgressProvider>{children}</ProgressProvider>
+      </AuthProvider>
     </SettingsProvider>
   );
 }
