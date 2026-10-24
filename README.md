@@ -124,9 +124,10 @@ interface CodeRunner {
 }
 ```
 
-- `PyodideRunner` loads Pyodide from the jsDelivr CDN inside `public/workers/pyodide-worker.js`. The worker starts
-  only when a code exercise mounts. Runs time out after 8 seconds, and the worker is then killed and restarted, so
-  `while True:` can't hang the tab.
+- `PyodideRunner` loads Pyodide from the jsDelivr CDN inside `public/workers/pyodide-worker.js`, a module
+  worker (`pyodide.mjs`). Pyodide 314 refuses classic workers. The worker starts only when a code exercise
+  mounts. Runs time out after 8 seconds, and the worker is then killed and restarted, so `while True:` can't hang
+  the tab.
 - `PistonRunner` (`src/lib/runner/piston-runner.ts`) posts to a [Piston](https://github.com/engineer-man/piston)
   `/api/v2/execute` endpoint. It wraps the code with the same Python harness the browser uses, which prints one
   `__IA_RESULTS__` JSON line. It is not wired up yet. To use it:

@@ -1,0 +1,74 @@
+---
+id: llm-inference/06-paged-attention/03-preemption-and-swapping
+title: "Out of Blocks: Preemption"
+estMinutes: 4
+xp: 90
+missionIntro: "When the pool runs dry, something gets kicked out: recompute it
+  later or swap it to CPU."
+keyIdeas:
+  - When no free blocks remain, vLLM preempts whole sequences, latest arrivals
+    first under FCFS.
+  - Recomputation re-runs prefill later. Swapping copies blocks to CPU memory
+    over PCIe.
+  - Pool size = free GPU memory / bytes per block, so it's worth knowing how
+    many blocks you have.
+---
+
+## Mission briefing
+
+Paged Pier is full. A new yacht shows up and the harbour master needs a berth now.
+
+**Mission:** decide who gets towed, and whether to tow them to the CPU lot or just sink them and rebuild later.
+
+## Know your pool
+
+At startup vLLM profiles memory, subtracts weights and activations, and carves the rest into fixed blocks. Every running sequence needs ceil(tokens / 16) of them, plus room to grow.
+
+<Predict
+  id="pool-size"
+  devices={["phone","desktop"]}
+  prompt="Llama 3 8B fp16 uses 128 KiB of KV per token, block size 16. You have 40 GB (decimal) free for KV. How many blocks fit?"
+  answer={19073}
+  tolerance={{"mode":"relative","value":0.01}}
+  unit="blocks"
+  explanation="Block = 16 × 131,072 B = 2 MiB = 2,097,152 B. 40e9 / 2,097,152 ≈ 19,073 blocks."
+/>
+
+<Code
+  id="fits-code"
+  devices={["desktop"]}
+  language="python"
+  prompt={"Write blocks_needed(lens, block_size=16) that returns the total physical blocks for sequences of the given token lengths (no sharing). Then write can_admit(free_blocks, running_lens, new_len, block_size=16), which returns True if the new sequence fits after the running ones."}
+  starter={"import math\n\ndef blocks_needed(lens, block_size=16):\n    return 0\n\ndef can_admit(free_blocks, running_lens, new_len, block_size=16):\n    return False\n"}
+  tests={"def test_blocks():\n    assert blocks_needed([1000, 16, 17]) == 63 + 1 + 2\n\ndef test_empty():\n    assert blocks_needed([]) == 0\n\ndef test_admit_yes():\n    assert can_admit(100, [160, 320], 640) is True\n\ndef test_admit_no():\n    assert can_admit(70, [160, 320], 641) is False\n"}
+  solution={"import math\n\ndef blocks_needed(lens, block_size=16):\n    return sum(math.ceil(n / block_size) for n in lens)\n\ndef can_admit(free_blocks, running_lens, new_len, block_size=16):\n    return blocks_needed(running_lens, block_size) + blocks_needed([new_len], block_size) <= free_blocks\n"}
+  hints={["Use math.ceil for partial blocks."]}
+  explanation="Real schedulers also reserve a block for the next decoded token of every running sequence."
+/>
+
+## Preempt: swap or recompute
+
+When decoding needs a block and none are free, vLLM preempts the newest sequences. Swap mode copies their blocks to CPU RAM. Recompute mode frees them and reruns the prefill later. Prefill is compute-efficient, so recompute is often cheaper than PCIe traffic.
+
+Source: [vLLM paper §4.5](https://arxiv.org/abs/2309.06180)
+
+![GPU block pool full; newest sequence evicted either to CPU swap space or dropped for recompute](/diagrams/llm-inference/06-paged-attention/03-preemption-and-swapping.png)
+
+<MCQ
+  id="who-first"
+  devices={["phone","desktop"]}
+  prompt="Under vLLM's first-come-first-served policy, which sequence gets preempted first?"
+  options={["The oldest request","The most recently arrived request","The longest sequence","A random one"]}
+  answer={1}
+  explanation="FCFS protects earlier arrivals, so the newest work is evicted first."
+/>
+
+<Predict
+  id="swap-time"
+  devices={["phone","desktop"]}
+  prompt="Swapping a sequence's 2 GB of KV to CPU over a PCIe Gen4 x16 link at ~32 GB/s. Roughly how long, in ms?"
+  answer={62.5}
+  tolerance={{"mode":"relative","value":0.03}}
+  unit="ms"
+  explanation="2 / 32 s = 62.5 ms, one way. That's why recomputation often wins for short sequences."
+/>

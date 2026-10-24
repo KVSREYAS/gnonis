@@ -1,0 +1,58 @@
+---
+id: llm-inference/08-flash-attention/01-the-hbm-bottleneck
+title: The HBM Bottleneck
+estMinutes: 3
+xp: 90
+missionIntro: Standard attention writes the full N×N score and probability
+  matrices to slow HBM, then reads them back. That's the real cost.
+keyIdeas:
+  - Naive attention materialises S = QKᵀ and P = softmax(S), both N×N, in HBM.
+  - Softmax, masking and dropout are memory-bound elementwise ops over N² values.
+  - "FlashAttention is IO-aware: it cuts HBM traffic rather than FLOPs (3x
+    faster GPT-2 training at 1k context)."
+---
+
+## Mission briefing
+
+Every time you need a tool you drive to the garage across town (HBM), drop off a crate the size of a house, then drive back to fetch it.
+
+**Mission:** find out how much of the night you spend in traffic.
+
+## The N² crates
+
+Naive attention runs as separate kernels, and each one writes its N×N result to HBM for the next to read. With 4k tokens and 32 heads that's a GiB per matrix per layer.
+
+![Naive attention writing S and P matrices to HBM versus FlashAttention keeping tiles in on-chip SRAM](/diagrams/llm-inference/08-flash-attention/01-the-hbm-bottleneck.png)
+
+<Predict
+  id="s-size"
+  devices={["phone","desktop"]}
+  prompt="One layer, batch 1, 32 heads, N = 4,096, fp16. How many GiB does materialising S for all heads take?"
+  answer={1}
+  tolerance={{"mode":"relative","value":0.02}}
+  unit="GiB"
+  explanation="4,096² × 2 B × 32 = 1,073,741,824 B = 1 GiB, and P doubles that. Per layer, per forward."
+/>
+
+<Ordering
+  id="naive-order"
+  devices={["phone","desktop"]}
+  prompt="Order the HBM round-trips in naive attention."
+  items={["Read Q, K; write S = QKᵀ","Read S; write masked/scaled S","Read S; write P = softmax(S)","Read P, V; write O = PV"]}
+  explanation="Four kernels and four HBM round-trips, two of them N² in size."
+/>
+
+## IO, not FLOPs
+
+Dao et al. counted HBM accesses: Θ(Nd + N²) for standard attention versus Θ(N²d²/M) for FlashAttention, where M is the SRAM size. Same maths, far less traffic.
+
+Source: [FlashAttention](https://arxiv.org/abs/2205.14135)
+
+<MCQ
+  id="slow-why"
+  devices={["phone","desktop"]}
+  prompt="Why is standard attention slow on GPUs at long context?"
+  options={["Too many FLOPs in QKᵀ","The N² intermediates go back and forth to HBM, and the elementwise steps are memory-bound","Softmax needs fp64","GPUs can't do matmuls on attention"]}
+  answer={1}
+  explanation="The matmuls are fine. Shuttling S and P through HBM is what hurts."
+/>

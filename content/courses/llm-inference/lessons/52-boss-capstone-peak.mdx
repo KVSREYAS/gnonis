@@ -1,0 +1,42 @@
+---
+id: llm-inference/12-capstone/04-boss-capstone-peak
+title: "Boss: Capstone Peak"
+estMinutes: 2
+xp: 300
+missionIntro: Everything from Token Flats to Server Strip. The final boss.
+kind: boss
+keyIdeas:
+  - "Decode is memory-bound: tokens/s ≈ bandwidth / bytes per step."
+  - KV memory, batching and paging set concurrency. Quantization, Flash and
+    speculation set speed.
+  - Measure TTFT, TPOT and p99, and compare against the roofline.
+---
+
+## Mission briefing
+
+The summit. Eight questions covering every district, then you write the simulator that ties it all together.
+
+Three hearts. No respawns. Ah, here we go again.
+
+<Boss
+  id="peak"
+  devices={["phone","desktop"]}
+  title="Capstone Peak"
+  briefing="Eight questions, three hearts, five minutes. Everything you learned is on the table."
+  timeLimit={300}
+  playerHp={3}
+  parts={[{"type":"predict","prompt":"Llama 3 70B: 80 layers, 8 KV heads, head dim 128, fp16. KV KiB per token?","answer":320,"tolerance":{"mode":"relative","value":0.01},"unit":"KiB","explanation":"2 × 80 × 8 × 128 × 2 = 327,680 B = 320 KiB."},{"type":"predict","prompt":"70B int4 weights (35 GB) on one H100 (3.35 TB/s). Batch-1 ceiling in tokens/s?","answer":95.7,"tolerance":{"mode":"relative","value":0.03},"unit":"tokens/s","explanation":"3.35e12 / 35e9 ≈ 95.7."},{"type":"mcq","prompt":"Which technique keeps the output distribution identical while cutting latency?","options":["int4 quantization","Speculative decoding","Top-k sampling","Pruning"],"answer":1,"explanation":"Verified speculation is lossless."},{"type":"predict","prompt":"Block size 16, a 4,000-token sequence. Blocks?","answer":250,"tolerance":{"mode":"absolute","value":0},"unit":"blocks","explanation":"4,000 / 16."},{"type":"fill","text":"Continuous batching admits work every {{0}}, and FlashAttention avoids writing {{1}} to HBM.","chips":["iteration","request","the N×N scores","the weights"],"answers":["iteration","the N×N scores"],"explanation":"Two of the biggest wins in the course."},{"type":"predict","prompt":"Arrival rate 8 req/s, mean latency 6 s. Concurrent requests (Little's law)?","answer":48,"tolerance":{"mode":"absolute","value":0},"unit":"requests","explanation":"8 × 6."},{"type":"mcq","prompt":"Your p99 TPOT spikes whenever long prompts arrive. First thing to try?","options":["Chunked prefill","Bigger vocabulary","Disable the KV cache","fp32"],"answer":0,"explanation":"Cap each step's prefill work."},{"type":"predict","prompt":"Tensor parallel all-reduces per forward for an 80-layer model?","answer":160,"tolerance":{"mode":"absolute","value":0},"explanation":"2 per layer."}]}
+  explanation="Capstone Peak conquered. Respect +100. Grove Street, home of inference engineers."
+/>
+
+<Code
+  id="getaway-sim"
+  devices={["desktop"]}
+  language="python"
+  prompt={"The final getaway: write simulate(lengths, slots), a continuous-batching simulator. Requests are output lengths, admitted FIFO into free slots at the start of each step. Each step, every active request emits 1 token. Return the list of the step number (1-indexed) at which each request finishes, in input order."}
+  starter={"def simulate(lengths, slots):\n    finish = [0] * len(lengths)\n    return finish\n"}
+  tests={"def test_mixed():\n    assert simulate([3, 9, 4, 6, 2, 4, 3], 4) == [3, 9, 4, 6, 5, 8, 8]\n\ndef test_two_slots():\n    assert simulate([2, 2, 2], 2) == [2, 2, 4]\n\ndef test_one_slot():\n    assert simulate([5, 1, 1], 1) == [5, 6, 7]\n"}
+  solution={"def simulate(lengths, slots):\n    queue = list(enumerate(lengths))\n    active = []\n    finish = [0] * len(lengths)\n    t = 0\n    while queue or active:\n        while len(active) < slots and queue:\n            i, n = queue.pop(0)\n            active.append([i, n])\n        t += 1\n        for r in active:\n            r[1] -= 1\n            if r[1] == 0:\n                finish[r[0]] = t\n        active = [r for r in active if r[1] > 0]\n    return finish\n"}
+  hints={["Track (index, remaining) pairs.","Admit, step, retire, repeat."]}
+  explanation="Add a cost model per step and you have a capacity planner. That's where real serving work starts."
+/>

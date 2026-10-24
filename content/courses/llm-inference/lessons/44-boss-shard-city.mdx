@@ -1,0 +1,42 @@
+---
+id: llm-inference/10-parallelism/04-boss-shard-city
+title: "Boss: Shard City"
+estMinutes: 2
+xp: 200
+missionIntro: TP, PP and MoE. Split the job without the crew killing each other.
+kind: boss
+keyIdeas:
+  - "TP: 2 all-reduces per layer, kept on NVLink."
+  - "PP: bubble = (p − 1) / (m + p − 1), with light point-to-point
+    communication."
+  - "MoE: memory follows total params, decode bandwidth follows active params."
+---
+
+## Mission briefing
+
+Shard City: the model is too fat for any single garage. Split it up without losing a piece.
+
+Six questions, then the getaway: write the planner that picks the TP degree.
+
+<Boss
+  id="shard"
+  devices={["phone","desktop"]}
+  title="Shard City"
+  briefing="Six districts, three hearts, three minutes. Shard carefully."
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type":"predict","prompt":"A 32-layer model with TP = 4. All-reduces per forward pass?","answer":64,"tolerance":{"mode":"absolute","value":0},"explanation":"2 × 32. TP degree doesn't change the count."},{"type":"predict","prompt":"Pipeline p = 8, m = 8. Bubble %?","answer":46.7,"tolerance":{"mode":"absolute","value":0.5},"unit":"%","explanation":"7 / 15 = 46.7%."},{"type":"mcq","prompt":"Spanning two nodes over InfiniBand, the better split is usually…","options":["TP across nodes","PP across nodes, TP within","EP only","No parallelism"],"answer":1,"explanation":"Latency-heavy all-reduces stay on NVLink."},{"type":"predict","prompt":"DeepSeek-V3 has 671B parameters. Weight memory in fp8, in GB?","answer":671,"tolerance":{"mode":"relative","value":0.01},"unit":"GB","explanation":"1 byte each."},{"type":"fill","text":"MoE needs memory for {{0}} parameters, but batch-1 decode reads only the {{1}} ones.","chips":["total","active","embedding","shared"],"answers":["total","active"],"explanation":"That's why MoE is cheap per token and expensive to host."},{"type":"predict","prompt":"Ring all-reduce of 16 MB across 4 GPUs: MB sent per GPU?","answer":24,"tolerance":{"mode":"relative","value":0.01},"unit":"MB","explanation":"2 × 3/4 × 16 = 24."}]}
+  explanation="Shard City is cleared. The crew split the loot evenly."
+/>
+
+<Code
+  id="getaway-plan"
+  devices={["desktop"]}
+  language="python"
+  prompt={"The getaway: write min_tp(params_b, bytes_per_param, gpu_gb, reserve=0.3). It returns the smallest TP degree from [1, 2, 4, 8] such that weights per GPU fit in gpu_gb × (1 − reserve), leaving the reserve for KV. Return None if even 8 doesn't fit."}
+  starter={"def min_tp(params_b, bytes_per_param, gpu_gb, reserve=0.3):\n    return None\n"}
+  tests={"def test_8b():\n    assert min_tp(8, 2, 80) == 1\n\ndef test_70b_fp16():\n    assert min_tp(70, 2, 80) == 4\n\ndef test_70b_fp8():\n    assert min_tp(70, 1, 80) == 2\n\ndef test_too_big():\n    assert min_tp(671, 2, 80) is None\n"}
+  solution={"def min_tp(params_b, bytes_per_param, gpu_gb, reserve=0.3):\n    for tp in (1, 2, 4, 8):\n        if params_b * bytes_per_param / tp <= gpu_gb * (1 - reserve):\n            return tp\n    return None\n"}
+  hints={["Budget per GPU = gpu_gb × (1 − reserve)."]}
+  explanation={"70B fp16 needs TP = 4 here (35 GB of 56 GB usable), not TP = 2 (70 GB > 56 GB)."}
+/>

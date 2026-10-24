@@ -1,0 +1,44 @@
+---
+id: llm-inference/05-batching/04-boss-batch-boulevard
+title: "Boss: Batch Boulevard"
+estMinutes: 2
+xp: 180
+missionIntro: Static, continuous, chunked. Keep the bus full and the riders
+  happy, against the clock.
+kind: boss
+keyIdeas:
+  - Continuous batching refills slots every step. Static batching waits for the
+    slowest request.
+  - Memory-bound decode step time ≈ (weights + total KV) / bandwidth.
+  - Chunked prefill gives each step a token budget so big prompts never stall
+    decodes.
+---
+
+## Mission briefing
+
+The Batch Boulevard bus terminal is under new management, and the boss wants proof you can keep every seat full.
+
+Six quick hits first. Then drive the getaway: code the scheduler yourself.
+
+<Boss
+  id="boulevard"
+  devices={["phone","desktop"]}
+  title="Batch Boulevard"
+  briefing="Six stops, three hearts, three minutes. Miss a stop and the passengers riot."
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type":"mcq","prompt":"Under static batching, when can a waiting request start?","options":["At the next decode step","When every request in the current batch has finished","As soon as one slot frees up","Never"],"answer":1,"explanation":"Static batches run to completion together, which is why short requests idle."},{"type":"predict","prompt":"Static batch of 4 with output lengths 50, 50, 50 and 400. What percentage of decode slots do useful work?","answer":34.4,"tolerance":{"mode":"absolute","value":0.5},"unit":"%","explanation":"550 / (4 × 400) = 34.4%."},{"type":"predict","prompt":"8B fp16 (16 GB) on an A100 at 2.0 TB/s, with a negligible KV cache. Decode step time in ms?","answer":8,"tolerance":{"mode":"relative","value":0.03},"unit":"ms","explanation":"16e9 / 2.0e12 = 8 ms."},{"type":"fill","text":"Continuous batching schedules at the granularity of one {{0}}, and the main thing limiting admission is free {{1}}.","chips":["iteration","request","KV-cache memory","CPU cores"],"answers":["iteration","KV-cache memory"],"explanation":"That's Orca's iteration-level scheduling, plus vLLM's block pool."},{"type":"predict","prompt":"Token budget 4,096 and 1,000 running decodes. Max prefill tokens this step?","answer":3096,"tolerance":{"mode":"absolute","value":0},"unit":"tokens","explanation":"4,096 − 1,000."},{"type":"mcq","prompt":"Doubling batch size on a memory-bound decode with short contexts roughly…","options":["halves throughput","doubles throughput with similar step time","doubles step time","does nothing"],"answer":1,"explanation":"The weight read is shared across the batch."}]}
+  explanation="Batch Boulevard is cleared. Next stop: where all that KV memory actually lives."
+/>
+
+<Code
+  id="getaway-scheduler"
+  devices={["desktop"]}
+  language="python"
+  prompt={"The getaway: write continuous_steps(lengths, slots). Requests (output lengths in tokens) wait in a FIFO queue. At the start of each step, fill free slots from the queue. Every active request then produces 1 token, and finished requests leave. Return the total number of steps until all are done."}
+  starter={"def continuous_steps(lengths, slots):\n    queue = list(lengths)\n    active = []\n    steps = 0\n    # loop until queue and active are both empty\n    return steps\n"}
+  tests={"def test_mixed():\n    assert continuous_steps([3, 9, 4, 6, 2, 4, 3], 4) == 9\n\ndef test_even():\n    assert continuous_steps([5, 5, 5, 5], 2) == 10\n\ndef test_long_and_short():\n    assert continuous_steps([10, 1, 1, 1, 1, 1], 2) == 10\n\ndef test_single():\n    assert continuous_steps([1], 8) == 1\n"}
+  solution={"def continuous_steps(lengths, slots):\n    queue = list(lengths)\n    active = []\n    steps = 0\n    while queue or active:\n        while len(active) < slots and queue:\n            active.append(queue.pop(0))\n        steps += 1\n        active = [r - 1 for r in active if r > 1]\n    return steps\n"}
+  hints={["Admit before you decode.","A request with 1 token left finishes this step."]}
+  explanation="Static batching would take 13 steps for the first test case. Continuous takes 9."
+/>

@@ -1,0 +1,73 @@
+---
+id: llm-inference/10-parallelism/01-tensor-parallelism
+title: "Tensor Parallelism: Splitting the Score"
+estMinutes: 4
+xp: 100
+missionIntro: Split every weight matrix across GPUs. Each layer then needs an
+  all-reduce, so keep it on NVLink.
+keyIdeas:
+  - Megatron-style TP splits the first MLP matrix by columns and the second by
+    rows, so each block needs one all-reduce.
+  - With attention and MLP each needing one, that's 2 all-reduces per layer in
+    the forward pass.
+  - A ring all-reduce sends 2(N−1)/N × the tensor size per GPU, so TP lives
+    inside an NVLink node.
+---
+
+## Mission briefing
+
+The job is too big for one crew. Split the safe-cracking: each guy drills a quarter of the door, then everybody shouts their progress at once (the all-reduce).
+
+**Mission:** count how much shouting that takes.
+
+## Column, then row
+
+Megatron-LM shards the first MLP weight by columns (each GPU computes part of the hidden layer) and the second by rows (partial outputs), then sums them with one all-reduce. Attention splits by heads the same way.
+
+![MLP split across 2 GPUs: column-parallel first matrix, row-parallel second, joined by an all-reduce](/diagrams/llm-inference/10-parallelism/01-tensor-parallelism.png)
+
+<Predict
+  id="allreduce-count"
+  devices={["phone","desktop"]}
+  prompt="Llama 3 70B has 80 layers. With Megatron TP, how many all-reduces per forward pass (ignoring embeddings)?"
+  answer={160}
+  tolerance={{"mode":"absolute","value":0}}
+  explanation="2 per layer (attention + MLP) × 80 = 160, and every decode step pays them."
+/>
+
+<Code
+  id="tp-code"
+  devices={["desktop"]}
+  language="python"
+  prompt={"Write per_gpu_weight_gb(params_b, bytes_per_param, tp), the weight memory per GPU in decimal GB when weights are split evenly across tp GPUs."}
+  starter={"def per_gpu_weight_gb(params_b, bytes_per_param, tp):\n    return 0.0\n"}
+  tests={"def test_70b_tp4():\n    assert abs(per_gpu_weight_gb(70, 2, 4) - 35.0) < 1e-9\n\ndef test_8b_tp1():\n    assert abs(per_gpu_weight_gb(8, 2, 1) - 16.0) < 1e-9\n\ndef test_405b_fp8_tp8():\n    assert abs(per_gpu_weight_gb(405, 1, 8) - 50.625) < 1e-9\n"}
+  solution={"def per_gpu_weight_gb(params_b, bytes_per_param, tp):\n    return params_b * bytes_per_param / tp\n"}
+  hints={["Billions × bytes gives GB."]}
+  explanation="TP also divides the bytes read per decode step, so batch-1 latency drops too (minus the communication)."
+/>
+
+## The shouting bill
+
+Each all-reduce moves about twice the activation size per GPU. That's fast on NVLink and painful across nodes.
+
+Source: [Megatron-LM](https://arxiv.org/abs/1909.08053)
+
+<Predict
+  id="ring-bytes"
+  devices={["phone","desktop"]}
+  prompt="Ring all-reduce of a 64 MB tensor across 8 GPUs. How many MB does each GPU send?"
+  answer={112}
+  tolerance={{"mode":"relative","value":0.01}}
+  unit="MB"
+  explanation="2 × 7/8 × 64 = 112 MB."
+/>
+
+<MCQ
+  id="keep-in-node"
+  devices={["phone","desktop"]}
+  prompt="Why is tensor parallelism usually kept within one node?"
+  options={["CUDA forbids cross-node TP","It needs frequent, latency-sensitive all-reduces, and NVLink (900 GB/s on H100) is far faster than the network","It uses less memory across nodes","Pipeline parallelism needs NVLink instead"]}
+  answer={1}
+  explanation="Many small all-reduces per token over InfiniBand would dominate latency."
+/>

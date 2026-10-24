@@ -1,0 +1,79 @@
+---
+id: llm-inference/05-batching/02-batch-size-vs-latency
+title: The Batch-Size Bargain
+estMinutes: 4
+xp: 90
+missionIntro: Bigger batches buy throughput almost for free, until the KV cache
+  and the compute roof send the bill.
+keyIdeas:
+  - A decode step reads the weights once for the whole batch, plus every
+    sequence's KV cache.
+  - Step time ≈ (weight bytes + total KV bytes) / bandwidth while decode is
+    memory-bound.
+  - Throughput rises with batch size, and per-token latency creeps up as KV
+    reads grow.
+---
+
+## Mission briefing
+
+The bus company wants more riders per trip. Every extra passenger costs almost nothing... until their luggage (the KV cache) fills the aisle.
+
+**Mission:** price the batch-size bargain before Big Smoke does it for you.
+
+## Same weights, more riders
+
+In a memory-bound decode step the GPU streams all the weights from HBM once, whatever the batch size. Each sequence in the batch reuses that same read. So going from batch 1 to batch 16 costs a little extra KV reading and almost nothing else.
+
+Total bytes per step = weights + Σ (context × KV bytes per token).
+
+<MCQ
+  id="latency-mcq"
+  devices={["phone","desktop"]}
+  prompt="Short prompts, memory-bound decode. You raise the batch from 1 to 16. What mostly happens?"
+  options={["Per-token latency rises about 16x","Throughput rises about 16x while per-token latency barely moves","Nothing, because the GPU was already saturated","The model's answers get worse"]}
+  answer={1}
+  explanation={"The 16 GB weight read dominates and is shared, so each step costs about the same. You get 16 tokens per step instead of 1."}
+/>
+
+## The luggage bill
+
+Long contexts change the maths. At batch 64 with 2k tokens each, the KV cache is bigger than the weights, so step time roughly doubles. Push further and you either run out of memory or cross the roofline ridge into compute-bound territory.
+
+![Throughput and per-step latency against batch size for an 8B model on an H100](/diagrams/llm-inference/05-batching/02-batch-size-vs-latency.png)
+
+<Predict
+  id="step-time"
+  devices={["phone","desktop"]}
+  prompt={"Llama 3 8B fp16 (16 GB of weights, 128 KiB of KV per token) on an H100 (3.35 TB/s). Batch 64, each sequence holds 2,048 tokens of context. Roughly how long is one decode step, in ms?"}
+  answer={9.9}
+  tolerance={{"mode":"relative","value":0.04}}
+  unit="ms"
+  hint="(weights + batch × context × KV per token) / bandwidth"
+  explanation="KV = 64 × 2,048 × 131,072 B ≈ 17.2 GB. Total read ≈ 16 + 17.2 = 33.2 GB. 33.2e9 / 3.35e12 ≈ 9.9 ms."
+/>
+
+<Predict
+  id="batch-throughput"
+  devices={["phone","desktop"]}
+  prompt="Same setup: 64 sequences each get one token per 9.9 ms step. Aggregate throughput, in tokens/s?"
+  answer={6465}
+  tolerance={{"mode":"relative","value":0.04}}
+  unit="tokens/s"
+  explanation={"64 / 0.0099 s ≈ 6,465 tokens/s, about 31x the batch-1 ceiling of ~209 tokens/s, even though each user's speed dropped from ~209 to ~101 tokens/s."}
+/>
+
+## Write the spreadsheet
+
+Turn the bargain into code so you can sweep batch sizes.
+
+<Code
+  id="step-code"
+  devices={["desktop"]}
+  language="python"
+  prompt={"Write decode_step_ms(weight_gb, kv_kib_per_token, batch, ctx, bw_tbs). It returns the memory-bound decode step time in milliseconds. Use decimal GB and TB, and 1 KiB = 1,024 bytes."}
+  starter={"def decode_step_ms(weight_gb, kv_kib_per_token, batch, ctx, bw_tbs):\n    # bytes read = weights + batch * ctx * kv bytes per token\n    return 0.0\n"}
+  tests={"def test_batch1():\n    assert abs(decode_step_ms(16, 128, 1, 0, 3.35) - 4.776) < 0.01\n\ndef test_batch64():\n    assert abs(decode_step_ms(16, 128, 64, 2048, 3.35) - 9.904) < 0.02\n\ndef test_a100():\n    assert abs(decode_step_ms(16, 128, 8, 4096, 2.0) - 10.147) < 0.02\n"}
+  solution={"def decode_step_ms(weight_gb, kv_kib_per_token, batch, ctx, bw_tbs):\n    total = weight_gb * 1e9 + batch * ctx * kv_kib_per_token * 1024\n    return total / (bw_tbs * 1e12) * 1e3\n"}
+  hints={["Convert everything to bytes first.","Seconds to ms: multiply by 1,000."]}
+  explanation="This one-liner is the core of every serving capacity spreadsheet, and it explains why long contexts hurt throughput."
+/>

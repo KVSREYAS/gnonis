@@ -1,4 +1,4 @@
-/* Classic worker: loads Pyodide on first "init" and executes harness scripts. */
+/* Module worker: Pyodide 314 refuses classic workers (importScripts). */
 let pyodide = null;
 let out = [];
 
@@ -7,8 +7,9 @@ self.onmessage = async (e) => {
   try {
     if (type === "init") {
       if (!pyodide) {
-        importScripts(e.data.indexURL + "pyodide.js");
-        pyodide = await self.loadPyodide({ indexURL: e.data.indexURL });
+        const indexURL = e.data.indexURL.endsWith("/") ? e.data.indexURL : `${e.data.indexURL}/`;
+        const { loadPyodide } = await import(`${indexURL}pyodide.mjs`);
+        pyodide = await loadPyodide({ indexURL });
         pyodide.setStdout({ batched: (s) => out.push(s) });
         pyodide.setStderr({ batched: (s) => out.push(s) });
       }

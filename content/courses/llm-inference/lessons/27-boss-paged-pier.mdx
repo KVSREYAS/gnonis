@@ -1,0 +1,43 @@
+---
+id: llm-inference/06-paged-attention/04-boss-paged-pier
+title: "Boss: Paged Pier"
+estMinutes: 2
+xp: 180
+missionIntro: Blocks, tables, copy-on-write and preemption, all at once. The
+  harbour master is watching.
+kind: boss
+keyIdeas:
+  - KV lives in fixed blocks mapped by a per-sequence block table.
+  - Sharing plus copy-on-write lets samples and beams reuse prompt blocks.
+  - When blocks run out, the newest sequences are preempted (swapped or
+    recomputed).
+---
+
+## Mission briefing
+
+The harbour master hands you a clipboard: berths, tables, shared hulls, evictions. Answer fast.
+
+Then the getaway: write the allocator that hands out berths.
+
+<Boss
+  id="pier"
+  devices={["phone","desktop"]}
+  title="Paged Pier"
+  briefing="Six berths, three hearts, three minutes. Wrong answers go in the water."
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type":"predict","prompt":"Block size 16. How many blocks for a 2,049-token sequence?","answer":129,"tolerance":{"mode":"absolute","value":0},"unit":"blocks","explanation":"ceil(2049/16) = 129."},{"type":"mcq","prompt":"A block table maps…","options":["layers to GPUs","logical KV blocks to physical blocks","tokens to strings","heads to streams"],"answer":1,"explanation":"It's a page table for the KV cache."},{"type":"predict","prompt":"Max slots wasted per sequence with block size 16?","answer":15,"tolerance":{"mode":"absolute","value":0},"unit":"slots","explanation":"At most one partly filled block: 15 empty slots."},{"type":"fill","text":"Parallel samples share prompt blocks via {{0}}, and a shared block is duplicated only on {{1}}.","chips":["reference counts","locks","write","read"],"answers":["reference counts","write"],"explanation":"That's copy-on-write."},{"type":"mcq","prompt":"Which preemption mode moves KV over PCIe?","options":["Recompute","Swap","Neither","Both"],"answer":1,"explanation":"Swap copies blocks to CPU memory. Recompute reruns prefill."},{"type":"predict","prompt":"Block = 2 MiB. How many blocks fit in 10 GiB?","answer":5120,"tolerance":{"mode":"absolute","value":0},"unit":"blocks","explanation":"10 × 1,024 MiB / 2 MiB = 5,120."}]}
+  explanation="Paged Pier is cleared. Your KV cache is finally parked properly."
+/>
+
+<Code
+  id="getaway-allocator"
+  devices={["desktop"]}
+  language="python"
+  prompt={"The getaway: write a tiny block allocator. alloc_table(seq_len, free_list, block_size=16) pops physical block ids from the front of free_list until the sequence fits. It returns the list of ids (the block table), or raises MemoryError and leaves free_list unchanged if there aren't enough."}
+  starter={"def alloc_table(seq_len, free_list, block_size=16):\n    table = []\n    return table\n"}
+  tests={"def test_basic():\n    free = [7, 2, 5, 9]\n    assert alloc_table(40, free) == [7, 2, 5]\n    assert free == [9]\n\ndef test_exact():\n    free = [1, 2]\n    assert alloc_table(32, free) == [1, 2]\n\ndef test_oom():\n    free = [1, 2]\n    try:\n        alloc_table(33, free)\n        assert False, 'expected MemoryError'\n    except MemoryError:\n        pass\n    assert free == [1, 2]\n"}
+  solution={"def alloc_table(seq_len, free_list, block_size=16):\n    need = -(-seq_len // block_size)\n    if need > len(free_list):\n        raise MemoryError('out of KV blocks')\n    table = free_list[:need]\n    del free_list[:need]\n    return table\n"}
+  hints={["-(-a // b) is ceiling division.","Check before you pop anything."]}
+  explanation="Physical ids don't need to be contiguous. That's the whole point of paging."
+/>

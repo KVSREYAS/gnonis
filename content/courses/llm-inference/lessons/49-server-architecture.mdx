@@ -1,0 +1,59 @@
+---
+id: llm-inference/12-capstone/01-server-architecture
+title: Blueprint of a Tiny Server
+estMinutes: 3
+xp: 100
+missionIntro: "Every LLM server has the same organs: API, tokenizer, scheduler,
+  block manager, model runner, sampler and a streamer."
+keyIdeas:
+  - A request flows from the API through tokenize, schedule, run model, sample
+    and detokenize, then streams back.
+  - The scheduler and the KV block manager decide who runs each step, and that's
+    where the throughput comes from.
+  - "Little's law: concurrent requests = arrival rate × average latency."
+---
+
+## Mission briefing
+
+Capstone Peak. No more theory: you're building the whole operation from the ground up.
+
+**Mission:** draw the blueprint before you pour concrete.
+
+## The organs
+
+Serving engines like vLLM split cleanly into an async API front, a scheduler with waiting, running and swapped queues, a KV block manager, a model runner that executes batched forwards, and a sampler plus detokenizer that stream tokens back.
+
+![Tiny server architecture: API, tokenizer, scheduler and block manager, model runner, sampler, streamer](/diagrams/llm-inference/12-capstone/01-server-architecture.png)
+
+<Ordering
+  id="flow"
+  devices={["phone","desktop"]}
+  prompt="Order one request's journey through a tiny server."
+  items={["HTTP API receives the prompt","Tokenizer converts it to ids","Scheduler admits it and the block manager allocates KV blocks","Model runner does prefill and decode steps","Sampler picks tokens","Detokenizer streams text back"]}
+  explanation="That's the whole server in six steps. Everything else is optimisation."
+/>
+
+<MCQ
+  id="brain"
+  devices={["phone","desktop"]}
+  prompt="Which component decides each step which sequences run and how many prefill tokens to add?"
+  options={["Tokenizer","Scheduler","Sampler","HTTP layer"]}
+  answer={1}
+  explanation="The scheduler (with the block manager) is the brain. The model runner is the muscle."
+/>
+
+## How big?
+
+Little's law tells you how many sequences you'll hold at once, and so how many KV blocks you need.
+
+Source: [vLLM architecture overview](https://docs.vllm.ai/en/latest/design/arch_overview.html)
+
+<Predict
+  id="littles-law"
+  devices={["phone","desktop"]}
+  prompt="Requests arrive at 5 per second and each takes 10 seconds end to end. On average, how many are in the system at once?"
+  answer={50}
+  tolerance={{"mode":"absolute","value":0}}
+  unit="requests"
+  explanation="Little's law: L = λW = 5 × 10 = 50. Size your KV pool for that."
+/>

@@ -20,7 +20,7 @@ export class PyodideRunner implements CodeRunner {
   private pending = new Map<number, Pending>();
 
   private spawn(): Promise<void> {
-    const worker = new Worker("/workers/pyodide-worker.js");
+    const worker = new Worker("/workers/pyodide-worker.js", { type: "module" });
     this.worker = worker;
     worker.onmessage = (e: MessageEvent) => {
       const { id, stdout, error } = e.data ?? {};

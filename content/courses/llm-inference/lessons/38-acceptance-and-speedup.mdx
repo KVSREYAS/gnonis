@@ -1,0 +1,73 @@
+---
+id: llm-inference/09-speculative-decoding/02-acceptance-and-speedup
+title: Acceptance Rates and Real Speedup
+estMinutes: 4
+xp: 100
+missionIntro: Expected tokens per pass is only half the story. The draft model
+  isn't free, so count its cost too.
+keyIdeas:
+  - Expected tokens per target pass = (1 − α^(γ+1)) / (1 − α).
+  - Wall-clock speedup = that / (γc + 1), where c is the draft's cost relative
+    to the target.
+  - "α is higher when the draft matches the target well: low temperature,
+    repetitive text, a distilled draft."
+---
+
+## Mission briefing
+
+The BMX scout is fast but not free: every guess costs a bit of time.
+
+**Mission:** work out how far ahead he should scout before the guessing costs more than it saves.
+
+## Tokens per pass
+
+If each drafted token is accepted with probability α and you draft γ, the target emits on average (1 − α^(γ+1)) / (1 − α) tokens per pass, counting the correction token.
+
+![Expected tokens per target pass against γ for α = 0.6, 0.8 and 0.9](/diagrams/llm-inference/09-speculative-decoding/02-acceptance-and-speedup.png)
+
+<Predict
+  id="low-alpha"
+  devices={["phone","desktop"]}
+  prompt="α = 0.6, γ = 4. Expected tokens per target pass?"
+  answer={2.306}
+  tolerance={{"mode":"absolute","value":0.02}}
+  unit="tokens"
+  explanation="(1 − 0.6^5) / 0.4 = (1 − 0.07776) / 0.4 ≈ 2.31."
+/>
+
+<MCQ
+  id="raise-alpha"
+  devices={["phone","desktop"]}
+  prompt="Which change usually raises the acceptance rate α?"
+  options={["Using a draft from a different model family","Higher sampling temperature","Distilling the draft on the target's outputs","Increasing γ"]}
+  answer={2}
+  explanation="α measures how similar the two distributions are. Increasing γ doesn't change α, it just risks more wasted guesses."
+/>
+
+## Paying the scout
+
+Drafting γ tokens costs γc target-passes of time. The speedup is the ratio of the two. Larger γ helps only while α^γ is still meaningful.
+
+Source: [Leviathan et al. 2023](https://arxiv.org/abs/2211.17192)
+
+<Predict
+  id="speedup"
+  devices={["phone","desktop"]}
+  prompt="α = 0.8, γ = 4, and the draft costs c = 0.05 of a target pass. Expected wall-clock speedup?"
+  answer={2.8}
+  tolerance={{"mode":"absolute","value":0.05}}
+  unit="x"
+  explanation={"Tokens per pass = 3.3616. Cost per iteration = 4 × 0.05 + 1 = 1.2. 3.3616 / 1.2 ≈ 2.80x (Leviathan et al., Theorem 3.8)."}
+/>
+
+<Code
+  id="gamma-code"
+  devices={["desktop"]}
+  language="python"
+  prompt={"Write best_gamma(alpha, c, max_gamma=10), which returns the γ in 1..max_gamma that maximises speedup = (1 − α^(γ+1)) / ((1 − α)(γc + 1)). On ties, return the smallest γ."}
+  starter={"def best_gamma(alpha, c, max_gamma=10):\n    return 1\n"}
+  tests={"def test_good_draft():\n    assert best_gamma(0.8, 0.05) == 8\n\ndef test_poor_draft():\n    assert best_gamma(0.5, 0.1) == 2\n\ndef test_cheap_great_draft():\n    assert best_gamma(0.95, 0.01) == 10\n"}
+  solution={"def best_gamma(alpha, c, max_gamma=10):\n    def s(g):\n        return (1 - alpha ** (g + 1)) / ((1 - alpha) * (g * c + 1))\n    return max(range(1, max_gamma + 1), key=lambda g: (s(g), -g))\n"}
+  hints={["Try every γ and keep the best.","max with a key works well here."]}
+  explanation="Production engines tune γ (num_speculative_tokens) this way, often adaptively."
+/>

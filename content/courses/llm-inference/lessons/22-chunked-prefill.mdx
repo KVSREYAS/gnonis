@@ -1,0 +1,75 @@
+---
+id: llm-inference/05-batching/03-chunked-prefill
+title: "Chunked Prefill: Don't Block the Intersection"
+estMinutes: 4
+xp: 90
+missionIntro: One giant prompt can freeze every running chat. Chop prefill into
+  chunks and share each step's token budget.
+keyIdeas:
+  - A long prefill in the same step as decodes stalls every running sequence and
+    spikes inter-token latency.
+  - Chunked prefill splits a prompt into pieces that fit a per-step token budget
+    (Sarathi-Serve).
+  - Each decode costs one token of budget, and whatever is left goes to a
+    prefill chunk.
+---
+
+## Mission briefing
+
+Some clown parked an 8,000-token prompt across the intersection, and 96 cars behind him are honking.
+
+**Mission:** cut the truck into pieces small enough that traffic keeps flowing.
+
+## The prefill stall
+
+Continuous batching mixes new prefills with ongoing decodes. A huge prefill can take hundreds of milliseconds of compute, and every decoding user waits for that whole step. Their inter-token latency spikes, and streams visibly stutter.
+
+<MCQ
+  id="what-improves"
+  devices={["phone","desktop"]}
+  prompt="What does chunked prefill mainly improve?"
+  options={["The model's accuracy","Tail inter-token latency of requests that are already decoding","Peak FLOP/s of the GPU","The size of the KV cache"]}
+  answer={1}
+  explanation={"Without chunking, a 10k-token prefill makes every running user wait for it. Chunking caps each step's work, so decode steps stay short and predictable. Sarathi-Serve calls these stall-free schedules."}
+/>
+
+## Chop it up
+
+Sarathi-Serve (OSDI 2024) splits prefills into chunks and builds each step from a fixed token budget: all running decodes first, then a prefill chunk to fill the rest. vLLM and SGLang ship this as chunked prefill.
+
+![Per-step token budget: unchunked prefill causes one huge step, chunked prefill spreads it under a budget line](/diagrams/llm-inference/05-batching/03-chunked-prefill.png)
+
+<Fill
+  id="budget-fill"
+  devices={["phone","desktop"]}
+  text={"Each step has a token budget. Every running decode costs {{0}} token, and the leftover goes to a {{1}}."}
+  chips={["1","16","prefill chunk","sampling pass"]}
+  answers={["1","prefill chunk"]}
+  explanation={"Decode is one token per sequence. Prefill fills the remaining compute, because prefill tokens are cheap to batch together."}
+/>
+
+<Predict
+  id="budget-left"
+  devices={["phone","desktop"]}
+  prompt="The step token budget is 2,048. There are 96 running decodes. How many prefill tokens can join this step?"
+  answer={1952}
+  tolerance={{"mode":"absolute","value":0}}
+  unit="tokens"
+  explanation="Each decode uses 1 token of budget: 2,048 − 96 = 1,952."
+/>
+
+## How many chunks?
+
+Chunk size trades TTFT for smooth decoding. Smaller chunks keep decode steps short, but the long prompt takes more steps to finish.
+
+Sources: [Sarathi-Serve](https://arxiv.org/abs/2403.02310), [vLLM chunked prefill docs](https://docs.vllm.ai/en/latest/configuration/optimization.html)
+
+<Predict
+  id="chunk-count"
+  devices={["phone","desktop"]}
+  prompt="An 8,192-token prompt is prefilled in chunks of 512 tokens. How many scheduler steps does its prefill take?"
+  answer={16}
+  tolerance={{"mode":"absolute","value":0}}
+  unit="steps"
+  explanation="8,192 / 512 = 16 steps, with decodes for everyone else riding along in each one."
+/>

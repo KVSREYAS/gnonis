@@ -176,7 +176,7 @@ describe("loader", () => {
       .flatMap((l) => l.blocks)
       .filter((b) => b.kind === "card")
       .flatMap((b) => (b.kind === "card" ? [...b.markdown.matchAll(/\]\((\/diagrams\/[^)]+)\)/g)].map((m) => m[1]) : []));
-    expect(diagrams).toHaveLength(20);
+    expect(diagrams).toHaveLength(40);
     expect(diagrams).toContain("/diagrams/llm-inference/05-batching/01-continuous-batching.png");
 
     const sample = courses[1];

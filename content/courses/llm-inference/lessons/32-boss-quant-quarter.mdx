@@ -1,0 +1,42 @@
+---
+id: llm-inference/07-quantization/05-boss-quant-quarter
+title: "Boss: Quant Quarter"
+estMinutes: 2
+xp: 200
+missionIntro: Scales, groups, outliers and KV bits. The Quant Quarter cops weigh everything.
+kind: boss
+keyIdeas:
+  - Weights-only int4 shrinks weights 4x and speeds memory-bound decode.
+  - Group scales cost 16/g bits per weight. SmoothQuant moves activation
+    outliers into the weights.
+  - KV quantization buys concurrency directly.
+---
+
+## Mission briefing
+
+The Quant Quarter checkpoint: cops with scales, and your cargo had better match the manifest.
+
+Six questions, then the getaway: write group-wise int4 quantization yourself.
+
+<Boss
+  id="quarter"
+  devices={["phone","desktop"]}
+  title="Quant Quarter"
+  briefing="Six checkpoints, three hearts, three minutes. The scale is rigged, so watch it."
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type":"predict","prompt":"A 13B model at 4 bits with g = 128 fp16 scales (4.125 bits). Weight size in GB?","answer":6.7,"tolerance":{"mode":"relative","value":0.02},"unit":"GB","explanation":"13e9 × 4.125 / 8 = 6.70 GB."},{"type":"mcq","prompt":"Which method uses approximate second-order (Hessian) information?","options":["AWQ","GPTQ","SmoothQuant","KIVI"],"answer":1,"explanation":"GPTQ corrects quantization error layer by layer with Hessian information."},{"type":"predict","prompt":"Symmetric int8: max|w| = 1.27. What is the scale?","answer":0.01,"tolerance":{"mode":"relative","value":0.01},"explanation":"1.27 / 127."},{"type":"fill","text":"SmoothQuant divides {{0}} by s and multiplies {{1}} by s.","chips":["activations","weights","logits","keys"],"answers":["activations","weights"],"explanation":"That moves the outliers into the weights."},{"type":"predict","prompt":"H100 at 3.35 TB/s, 8B model, int4 weights (4 GB). Batch-1 decode ceiling in tokens/s?","answer":838,"tolerance":{"mode":"relative","value":0.02},"unit":"tokens/s","explanation":"3.35e12 / 4e9 ≈ 838."},{"type":"mcq","prompt":"FP8 E4M3 versus E5M2: which has more range?","options":["E4M3","E5M2","Same","Depends on the GPU"],"answer":1,"explanation":"E5M2 reaches 57,344. E4M3 tops out at 448."}]}
+  explanation="Quant Quarter is cleared. Your crates are small and your cargo is intact."
+/>
+
+<Code
+  id="getaway-groups"
+  devices={["desktop"]}
+  language="python"
+  prompt={"The getaway: write quantize_groups(ws, group, bits=4). For each consecutive group, scale = max|w| / qmax with qmax = 2**(bits-1) - 1 (use 1.0 if the group is all zeros). q = round(w / scale), clamped to [-qmax, qmax]. Return (q_list, scales_list)."}
+  starter={"def quantize_groups(ws, group, bits=4):\n    q, scales = [], []\n    return q, scales\n"}
+  tests={"def test_two_groups():\n    q, s = quantize_groups([0.7, -0.35, 0.07, -0.07], 2)\n    assert [round(x, 6) for x in s] == [0.1, 0.01]\n    assert q == [7, -4, 7, -7]\n\ndef test_outlier_isolated():\n    q, s = quantize_groups([10.0, 0.1, 0.2, 0.1], 2)\n    assert q[2:] == [7, 4]\n\ndef test_zero_group():\n    q, s = quantize_groups([0.0, 0.0], 2)\n    assert q == [0, 0] and s == [1.0]\n"}
+  solution={"def quantize_groups(ws, group, bits=4):\n    qmax = 2 ** (bits - 1) - 1\n    q, scales = [], []\n    for i in range(0, len(ws), group):\n        g = ws[i:i + group]\n        m = max(abs(w) for w in g)\n        s = m / qmax if m > 0 else 1.0\n        scales.append(s)\n        q += [max(-qmax, min(qmax, round(w / s))) for w in g]\n    return q, scales\n"}
+  hints={["Slice ws[i:i+group].","int4 symmetric uses qmax = 7."]}
+  explanation="In test 2 the outlier only wrecks its own group. That's the whole argument for groups."
+/>
