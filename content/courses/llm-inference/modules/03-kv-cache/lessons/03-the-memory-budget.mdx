@@ -94,6 +94,12 @@ exercises:
     explanation: This is roughly the calculation vLLM runs at startup when it profiles memory and sizes its KV block pool.
 ---
 
+## Mission briefing
+
+Weights pay rent once. The KV cache is the roommate who keeps inviting friends.
+
+**Mission:** You've got one 80 GB garage. Park the weights, then fit as many customers' caches as you can.
+
 ## Weights first, cache second
 
 A serving GPU's memory splits into three parts:
@@ -104,6 +110,8 @@ A serving GPU's memory splits into three parts:
 
 vLLM, for example, claims `gpu_memory_utilization = 0.9` of the GPU by default. After loading
 weights and profiling activations, the remainder becomes the pool of KV blocks.
+
+![Stacked bars of 16 GB weights plus KV cache for 1, 16 and 48 sequences against an 80 GB limit](/diagrams/llm-inference/03-kv-cache/03-the-memory-budget.png)
 
 <Exercise id="max-seqs" />
 

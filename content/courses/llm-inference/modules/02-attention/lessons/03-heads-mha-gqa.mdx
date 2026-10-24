@@ -37,6 +37,12 @@ exercises:
       token, so cutting KV heads cuts memory and bandwidth directly.
 ---
 
+## Mission briefing
+
+Many small heads beat one big one. Make them carpool on keys and values and your memory bill drops.
+
+**Mission:** Eight crews, one city. Figure out how many getaway cars they actually need.
+
 ## Many heads
 
 One attention pattern per layer is limiting. **Multi-head attention (MHA)** splits the
@@ -55,6 +61,8 @@ Variants cut that cost:
 - **GQA** (grouped-query): query heads are split into groups, with one K/V head per group.
 
 GQA keeps most of MHA's quality at a fraction of the memory. Llama 3 uses it at every size.
+
+![Query heads mapped to KV heads in MHA (8), GQA (2) and MQA (1)](/diagrams/llm-inference/02-attention/03-heads-mha-gqa.png)
 
 <Exercise id="head-fill" />
 

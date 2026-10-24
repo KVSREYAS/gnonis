@@ -36,6 +36,12 @@ exercises:
       pass, which is why HBM bandwidth caps decode speed.
 ---
 
+## Mission briefing
+
+Registers are your pocket, shared memory your glovebox, HBM the garage across town. Every trip costs time.
+
+**Mission:** Learn the stash spots: what fits in your pocket, your glovebox and the garage across town.
+
 ## Two kinds of fast
 
 A GPU has an enormous amount of compute: an H100 SXM does about **989 TFLOP/s** of dense
@@ -45,6 +51,8 @@ Data lives in a hierarchy. **HBM** (high-bandwidth memory) is the big pool: 80 G
 **3.35 TB/s**. Close to the compute sits on-chip **SRAM**: registers and shared memory in each of
 the 132 SMs, plus a 50 MB L2 cache. SRAM is roughly an order of magnitude faster than HBM, but
 measured in kilobytes per SM.
+
+![H100 memory pyramid: registers, shared memory, L2 cache, HBM3](/diagrams/llm-inference/04-gpu-memory-roofline/01-memory-hierarchy.png)
 
 <Exercise id="hierarchy-order" />
 

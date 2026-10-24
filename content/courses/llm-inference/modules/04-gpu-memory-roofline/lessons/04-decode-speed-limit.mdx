@@ -50,6 +50,12 @@ exercises:
     explanation: A step takes as long as its slowest limit, so it should be max(compute_time, memory_time). With max, it is about 209 tokens/s.
 ---
 
+## Mission briefing
+
+At batch 1, your 1,000-TFLOP GPU is a Ferrari stuck behind a garbage truck called HBM.
+
+**Mission:** One user, one car, batch 1. Work out the speed limit, then cheat it legally.
+
 ## Back-of-envelope decode
 
 At batch 1 every decode step reads all the weights once. If memory is the bottleneck (it is), the
@@ -60,6 +66,8 @@ $$t_{step} \approx \frac{\text{weight bytes} + \text{KV bytes}}{BW}$$
 For an 8B fp16 model on an H100, $16\text{ GB} / 3.35\text{ TB/s} \approx 4.8$ ms per token,
 which is about **209 tokens/s**. That is the ceiling. Kernel launch gaps, the KV reads and
 sampling all eat into it.
+
+![Bar chart of batch-1 decode ceilings on A100 and H100 at fp16, int8 and int4](/diagrams/llm-inference/04-gpu-memory-roofline/04-decode-speed-limit.png)
 
 <Exercise id="a100-limit" />
 

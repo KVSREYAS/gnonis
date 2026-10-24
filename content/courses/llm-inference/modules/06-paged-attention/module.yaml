@@ -4,4 +4,6 @@ summary: >-
   Treat the KV cache like virtual memory: fixed-size blocks, a block table per sequence, near-zero fragmentation and cheap prefix sharing.
 tip: "TIP: Fragmentation, not capacity, used to waste most KV memory."
 art: pier
-status: stub
+status: ready
+lessons:
+  - 01-kv-as-virtual-memory

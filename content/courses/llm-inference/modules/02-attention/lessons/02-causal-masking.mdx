@@ -76,6 +76,12 @@ exercises:
     explanation: "Keys 0..i is the slice [: i + 1]. Using i + 2 lets token i attend to token i + 1, which is the future."
 ---
 
+## Mission briefing
+
+No spoilers. Token 5 doesn't get to read token 6's lines, and minus infinity is the bouncer.
+
+**Mission:** Someone is leaking tomorrow's script to today's actors. Find the leak and seal it.
+
 ## No peeking
 
 When a model learns to predict token $i+1$, it must not see token $i+1$. So in a decoder, token
@@ -83,6 +89,8 @@ $i$ may only attend to positions $0 \dots i$.
 
 The **causal mask** enforces this. Before softmax, every score above the diagonal is set to
 $-\infty$. Since $e^{-\infty} = 0$, those keys get exactly zero weight.
+
+![Lower-triangular causal mask, allowed positions in green and minus infinity in grey](/diagrams/llm-inference/02-attention/02-causal-masking.png)
 
 <Exercise id="mask-walkthrough" />
 

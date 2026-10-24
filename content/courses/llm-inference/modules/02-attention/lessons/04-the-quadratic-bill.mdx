@@ -89,6 +89,12 @@ exercises:
     explanation: This is exactly what one decode step does per head, for the newest query against every cached key.
 ---
 
+## Mission briefing
+
+Attention is the friend who orders for the whole table. Double the context and the score matrix grows fourfold.
+
+**Mission:** The attention tab just arrived. Find out why doubling the guest list quadrupled the bill.
+
 ## n squared
 
 For $n$ tokens, each head computes an $n \times n$ score matrix. Going from 4k to 128k context
@@ -97,6 +103,8 @@ is 32x more tokens but **1,024x** more scores.
 The FLOPs grow the same way. $QK^\top$ and the weighted sum over $V$ each cost about
 $2 n^2 d_{head}$ per head. The MLP grows only linearly with $n$, so at long context, attention
 dominates prefill.
+
+![Log-scale bars of fp16 score-matrix size per head from 1k to 128k context](/diagrams/llm-inference/02-attention/04-the-quadratic-bill.png)
 
 <Exercise id="quad-factor" />
 

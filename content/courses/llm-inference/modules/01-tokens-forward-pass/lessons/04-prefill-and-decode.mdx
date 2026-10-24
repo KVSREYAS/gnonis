@@ -47,6 +47,12 @@ exercises:
       process a single token, so it waits on memory. Module 4 makes this precise.
 ---
 
+## Mission briefing
+
+Prefill is the planning meeting: the whole prompt at once. Decode is the chase: one token per step, forever.
+
+**Mission:** Plan the heist in one go, then drive the getaway one turn at a time without crashing.
+
 ## Two phases
 
 Generating text is a loop, but the first iteration is special.
@@ -71,6 +77,8 @@ Users feel two different delays:
 Total time for an answer of $N$ tokens is roughly:
 
 $$T \approx \text{TTFT} + (N - 1) \times \text{TPOT}$$
+
+![Timeline showing one large prefill block then many small decode steps, with TTFT and TPOT marked](/diagrams/llm-inference/01-tokens-forward-pass/04-prefill-and-decode.png)
 
 <Exercise id="total-latency" />
 

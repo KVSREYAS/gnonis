@@ -44,6 +44,12 @@ exercises:
       sequence needs 2.15 GB.
 ---
 
+## Mission briefing
+
+128 KiB per token sounds tiny. Then a hundred users show up with 8k-token chats.
+
+**Mission:** The docks charge by the byte. Weigh one token's cargo exactly, or it goes in the water.
+
 ## The formula
 
 For every token, every layer stores one key and one value vector per KV head:
@@ -55,6 +61,8 @@ $$\text{bytes/token} = 2 \times L \times H_{kv} \times d_{head} \times b$$
 - $H_{kv}$: KV heads (fewer than query heads with GQA).
 - $d_{head}$: head dimension.
 - $b$: bytes per element (2 for fp16 and bf16, 1 for fp8).
+
+![Bar chart of KV bytes per token for Llama 2 7B, Llama 3 8B and Llama 3 70B](/diagrams/llm-inference/03-kv-cache/02-sizing-the-cache.png)
 
 <Exercise id="formula" />
 

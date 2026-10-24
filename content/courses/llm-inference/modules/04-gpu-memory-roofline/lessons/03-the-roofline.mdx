@@ -55,6 +55,12 @@ exercises:
       means up to 4x more attainable FLOP/s.
 ---
 
+## Mission briefing
+
+You can only think so fast and fetch so fast. Every kernel is pinned against one of those ceilings.
+
+**Mission:** Two walls, one plot. Find out which one your kernel keeps crashing into.
+
 ## Two ceilings
 
 The **roofline model** plots attainable performance against arithmetic intensity on log-log axes:
@@ -63,6 +69,8 @@ $$P = \min(P_{peak},\; I \times BW)$$
 
 On the left, the sloped roof: you are **memory-bound** and speed equals bandwidth times
 intensity. On the right, the flat roof: you are **compute-bound** at peak FLOP/s.
+
+![H100 roofline with batch-1 decode, batch-32 decode and prefill marked](/diagrams/llm-inference/04-gpu-memory-roofline/03-the-roofline.png)
 
 <Exercise id="roof-fill" />
 

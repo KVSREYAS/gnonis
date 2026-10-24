@@ -1,0 +1,76 @@
+---
+title: "Speculative Decoding: The Getaway Driver Guesses Ahead"
+summary: A cheap draft model proposes several tokens; the big model verifies them all in one pass, with the output distribution unchanged.
+xp: 100
+keyIdeas:
+  - Decode is memory-bound, so verifying k tokens in one pass costs about the same as generating one.
+  - Modified rejection sampling keeps the target model's distribution exactly.
+  - With per-token acceptance rate alpha and gamma drafted tokens, expected tokens per target pass = (1 - alpha^(gamma+1)) / (1 - alpha).
+exercises:
+  expected-tokens:
+    type: predict
+    devices: [phone, desktop]
+    prompt: Acceptance rate alpha = 0.8 and the draft proposes gamma = 4 tokens. Expected tokens produced per target-model pass?
+    answer: 3.36
+    tolerance: { mode: absolute, value: 0.05 }
+    unit: tokens
+    hint: (1 - 0.8^5) / (1 - 0.8)
+    explanation: (1 - 0.32768) / 0.2 = 3.36. Formula from Leviathan et al. 2023, Eq. 1.
+  exactness:
+    type: mcq
+    devices: [phone, desktop]
+    prompt: With standard speculative sampling, how does the output distribution compare to plain sampling from the target model?
+    options:
+      - Identical
+      - Slightly worse, roughly like a smaller model
+      - It matches the draft model
+      - Identical only at temperature 0
+    answer: 0
+    explanation: The accept/reject rule plus resampling from the residual distribution makes it provably identical at any temperature.
+  when-bad:
+    type: mcq
+    devices: [phone, desktop]
+    prompt: When does speculative decoding help least?
+    options:
+      - Batch 1 on a big GPU
+      - Very large batches where the GPU is already compute-bound
+      - Code completion with repetitive text
+      - When the draft model is very well aligned
+    answer: 1
+    explanation: Speculation spends spare compute. At high batch there is no spare compute left, so the extra verification work can slow you down.
+---
+
+## Mission briefing
+
+Big Smoke takes forever to decide every turn. So a kid on a BMX rides ahead and shouts four turns at
+once. Smoke checks them all in one glance, keeps the right ones, and corrects the first wrong one. Same
+route, fewer pauses.
+
+## Guess, then check
+
+A small draft model proposes several tokens. The big target model scores all of them in **one** forward
+pass, which costs about the same as one decode step because decode is memory-bound.
+
+![Draft model proposes four tokens; the target accepts three, rejects one and resamples a replacement](/diagrams/llm-inference/09-speculative-decoding/01-draft-and-verify.png)
+
+<Exercise id="exactness" />
+
+## How many tokens per pass?
+
+If each draft token is accepted with probability alpha and the draft proposes gamma tokens, the expected
+number of tokens per target pass is (1 - alpha^(gamma+1)) / (1 - alpha).
+
+<Exercise id="expected-tokens" />
+
+## When it backfires
+
+Speculation spends spare compute to save memory-bound steps.
+
+<Exercise id="when-bad" />
+
+## Street wisdom
+
+Variants worth knowing: Medusa (extra decoding heads), EAGLE (feature-level drafting) and prompt-lookup
+or n-gram drafting.
+
+Sources: [Leviathan et al.](https://arxiv.org/abs/2211.17192), [Chen et al.](https://arxiv.org/abs/2302.01318), [Medusa](https://arxiv.org/abs/2401.10774), [EAGLE](https://arxiv.org/abs/2401.15077)

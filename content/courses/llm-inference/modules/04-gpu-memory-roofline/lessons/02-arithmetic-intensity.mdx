@@ -69,6 +69,12 @@ exercises:
     explanation: With m = batch size and k x n = a weight matrix, you can see why batching rescues decode.
 ---
 
+## Mission briefing
+
+FLOPs per byte is the only number that says whether your GPU is working or waiting.
+
+**Mission:** Count how much work you get done per trip to the garage. Then explain why decode keeps coming back with one screw.
+
 ## FLOPs per byte
 
 Every kernel does some maths and moves some data. Their ratio is the **arithmetic intensity**:
@@ -86,6 +92,8 @@ A matmul $[m \times k] \cdot [k \times n]$ does $2mkn$ FLOPs (a multiply and an 
 
 At decode time with batch size 1, each linear layer multiplies **one** token's vector by a big
 weight matrix. Every weight is read once and used once.
+
+![Log-log plot of arithmetic intensity for square GEMM versus GEMV against the H100 ridge](/diagrams/llm-inference/04-gpu-memory-roofline/02-arithmetic-intensity.png)
 
 <Exercise id="gemv-ai" />
 

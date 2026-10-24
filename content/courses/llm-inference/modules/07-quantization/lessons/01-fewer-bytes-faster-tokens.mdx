@@ -1,0 +1,74 @@
+---
+title: "Quantization: Smuggling the Model in Smaller Crates"
+summary: int8, int4 and fp8 shrink weights (and KV caches), which raises the memory-bound decode ceiling almost proportionally.
+xp: 100
+keyIdeas:
+  - Weight-only quantization (GPTQ, AWQ) stores weights in 4 bits and dequantizes on the fly; great for memory-bound decode.
+  - SmoothQuant moves activation outliers into weights so W8A8 int8 matmuls work.
+  - FP8 E4M3 (max 448) and E5M2 (max 57,344) are native on Hopper/Ada GPUs; E4M3 is usually used for weights and activations.
+exercises:
+  int4-70b:
+    type: predict
+    devices: [phone, desktop]
+    prompt: Ignoring scales and zero points, how many GB do the weights of a 70B-parameter model take at 4 bits per weight?
+    answer: 35
+    tolerance: { mode: relative, value: 0.03 }
+    unit: GB
+    hint: params x bits / 8
+    explanation: 70e9 x 0.5 bytes = 35 GB, versus 140 GB in fp16. Group-wise scales add a few percent.
+  e4m3-max:
+    type: predict
+    devices: [phone, desktop]
+    prompt: What is the largest finite value representable in FP8 E4M3 (the OCP/NVIDIA variant)?
+    answer: 448
+    tolerance: { mode: absolute, value: 0 }
+    explanation: E4M3 trades range for precision; max 448. E5M2 reaches 57,344. Source - Micikevicius et al., arXiv 2209.05433.
+  awq-idea:
+    type: mcq
+    devices: [phone, desktop]
+    prompt: What is AWQ's key insight?
+    options:
+      - Train the model from scratch in int4
+      - A small fraction of salient weight channels, found via activation magnitude, should be protected by scaling
+      - Quantize only the KV cache
+      - Remove attention layers
+    answer: 1
+    explanation: AWQ finds the ~1% of channels that matter most using activation statistics and scales them before quantizing. GPTQ instead uses approximate second-order (Hessian) information to correct errors layer by layer.
+---
+
+## Mission briefing
+
+The cops at the bridge weigh every truck. Your 140 GB fp16 cargo won't fit on one 80 GB GPU. Repack it
+into 4-bit crates, keep the goods intact, and drive past while they're still counting.
+
+## Fewer bytes, faster tokens
+
+Batch-1 decode is bandwidth divided by bytes read. Halve the bytes per weight and the ceiling roughly doubles.
+
+<Exercise id="int4-70b" />
+
+## The methods
+
+| Method | What gets quantized | Trick |
+| --- | --- | --- |
+| GPTQ | weights (3-4 bit) | second-order error correction |
+| AWQ | weights (4 bit) | protect salient channels |
+| SmoothQuant | weights + activations (int8) | migrate outliers into weights |
+| FP8 | weights + activations (+KV) | hardware-native float format |
+
+<Exercise id="awq-idea" />
+
+## Floats on a diet
+
+FP8 comes in two flavours. E4M3 has more precision and E5M2 has more range.
+
+![Bit layouts of FP16, BF16, FP8 E4M3, FP8 E5M2 and INT4, plus 70B weight sizes against an 80 GB GPU](/diagrams/llm-inference/07-quantization/01-fewer-bytes-faster-tokens.png)
+
+<Exercise id="e4m3-max" />
+
+## Street wisdom
+
+Quantization is JPEG for weights. Done well, nobody notices. Done badly, the model starts recommending
+you drive into the ocean.
+
+Sources: [GPTQ](https://arxiv.org/abs/2210.17323), [AWQ](https://arxiv.org/abs/2306.00978), [SmoothQuant](https://arxiv.org/abs/2211.10438), [FP8 formats](https://arxiv.org/abs/2209.05433)

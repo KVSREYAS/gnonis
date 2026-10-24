@@ -1,0 +1,74 @@
+---
+title: "PagedAttention: Parking the KV Cache in Blocks"
+summary: Reserve memory in small fixed blocks instead of one giant slab per request, and fragmentation nearly disappears.
+xp: 90
+keyIdeas:
+  - Pre-allocating max-length contiguous KV buffers wastes memory through internal and external fragmentation.
+  - The vLLM paper measured only 20.4% to 38.2% of KV memory actually holding token states in earlier systems.
+  - PagedAttention stores KV in fixed blocks (default 16 tokens) mapped by a per-sequence block table, so waste is under one block per sequence.
+exercises:
+  blocks-needed:
+    type: predict
+    devices: [phone, desktop]
+    prompt: With a block size of 16 tokens, how many KV blocks does a 1,000-token sequence need?
+    answer: 63
+    tolerance: { mode: absolute, value: 0 }
+    unit: blocks
+    hint: ceil(1000 / 16)
+    explanation: ceil(1000/16) = 63 blocks = 1,008 slots, so only 8 slots are wasted. Compare reserving 4,096 slots up front.
+  waste-slab:
+    type: predict
+    devices: [phone, desktop]
+    prompt: >-
+      An old server reserves a 4,096-token contiguous KV slab per request. A request actually uses 1,000
+      tokens. What percentage of its reserved slab is wasted?
+    answer: 75.6
+    tolerance: { mode: absolute, value: 0.5 }
+    unit: "%"
+    explanation: (4096 - 1000) / 4096 = 75.6%. That is the "60-80% waste" the vLLM authors describe.
+  block-table:
+    type: mcq
+    devices: [phone, desktop]
+    prompt: What does a sequence's block table map?
+    options:
+      - Token ids to vocabulary strings
+      - Logical KV block numbers to physical GPU memory blocks
+      - Attention heads to GPUs
+      - Layers to CUDA streams
+    answer: 1
+    explanation: Exactly like an OS page table. Physical blocks need not be contiguous, and two sequences can point at the same block to share a prefix (copy-on-write).
+---
+
+## Mission briefing
+
+Welcome to Paged Pier. The old dock master gave every boat a 4,096-token berth "just in case". Most boats
+are dinghies. The pier is full, the water is empty, and the boss is furious. Chop the pier into 16-token slots.
+
+## The fragmentation tax
+
+Older servers reserved one contiguous KV slab per request, sized for the maximum length. Most of it was
+never written. The vLLM authors measured only 20.4% to 38.2% of KV memory holding real token states.
+
+<Exercise id="waste-slab" />
+
+## Pages, but for keys and values
+
+PagedAttention splits the cache into fixed blocks (16 tokens by default in vLLM). A sequence grabs a
+new block only when the last one fills up, so it wastes at most one partly-filled block.
+
+<Exercise id="blocks-needed" />
+
+## The block table
+
+Each sequence keeps a table from logical block numbers to physical blocks, just like an OS page table.
+Physical blocks can sit anywhere, and two sequences can point at the same block to share a prompt prefix.
+
+![Two sequences' logical blocks mapped through block tables to scattered physical blocks, with shared prefix blocks highlighted](/diagrams/llm-inference/06-paged-attention/01-kv-as-virtual-memory.png)
+
+<Exercise id="block-table" />
+
+## Street wisdom
+
+Your OS solved this in the 1960s. LLM servers rediscovered it in 2023 and got a SOSP paper. Respect.
+
+Sources: [Kwon et al., SOSP 2023](https://arxiv.org/abs/2309.06180), [vLLM blog](https://blog.vllm.ai/2023/06/20/vllm.html)

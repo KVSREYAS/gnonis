@@ -1,0 +1,69 @@
+---
+title: "Serving Metrics and Prefix Caching: Keeping the Customers Happy"
+summary: TTFT, TPOT/ITL, throughput and goodput, plus reusing the KV cache of shared prompt prefixes.
+xp: 90
+keyIdeas:
+  - TTFT (time to first token) is dominated by queueing + prefill; TPOT (time per output token) by decode.
+  - End-to-end latency ≈ TTFT + TPOT x (output tokens - 1).
+  - Prefix caching (vLLM automatic prefix caching, SGLang RadixAttention) skips prefill for shared system prompts and chat history.
+exercises:
+  e2e-latency:
+    type: predict
+    devices: [phone, desktop]
+    prompt: TTFT is 200 ms and TPOT is 20 ms. How long, in seconds, until a 500-token answer finishes?
+    answer: 10.18
+    tolerance: { mode: absolute, value: 0.05 }
+    unit: s
+    hint: TTFT + TPOT x (N - 1)
+    explanation: 0.2 + 0.02 x 499 = 10.18 s.
+  metric-match:
+    type: mcq
+    devices: [phone, desktop]
+    prompt: A chatbot feels "laggy before it starts typing". Which metric is bad?
+    options: [TTFT, TPOT, Total throughput, Model FLOPs utilisation]
+    answer: 0
+    explanation: Slow start = TTFT. Long prompts, queueing and big prefills hurt it; chunked prefill and prefix caching help.
+  prefix-saving:
+    type: predict
+    devices: [phone, desktop]
+    prompt: >-
+      Every request has a 2,000-token shared system prompt plus a 200-token user message. With a warm
+      prefix cache, what percentage of prefill tokens are skipped?
+    answer: 90.9
+    tolerance: { mode: absolute, value: 0.5 }
+    unit: "%"
+    explanation: 2000 / 2200 = 90.9% of prefill tokens come from the cache.
+---
+
+## Mission briefing
+
+You run the Cluckin' Bell drive-thru. Customers judge you on two things: how long before the first nugget
+appears (TTFT) and how fast the rest follow (TPOT). Also, everyone orders the same combo intro. Pre-cook it.
+
+## Two clocks
+
+**TTFT** covers queueing plus prefill. **TPOT** (or inter-token latency) is the gap between later tokens.
+
+![Latency timeline with TTFT and TPOT marked, and a radix tree of requests sharing a cached system prompt](/diagrams/llm-inference/11-serving-systems/01-ttft-tpot-and-prefix-caching.png)
+
+<Exercise id="metric-match" />
+
+## End-to-end latency
+
+Total time is roughly TTFT plus TPOT for every token after the first.
+
+<Exercise id="e2e-latency" />
+
+## Prefix caching
+
+If many requests start with the same system prompt, keep its KV blocks and skip that part of prefill.
+vLLM calls it automatic prefix caching, and SGLang uses a radix tree (RadixAttention).
+
+<Exercise id="prefix-saving" />
+
+## Street wisdom
+
+Rating a server by tokens per second alone is like rating a restaurant by meals per hour. Great, until
+your table has waited 40 minutes.
+
+Sources: [NVIDIA LLM benchmarking metrics](https://docs.nvidia.com/nim/benchmarking/llm/latest/metrics.html), [SGLang RadixAttention](https://arxiv.org/abs/2312.07104), [vLLM prefix caching](https://docs.vllm.ai/en/latest/features/automatic_prefix_caching.html), [DistServe](https://arxiv.org/abs/2401.09670)

@@ -125,7 +125,7 @@ describe("loader", () => {
       const types = m.lessons.flatMap((l) => Object.values(l.exercises).map((e) => e.type));
       expect(types.some((t) => t === "simulator" || t === "stepper")).toBe(true);
     }
-    for (const m of llm.modules.slice(4)) expect(m.status).toBe("stub");
+    for (const m of llm.modules.slice(4)) expect(m.status).toBe(m.lessons.length ? "ready" : "stub");
   });
 
   it("covers every widget type somewhere in the LLM course", () => {

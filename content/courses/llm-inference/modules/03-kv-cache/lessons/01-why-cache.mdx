@@ -57,6 +57,12 @@ exercises:
       KV history through the GPU, which is why decode is bandwidth-bound.
 ---
 
+## Mission briefing
+
+Re-reading the whole story to write one more word isn't diligence. It's a bug.
+
+**Mission:** Stop re-telling the whole Grove Street history before every sentence. Stash the past and move on.
+
 ## The waste
 
 Without a cache, step $t$ of decoding would run the model over all $t$ tokens again, just to get
@@ -72,6 +78,8 @@ So store them. For each layer, keep the $K$ and $V$ vectors of every token so fa
 1. **Prefill** computes K and V for the whole prompt and writes them to the cache.
 2. Each **decode** step computes $q, k, v$ for the one new token, appends $k, v$, and attends with
    $q$ over the full cache.
+
+![Four decode steps with the KV cache growing by one row each step](/diagrams/llm-inference/03-kv-cache/01-why-cache.png)
 
 <Exercise id="cache-growth" />
 

@@ -90,6 +90,12 @@ exercises:
       exponent at or below zero, so nothing overflows. Real kernels do the same.
 ---
 
+## Mission briefing
+
+128,000 candidates, one job opening. Temperature decides how tipsy the hiring manager is.
+
+**Mission:** Rig the lottery. Tune the sampler so the model says something sensible without sounding like a robot or a drunk.
+
 ## Softmax
 
 Logits can be any real numbers. **Softmax** turns them into probabilities:
@@ -113,6 +119,8 @@ Samplers reshape the distribution before drawing from it:
 - **Top-p** (nucleus) keeps the smallest set whose probabilities add up to $p$.
 
 After filtering, the survivors are renormalised and one is sampled at random. Try the knobs below.
+
+![Bar chart of the same logits under temperature 0.5, 1.0 and 2.0](/diagrams/llm-inference/01-tokens-forward-pass/03-logits-to-tokens.png)
 
 <Exercise id="tune-sampler" />
 

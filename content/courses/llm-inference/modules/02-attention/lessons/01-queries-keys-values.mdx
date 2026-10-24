@@ -37,6 +37,12 @@ exercises:
     explanation: Every query is compared with every key, so 8 x 8 = 64. Causal masking then discards the upper triangle.
 ---
 
+## Mission briefing
+
+Each token walks in with a question (query). Every earlier token wears a name tag (key) and carries a briefcase (value).
+
+**Mission:** Every token in this bar is asking around. Find out who answers, and what they hand over.
+
 ## Three projections
 
 Attention lets each position pull information from other positions. Every hidden state $x$ is
@@ -58,6 +64,8 @@ $$\text{Attention}(Q,K,V) = \text{softmax}\!\left(\frac{QK^\top}{\sqrt{d_k}}\rig
 
 $QK^\top$ is an $[n \times n]$ matrix: row $i$ holds how much token $i$ cares about every token.
 Softmax runs along each row, so each row's weights sum to 1.
+
+![Three heatmaps: Q times K transpose scores, row-wise softmax, and the weighted sum of V](/diagrams/llm-inference/02-attention/01-queries-keys-values.png)
 
 <Exercise id="formula-fill" />
 

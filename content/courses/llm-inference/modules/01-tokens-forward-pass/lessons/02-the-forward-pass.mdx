@@ -51,6 +51,12 @@ exercises:
     explanation: Every block keeps the shape [tokens x hidden] so blocks can be stacked as deep as you like.
 ---
 
+## Mission briefing
+
+One id walks in. Dozens of transformer blocks later, a vote over 128,000 word pieces walks out.
+
+**Mission:** Escort token #644 through every block on Grove Street. Don't let it lose its residual.
+
 ## From ids to vectors
 
 The first layer is just a lookup. The **embedding table** is a matrix with one row per vocabulary
@@ -71,6 +77,8 @@ things:
 
 Each half starts with a normalization (RMSNorm in Llama) and ends by *adding* its output back to its
 input. That running sum is called the **residual stream**.
+
+![Token id flowing through embedding, N transformer blocks, final norm and unembedding to logits](/diagrams/llm-inference/01-tokens-forward-pass/02-the-forward-pass.png)
 
 <Exercise id="block-flow" />
 

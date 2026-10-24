@@ -4,4 +4,6 @@ summary: >-
   Static, dynamic and continuous batching: how servers keep the GPU busy by decoding many requests at once without making anyone wait for the slowest.
 tip: "TIP: Continuous batching admits new requests at every decode step."
 art: grid
-status: stub
+status: ready
+lessons:
+  - 01-continuous-batching

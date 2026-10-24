@@ -34,6 +34,12 @@ exercises:
     explanation: 1,200 / 0.75 = 1,600. Code, numbers and non-English text usually need more tokens per word.
 ---
 
+## Mission briefing
+
+Plot twist: the model can't read. Not one letter. It has been faking it with numbers this whole time.
+
+**Mission:** CJ, a shipment of words is headed for the model. Intercept it and swap every word for a numbered crate before it gets there.
+
 ## Text in, numbers out
 
 A language model is a function from numbers to numbers. Before it can read your prompt, a
@@ -47,6 +53,8 @@ The ids here are made up, but the shape is real. Common words get a single token
 split into several pieces. Note the leading spaces: `" is"` and `"is"` are different tokens.
 
 The model never sees the letters. It only sees ids, and it can only ever produce ids too.
+
+![The phrase Inference is fun split into four tokens, each mapped to an integer id](/diagrams/llm-inference/01-tokens-forward-pass/01-what-is-a-token.png)
 
 <Exercise id="what-model-sees" />
 
