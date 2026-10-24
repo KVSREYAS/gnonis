@@ -1,11 +1,16 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, Monitor, Smartphone, X, XCircle } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { ArrowLeft, CheckCircle2, MessagesSquare, Monitor, Smartphone, X, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useDevice, useProgress } from "@/components/providers";
+import { AskSelection, readLessonSelection } from "@/components/lesson/ask-selection";
+import { useAuth, useDevice, useProgress } from "@/components/providers";
+import { exerciseBrief, exerciseTitle } from "@/lib/chat/context";
+import { studyLinks } from "@/lib/chat/prompt";
 import { Radar } from "@/components/viz";
 import { ExerciseRenderer, WIDGETS } from "@/components/widgets/registry";
 import type { PrimaryAction } from "@/components/widgets/types";
@@ -15,10 +20,15 @@ import { exerciseKey, supports } from "@/lib/content/types";
 import type { Grade } from "@/lib/grading";
 import { cn } from "@/lib/utils";
 
-export type PlayerStep = { kind: "card"; title: string; content: ReactNode } | { kind: "exercise"; id: string; exercise: Exercise };
+const DivePanel = dynamic(() => import("@/components/lesson/dive-panel").then((mod) => mod.DivePanel), { ssr: false });
+
+export type PlayerStep = { kind: "card"; title: string; content: ReactNode; text: string } | { kind: "exercise"; id: string; exercise: Exercise };
+
+type Quote = { id: string; text: string };
 
 export type PlayerLesson = {
   key: string;
+  courseTitle: string;
   title: string;
   kind: "lesson" | "boss";
   xp: number;
@@ -54,15 +64,28 @@ export function LessonPlayer({
   nextHref,
   nextLabel,
   mapHref,
+  chatEnabled = false,
+  defaultModel = "",
 }: {
   lesson: PlayerLesson;
   steps: PlayerStep[];
   nextHref: string;
   nextLabel: string;
   mapHref: string;
+  /** True when the server has an OpenRouter key. The key itself never reaches the browser. */
+  chatEnabled?: boolean;
+  defaultModel?: string;
 }) {
   const device = useDevice();
+  const { configured, user } = useAuth();
+  const pathname = usePathname();
   const { recordExercise, completeLesson } = useProgress();
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [panelTab, setPanelTab] = useState<"chat" | "calc">("chat");
+  const [calcFocus, setCalcFocus] = useState(0);
+  const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [draft, setDraft] = useState("");
+  const [latestQuestion, setLatestQuestion] = useState("");
   const [index, setIndex] = useState(0);
   const [status, setStatus] = useState<Record<string, Status>>({});
   const [widgetAction, setWidgetAction] = useState<PrimaryAction | null>(null);
@@ -136,6 +159,76 @@ export function LessonPlayer({
   } else primary = widgetAction;
 
   const progress = index;
+  const stepTitle = step.kind === "card" ? step.title : exerciseTitle(step.exercise);
+  const stepText = step.kind === "card" ? step.text : exerciseBrief(step.exercise);
+  const tutorContext = {
+    courseTitle: lesson.courseTitle,
+    lessonTitle: lesson.title,
+    district: lesson.district,
+    stepTitle,
+    stepKind: step.kind,
+    stepText,
+    exerciseUnanswered: step.kind === "exercise" && !st?.grade?.correct,
+  };
+  const loginHref = `/login?next=${encodeURIComponent(pathname || mapHref)}`;
+
+  const addQuote = useCallback((text: string) => {
+    const trimmed = text.replace(/\s+/g, " ").trim().slice(0, 500);
+    if (trimmed.length < 2) return;
+    setQuotes((prev) => (prev.some((quote) => quote.text === trimmed) || prev.length >= 6 ? prev : [...prev, { id: crypto.randomUUID(), text: trimmed }]));
+  }, []);
+
+  const rememberQuestion = useCallback((question: string) => {
+    setLatestQuestion((prev) => (prev === question ? prev : question));
+  }, []);
+
+  const openChat = useCallback(() => {
+    setPanelTab("chat");
+    setPanelOpen(true);
+  }, []);
+
+  useEffect(() => {
+    if (!chatEnabled) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setPanelOpen(false);
+        return;
+      }
+      const meta = event.metaKey || event.ctrlKey;
+      if (!meta || event.altKey) return;
+      const key = event.key.toLowerCase();
+      if (key === "k" && event.shiftKey) {
+        event.preventDefault();
+        setPanelTab("calc");
+        setPanelOpen(true);
+        setCalcFocus((n) => n + 1);
+        return;
+      }
+      if (device === "phone" || key !== "l" || event.shiftKey) return;
+      const target = event.target;
+      if (target instanceof HTMLElement && target.closest("input, textarea, select, [contenteditable='true']")) return;
+      event.preventDefault();
+      const found = readLessonSelection();
+      if (found) addQuote(found.text);
+      setPanelTab("chat");
+      setPanelOpen(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [addQuote, chatEnabled, device]);
+
+  const chatgptFor = useCallback(
+    (text: string) =>
+      studyLinks({
+        courseTitle: lesson.courseTitle,
+        lessonTitle: lesson.title,
+        stepTitle,
+        content: stepText,
+        selections: [...quotes.map((quote) => quote.text), text],
+        question: draft.trim() || latestQuestion,
+      }).chatgpt,
+    [draft, latestQuestion, lesson.courseTitle, lesson.title, quotes, stepText, stepTitle],
+  );
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-3 sm:px-6">
@@ -152,6 +245,25 @@ export function LessonPlayer({
           </h1>
         </div>
         <div className="flex items-center gap-2">
+          {chatEnabled && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0 border-gold/60 px-2 text-gold-ink sm:px-3"
+              aria-expanded={panelOpen}
+              aria-controls="dive-panel"
+              aria-label="Dive deeper"
+              data-testid="dive-toggle"
+              onClick={() => {
+                setPanelTab("chat");
+                setPanelOpen((open) => !open);
+              }}
+            >
+              <MessagesSquare />
+              <span className="max-sm:sr-only">Dive deeper</span>
+            </Button>
+          )}
           <span className="hidden text-sm text-muted-foreground sm:inline" aria-hidden>
             {progress + 1}/{steps.length}
           </span>
@@ -171,7 +283,7 @@ export function LessonPlayer({
         ))}
       </div>
 
-      <section className="flex-1 pb-40" aria-live="polite">
+      <section className="flex-1 pb-40" aria-live="polite" data-lesson-content>
         {step.kind === "card" ? (
           <article className="mx-auto max-w-[68ch] rounded-xl border border-border bg-panel p-5 sm:p-8" data-testid="lesson-card">
             <h2 className="mb-4 font-display text-3xl leading-tight tracking-wide text-foreground">{step.title}</h2>
@@ -226,7 +338,13 @@ export function LessonPlayer({
         )}
       </section>
 
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-ink/95 backdrop-blur" data-testid="action-bar">
+      <div
+        className={cn(
+          "fixed inset-x-0 bottom-0 z-30 border-t border-border bg-ink/95 backdrop-blur",
+          panelOpen && device !== "phone" && "pr-[min(100vw,26rem)]",
+        )}
+        data-testid="action-bar"
+      >
         <div className="mx-auto flex max-w-4xl items-center gap-2 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6">
           <Button
             variant="ghost"
@@ -255,6 +373,40 @@ export function LessonPlayer({
           </Button>
         </div>
       </div>
+
+      {chatEnabled && (
+        <AskSelection
+          enabled
+          device={device}
+          chatgptHref={chatgptFor}
+          onAsk={(text) => {
+            addQuote(text);
+            openChat();
+          }}
+        />
+      )}
+      {chatEnabled && panelOpen && (
+        <DivePanel
+          device={device}
+          tab={panelTab}
+          onTab={setPanelTab}
+          onClose={() => setPanelOpen(false)}
+          lessonKey={lesson.key}
+          context={tutorContext}
+          quotes={quotes}
+          onRemoveQuote={(id) => setQuotes((prev) => prev.filter((quote) => quote.id !== id))}
+          onClearQuotes={() => setQuotes([])}
+          draft={draft}
+          onDraft={setDraft}
+          defaultModel={defaultModel}
+          signedIn={configured && !!user}
+          accountsConfigured={configured}
+          loginHref={loginHref}
+          latestQuestion={latestQuestion}
+          onLatestQuestion={rememberQuestion}
+          calcFocus={calcFocus}
+        />
+      )}
 
       {mission && (
         <MissionPassed

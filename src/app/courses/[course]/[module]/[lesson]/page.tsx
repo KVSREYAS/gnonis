@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { LessonPlayer, type PlayerStep } from "@/components/lesson/lesson-player";
 import { Markdown } from "@/components/markdown";
+import { clientDefaultModel } from "@/lib/chat/model-server";
 import { getCourse, getCourses } from "@/lib/content/loader";
 import { courseHref, nextAfter } from "@/lib/content/navigation";
 import type { Exercise } from "@/lib/content/schema";
@@ -36,16 +37,17 @@ export default async function LessonPage({ params }: PageProps<"/courses/[course
 
   const steps: PlayerStep[] = lesson.blocks.map((b) =>
     b.kind === "card"
-      ? { kind: "card", title: b.title, content: <Markdown source={b.markdown} /> }
+      ? { kind: "card", title: b.title, content: <Markdown source={b.markdown} />, text: b.markdown }
       : { kind: "exercise", id: b.id, exercise: forClient(lesson.exercises[b.id]) },
   );
   const next = nextAfter(course, mod.slug, lesson.slug);
 
   return (
     <LessonPlayer
-      key={lesson.slug}
+      key={lessonKey(course.slug, mod.slug, lesson.slug)}
       lesson={{
         key: lessonKey(course.slug, mod.slug, lesson.slug),
+        courseTitle: course.title,
         title: lesson.title,
         kind: lesson.kind,
         xp: lesson.xp,
@@ -59,6 +61,8 @@ export default async function LessonPage({ params }: PageProps<"/courses/[course
       nextHref={next.href}
       nextLabel={next.label}
       mapHref={courseHref(course.slug)}
+      chatEnabled={Boolean(process.env.OPENROUTER_API_KEY?.trim())}
+      defaultModel={clientDefaultModel()}
     />
   );
 }
