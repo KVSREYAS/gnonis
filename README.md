@@ -13,7 +13,9 @@ Atkinson Hyperlegible at 18px, 1.6 line height, 68ch measure, with reader mode, 
 - **Phone mode** is detected automatically (small screen or coarse pointer) and can be forced from the pause menu (the
   menu button in the HUD). Phones only get exercises that declare `phone`. Desktop-only ones show a **Desktop mission**
   badge and can be skipped, and the map remembers them.
-- **Progress is local-first** (localStorage), behind a `ProgressStore` interface so a sync backend can be added later.
+- **Progress is local-first** (localStorage), behind a `ProgressStore` interface. With Supabase configured, players can
+  **sign in** (Google or an email magic link) and their progress syncs between PC and phone. Guests keep playing with
+  localStorage only, and without the Supabase env vars the app runs local-only, exactly as before.
 - **Python runs in the browser** via Pyodide in a Web Worker, loaded only when you reach a code exercise.
 
 ## Run it locally
@@ -33,8 +35,8 @@ npm run dev            # http://127.0.0.1:4317
 | `npm run validate-content` | Parses and cross-checks every course pack. Exits non-zero on any issue |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm test` | Vitest unit tests (schema, progress, grading) |
-| `npm run test:e2e` | Playwright smoke test on desktop and a Pixel 7 viewport. Builds and serves on port 4319, or set `BASE_URL` to reuse a running server |
+| `npm test` | Vitest unit tests (schema, progress, merge rule, Supabase store, grading) |
+| `npm run test:e2e` | Playwright smoke test on desktop and a Pixel 7 viewport, including guest mode. Builds (with the Supabase env vars blanked) and serves on port 4319, or set `BASE_URL` to reuse a running server |
 | `node scripts/screenshots.mjs` | Captures marketing screenshots of a running server (`BASE_URL`, `OUT` env vars) |
 
 The first Playwright run needs a browser: `npx playwright install chromium`.
@@ -45,13 +47,16 @@ CI (`.github/workflows/ci.yml`) runs content validation, lint, typecheck, unit t
 
 ```
 content/courses/<course>/          course packs (YAML + MDX, no code)
-src/app/                           routes: /, /courses/[course], /[module], /[module]/[lesson]
+src/app/                           routes: /, /courses/[course], /[module], /[module]/[lesson], /login, /auth/callback
+src/proxy.ts                       refreshes the Supabase session cookie (Next 16's renamed middleware)
 src/components/                    HUD, map, module intro, lesson player, MISSION PASSED
+src/components/auth/               login screen and the HUD account menu
 src/components/widgets/            one widget per exercise type + registry.tsx
 src/lib/content/                   Zod schema, loader, summaries, navigation
 src/lib/sims/                      simulator models (pure functions)
 src/lib/grading.ts                 graders for every exercise type + boss state machine
-src/lib/progress/                  XP / streak / level logic + ProgressStore
+src/lib/progress/                  XP / streak / level logic, ProgressStore, merge rule, Supabase store
+src/lib/supabase/                  env detection, browser / server / proxy clients
 src/lib/runner/                    CodeRunner interface, Pyodide runner, Piston stub, shared Python harness
 public/workers/pyodide-worker.js   the Web Worker that hosts Pyodide
 scripts/validate-content.ts        the content linter used in CI
@@ -209,12 +214,17 @@ interface ProgressStore {
   save(state: ProgressState): Promise<void>;
   clear(): Promise<void>;
   subscribe?(onChange: (state: ProgressState) => void): () => void;
+  flush?(): Promise<void>;
 }
 ```
 
-`LocalProgressStore` (localStorage key `inference-academy:progress:v1`) is what the app uses. `MemoryProgressStore`
-is for tests. All XP, streak, level and respect rules are pure functions in `src/lib/progress/logic.ts`, so a Supabase
-store only needs to persist and merge `ProgressState`. `migrate()` upgrades older saved shapes.
+- `LocalProgressStore` (localStorage key `inference-academy:progress:v1`) is used by guests.
+- `SupabaseProgressStore` (`src/lib/progress/supabase-store.ts`) is used by signed-in players. See
+  [Accounts and sync](#accounts-and-sync-optional).
+- `MemoryProgressStore` is for tests.
+
+All XP, streak, level and respect rules are pure functions in `src/lib/progress/logic.ts`, and the merge rule is in
+`src/lib/progress/merge.ts`. `migrate()` upgrades older saved shapes.
 
 ### Code runners
 
@@ -236,6 +246,103 @@ interface CodeRunner {
   `__IA_RESULTS__` JSON line. It is not wired up yet. To use it:
   `registerRunner("cpp", () => new PistonRunner("https://your-piston"))`, plus a C++ test harness.
 
+## Accounts and sync (optional)
+
+Accounts use [Supabase Auth](https://supabase.com/docs/guides/auth) through `@supabase/ssr`. They switch on when
+both env vars below are set, and they're off (local-only mode) when either is missing. The build never needs them.
+
+| Variable | Value for the Gnosis project |
+| --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | `https://qmjcdcceipacxgxoxfgb.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | `sb_publishable_l__HZc8ac_qYVo2kWPDuPw_IwyLgAih` |
+
+Both values are public (they ship to the browser), and row-level security protects the data. Never put the
+`service_role` or secret key in a `NEXT_PUBLIC_` variable. For local work, copy `.env.example` to `.env.local`. On
+Vercel, add both under **Project → Settings → Environment Variables** for Production and Preview, then redeploy,
+because `NEXT_PUBLIC_` values are baked in at build time.
+
+### How it works
+
+- **Sign-in**: `/login` offers **Continue with Google** and an **email magic link**. Both use the PKCE flow and come back
+  to `/auth/callback`, which exchanges the code for a session cookie. The callback also accepts `token_hash` + `type`
+  links (see the optional email template below). `src/proxy.ts` refreshes the session cookie on requests that carry
+  one, and guests skip it.
+- **Database**: `public.progress` holds one row per user (`user_id`, `data` jsonb holding the `ProgressState`,
+  `updated_at`), with own-row RLS for select, insert and update. `public.profiles.display_name` (filled by a signup
+  trigger) is shown in the account menu. No schema changes were needed.
+- **Local first, then sync**: every save is written to localStorage (`gnosis:progress:user:<id>:v1`) straight away,
+  then a sync runs about 1.5 s after the last change. The sync pulls the cloud row, merges, and upserts the result. If
+  it fails (offline, server error, expired session), the local copy stays marked unsynced and the sync retries with
+  backoff (2 s up to 60 s), when the browser comes back online, when the tab is focused again, and on the next load.
+  When the tab is hidden, pending changes are flushed. The account menu shows the sync state.
+- **Guest progress on first sign-in**: progress made while signed out is merged into the account and then removed from
+  guest storage, so it can't be claimed twice. It's kept with the account's local copy until the cloud confirms it.
+- **Signing out**: pending changes are pushed first. After that the device is back in guest mode with an empty
+  guest save, and the account's progress returns when you sign in again.
+
+### Merge rule
+
+When two saves meet (phone and PC, or guest progress joining an account), `mergeProgress` combines them like this:
+
+- **Completed items are a union.** A lesson or exercise finished on either side counts as finished. For a lesson on both
+  sides, it keeps the earliest completion time, the higher XP earned, and only the desktop missions still pending on
+  both sides. An exercise counts as solved if either side solved it, and first try if either side got it first try.
+- **XP adds up without double counting.** XP is only paid through lessons, so merged XP is the sum of the merged
+  lessons' XP, and never less than either side's XP. If the phone did lesson A ($60) and the PC did lesson B ($30),
+  the merged XP is $90, not max($60, $30).
+- **Streak**: the side that played most recently wins, and the best streak is the max of both.
+- **Resets win.** Every save has an `epoch`, and **Reset progress** increments it. A save with a higher epoch replaces
+  an older one outright, so a reset on one device isn't undone by another device's older progress. Guest progress
+  claimed at sign-in is the exception: it's always added to the account.
+
+The merge gives the same result in either order, and merging a save with itself changes nothing, so retries and
+repeated syncs are safe.
+
+### Supabase dashboard setup
+
+**Authentication → URL Configuration**
+
+- **Site URL**: `https://gnonis.vercel.app`
+- **Redirect URLs**:
+  - `https://gnonis.vercel.app/**`
+  - `https://*-sreyas9.vercel.app/**` (Vercel preview deployments)
+  - `http://localhost:3000/**`
+
+`npm run dev` serves on port **4317**, so for local sign-in either also add `http://localhost:4317/**` or run
+`npx next dev -p 3000`. Open the app on `localhost`, not `127.0.0.1`, so the redirect matches.
+
+**Email (magic links)**: the email provider is on by default. Supabase's built-in mailer only delivers to members of
+the project's organization, and only about 2 emails an hour. To let friends sign in by email, set up custom SMTP
+under **Authentication → Emails → SMTP Settings** (for example Resend, Postmark or SES), then raise the email rate
+limit under **Authentication → Rate Limits** if needed.
+
+Optional: by default, a magic link only works in the browser that asked for it (PKCE). To make links work across
+devices (ask on the PC, tap the link on the phone), change the **Magic link** template under **Authentication →
+Emails → Templates** so its link is:
+
+```html
+<a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=email">Sign in to Gnosis</a>
+```
+
+Gnosis always includes `?next=` in the redirect URL, so appending `&token_hash=...` is safe.
+
+### Google OAuth setup
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), create or pick a project, then open
+   **Google Auth Platform**.
+2. **Branding**: set the app name (Gnosis), a support email, and a developer contact email.
+3. **Audience**: choose **External**, then **Publish app**. While it's in **Testing**, only listed test users can sign in.
+   Basic scopes don't need Google verification.
+4. **Data Access**: add the scopes `openid`, `.../auth/userinfo.email` and `.../auth/userinfo.profile`.
+5. **Clients → Create client → Web application**:
+   - **Authorized JavaScript origins**: `https://gnonis.vercel.app` and `http://localhost:3000`
+   - **Authorized redirect URIs**: `https://qmjcdcceipacxgxoxfgb.supabase.co/auth/v1/callback`
+6. Copy the **Client ID** and **Client secret**.
+7. In Supabase, go to **Authentication → Sign In / Providers → Google**, turn it on, paste the ID and secret, and save.
+
+Google sends players back to Supabase, and Supabase sends them on to `/auth/callback` on whichever allowed URL
+started the sign-in, so preview deployments work without extra Google configuration.
+
 ## Deploying to Vercel
 
 The app is a standard Next.js App Router project, and every course page is prerendered at build time.
@@ -243,7 +350,9 @@ The app is a standard Next.js App Router project, and every course page is prere
 1. Push the repo to GitHub, GitLab or Bitbucket.
 2. In Vercel, **Add New → Project**, import the repo, and keep the detected **Next.js** preset. The defaults work:
    `npm install`, `npm run build`.
-3. Deploy. There are no environment variables or secrets.
+3. Optionally add the two Supabase env vars ([Accounts and sync](#accounts-and-sync-optional)). Without them the
+   deployment runs local-only with no secrets.
+4. Deploy.
 
 The CLI works too: `npx vercel` for a preview, `npx vercel --prod` for production. Adding or editing a course is a
 content commit, which redeploys.
