@@ -7,8 +7,16 @@ import { safeNextPath } from "@/lib/supabase/redirect";
  * Lands Google OAuth and email magic links. Handles the PKCE `code` (default) and the `token_hash`
  * form (if the email template is changed to link here with `token_hash` and `type`).
  */
+/** The origin the browser used. `nextUrl` can report `localhost` behind `next start -H` or a proxy, which would drop the new cookies. */
+function publicOrigin(request: NextRequest): string {
+  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  if (!host) return request.nextUrl.origin;
+  const proto = request.headers.get("x-forwarded-proto") ?? request.nextUrl.protocol.replace(/:$/, "");
+  return `${proto}://${host}`;
+}
+
 export async function GET(request: NextRequest) {
-  const url = request.nextUrl;
+  const url = new URL(request.nextUrl.pathname + request.nextUrl.search, publicOrigin(request));
   const next = safeNextPath(url.searchParams.get("next"));
   const supabase = await createClient();
   if (!supabase) return NextResponse.redirect(new URL(next, url));

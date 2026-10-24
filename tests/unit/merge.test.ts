@@ -114,7 +114,7 @@ describe("merge helpers", () => {
 
   it("compares saves regardless of key order", () => {
     const a = { ...emptyProgress(), exercises: { x: { attempts: 1, correct: true, firstTry: true } } };
-    const b = JSON.parse(JSON.stringify({ epoch: 0, ...a, exercises: { x: { firstTry: true, correct: true, attempts: 1 } } }));
+    const b = JSON.parse(JSON.stringify({ ...a, exercises: { x: { firstTry: true, correct: true, attempts: 1 } } }));
     expect(sameProgress(a, b)).toBe(true);
     expect(sameProgress(a, { ...a, xp: 1 })).toBe(false);
   });

@@ -19,6 +19,8 @@ export default defineConfig({
     : {
         command: `npm run build && npx next start -H 127.0.0.1 -p ${PORT}`,
         url: baseURL,
+        // The smoke tests cover guest (local-only) mode, so build without Supabase even if a .env sets it.
+        env: { NEXT_PUBLIC_SUPABASE_URL: "", NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "" },
         timeout: 240_000,
         reuseExistingServer: !process.env.CI,
       },

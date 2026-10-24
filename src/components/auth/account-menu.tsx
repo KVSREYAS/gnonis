@@ -39,7 +39,7 @@ export function AccountMenu() {
     return (
       <Link
         href={`/login${next}`}
-        className={buttonVariants({ variant: "ghost", className: "tap gap-1.5 px-2.5 sm:px-3" })}
+        className={buttonVariants({ variant: "ghost", size: "icon", className: "gap-1.5 sm:w-auto sm:px-3" })}
         aria-label="Sign in"
         data-testid="signin-link"
       >

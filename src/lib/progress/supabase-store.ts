@@ -195,7 +195,8 @@ export class SupabaseProgressStore implements ProgressStore {
       this.setStatus("offline");
       return;
     }
-    this.setStatus("syncing");
+    // While retrying after a failure, keep showing the failure until a sync actually succeeds.
+    if (this.status !== "error" && this.status !== "offline") this.setStatus("syncing");
     const startRevision = this.revision;
     try {
       const remote = await this.remote.pull();

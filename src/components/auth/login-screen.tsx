@@ -204,7 +204,7 @@ export function LoginScreen() {
                       type="submit"
                       size="lg"
                       className="mt-3 h-14 w-full font-display text-xl tracking-wider"
-                      disabled={busy !== null || !email.trim()}
+                      disabled={busy !== null}
                       data-testid="email-submit"
                     >
                       {busy === "email" ? <Loader2 className="size-5 animate-spin" aria-hidden /> : <Mail className="size-5" aria-hidden />}
