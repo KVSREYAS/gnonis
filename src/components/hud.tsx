@@ -34,11 +34,11 @@ export function Hud() {
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-ink/95 backdrop-blur supports-[backdrop-filter]:bg-ink/85">
       <div className="mx-auto flex h-12 max-w-6xl items-center gap-3 px-3 sm:h-14 sm:px-5">
-        <Link href="/" className="tap flex items-center gap-2 rounded" aria-label="Inference Academy home">
+        <Link href="/" className="tap flex items-center gap-2 rounded" aria-label="Gnosis home">
           <span className="sunset grid size-8 place-items-center rounded font-display text-lg text-white" aria-hidden>
-            IA
+            GN
           </span>
-          <span className="hidden font-display text-lg tracking-wide text-foreground sm:inline">INFERENCE ACADEMY</span>
+          <span className="hidden font-display text-lg tracking-wide text-foreground sm:inline">GNOSIS</span>
         </Link>
 
         <div className="ml-auto flex items-center gap-3 sm:gap-5">

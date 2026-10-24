@@ -1,4 +1,4 @@
-# Inference Academy
+# Gnosis
 
 A personal, boot.dev-style course player for learning how LLM inference really works: tokens, attention, the KV cache,
 GPU memory and the roofline, and more. Lessons are short reading cards with interactive missions in between: multiple

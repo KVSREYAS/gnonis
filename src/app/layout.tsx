@@ -11,7 +11,7 @@ const body = Atkinson_Hyperlegible({ variable: "--font-body", weight: ["400", "7
 const code = JetBrains_Mono({ variable: "--font-code", subsets: ["latin"], display: "swap" });
 
 export const metadata: Metadata = {
-  title: { default: "Inference Academy", template: "%s · Inference Academy" },
+  title: { default: "Gnosis", template: "%s · Gnosis" },
   description: "Learn LLM inference by doing: tokens, attention, KV caches, rooflines and the systems that serve models.",
 };
 
