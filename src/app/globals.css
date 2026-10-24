@@ -227,6 +227,59 @@
   padding: 0.25em 0;
 }
 
+/* Tutor replies: same high-contrast reading rules, sized for the side panel. */
+.chat-md {
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  color: var(--text);
+}
+.chat-md p,
+.chat-md ul,
+.chat-md ol,
+.chat-md pre,
+.chat-md table {
+  margin: 0 0 0.7em;
+}
+.chat-md ul {
+  list-style: disc;
+  padding-left: 1.2em;
+}
+.chat-md ol {
+  list-style: decimal;
+  padding-left: 1.2em;
+}
+.chat-md li::marker {
+  color: var(--gold-ink);
+}
+.chat-md a {
+  color: var(--gold-ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.chat-md code {
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-size: 0.88em;
+  background: var(--panel-2);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+.chat-md pre {
+  background: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.7em 0.8em;
+  overflow-x: auto;
+  font-size: 0.85em;
+  line-height: 1.5;
+}
+.chat-md pre code {
+  background: none;
+  padding: 0;
+}
+.chat-md > :last-child {
+  margin-bottom: 0;
+}
+
 /* ---------- Motion ---------- */
 
 @keyframes blip-pulse {

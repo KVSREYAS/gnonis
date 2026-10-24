@@ -48,6 +48,7 @@ CI (`.github/workflows/ci.yml`) runs content validation, lint, typecheck, unit t
 ```
 content/courses/<course>/          course.yaml, lessons/<nn>-<slug>.mdx, assets/ (see docs/AUTHORING.md)
 src/app/                           routes: /, /courses/..., /preview/[course]/[lesson], /login, /auth/callback
+src/app/api/chat/route.ts          signed-in dive-deeper tutor (streams from OpenRouter)
 src/proxy.ts                       refreshes the Supabase session cookie (Next 16's renamed middleware)
 src/components/                    HUD, map, module intro, lesson player, MISSION PASSED
 src/components/auth/               login screen and the HUD account menu
@@ -57,7 +58,10 @@ src/lib/content/                   Zod schema, MDX parser, loader, summaries, na
 src/lib/sims/                      simulator models (pure functions)
 src/lib/grading.ts                 graders for every exercise type + boss state machine
 src/lib/progress/                  XP / streak / level logic, ProgressStore, merge rule, Supabase store
+src/lib/chat/                      tutor prompt, model allowlist, daily caps, local chat history
+src/lib/calc/                      safe expression parser for the side-panel calculator
 src/lib/supabase/                  env detection, browser / server / proxy clients
+supabase/migrations/               SQL to apply in the Supabase project (chat usage)
 src/lib/runner/                    CodeRunner interface, Pyodide runner, Piston stub, shared Python harness
 public/workers/pyodide-worker.js   the Web Worker that hosts Pyodide
 scripts/validate-content.ts        the content linter used in CI
@@ -221,6 +225,38 @@ built-in mailer only sends to members of your Supabase organization, about 2 ema
 Google sends players back to Supabase, and Supabase sends them on to `/auth/callback` on whichever allowed URL
 started the sign-in, so preview deployments work without extra Google configuration.
 
+## Dive deeper (optional)
+
+On a lesson, and on `/preview`, a **Dive deeper** button opens a tutor for the step that's on screen. Desktop gets a right-hand drawer; phones get a bottom sheet. Highlight text in a reading card (prose, code, and tables from the MDX lesson) and an **Ask about this** chip quotes it into the next message (Ctrl/Cmd+L does the same on desktop). Ctrl/Cmd+Shift+K focuses the calculator. Chat history stays in this browser, one transcript per lesson, with a Clear button.
+
+The tutor is told the course, lesson, and step, and it will not hand out an unanswered quiz or puzzle answer. A globe turns on [OpenRouter web search](https://openrouter.ai/docs/guides/features/plugins/web-search) (`plugins: [{ id: "web", max_results: 3 }]`). It is off by default. Citations come back as links under the reply. **Go deeper in ChatGPT** (plus Claude and Grok) opens that chat with the step, any highlights, and the latest question filled in. The link stays under about 6000 characters by shortening the on-screen text first.
+
+The panel is hidden when `OPENROUTER_API_KEY` is missing, the same way sign-in disappears without the Supabase env vars. The key is read on the server while the lesson pages are built, so adding it needs a redeploy, same as the public Supabase vars. It is never sent to the browser.
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `OPENROUTER_API_KEY` | unset (panel hidden) | Server-only key for `https://openrouter.ai/api/v1` |
+| `OPENROUTER_MODEL` | `anthropic/claude-haiku-5.5` | Default model. An allowlisted id starts the picker there. Any other id stays on the server until the learner picks one. A saved picker choice wins |
+| `CHAT_DAILY_LIMIT` | `40` | Messages per signed-in user per UTC day |
+| `CHAT_DAILY_WEB_LIMIT` | `10` | Web lookups per user per UTC day. Each one also uses one message from the daily cap |
+
+Output is capped at about 800 tokens, and only the last 12 messages are sent. Prices below are USD per 1M tokens (input / output), from OpenRouter's model list on 24 Oct 2026:
+
+| Model | In the picker | Price |
+| --- | --- | --- |
+| `anthropic/claude-haiku-5.5` | Claude Haiku (default) | $0.10 / $0.50 |
+| `deepseek/deepseek-v4-flash` | DeepSeek Flash | $0.091 / $0.182 |
+| `z-ai/glm-5.3-flash` | GLM Flash | $0.15 / $0.50 |
+| `qwen/qwen3.7-flash` | Qwen Flash | $0.03 / $0.13 |
+
+The server rejects any other model id coming from the browser. Web search adds a provider fee on top of those tokens: native search for Anthropic (Haiku) is billed by the provider, and other models fall back to Exa's auto engine at about $0.007 per lookup. Leaving the globe off keeps a normal chat on the token price only.
+
+Only a signed-in user can send a message. The route checks the Supabase session, then calls `increment_chat_usage`, which bumps `chat_usage` for that user and UTC day in one transaction and stops at the cap. Over the cap, the panel shows a plain message instead of calling the model.
+
+Apply `supabase/migrations/20261024140000_chat_usage.sql` once (SQL editor, or `supabase db push` if you use the CLI). The table is `public.chat_usage(user_id, day, count, web_count)` with own-row select RLS. Clients cannot insert or update it. The increment is a security-definer function in the `private` schema, exposed only through `public.increment_chat_usage(p_web, p_limit, p_web_limit)`.
+
+The **Calc** tab evaluates expressions locally (no `eval`): `2*7e9*2/1e9`, powers, parentheses, `sqrt` / `log` / `ln`, and `KB` `MB` `GB` `TB` (decimal) plus `KiB` `MiB` `GiB` `TiB`.
+
 ## Deploying to Vercel
 
 The app is a standard Next.js App Router project, and every course page is prerendered at build time.
@@ -230,7 +266,10 @@ The app is a standard Next.js App Router project, and every course page is prere
    `npm install`, `npm run build`.
 3. Optionally add the two Supabase env vars ([Accounts and sync](#accounts-and-sync-optional)). Without them the
    deployment runs local-only with no secrets.
-4. Deploy.
+4. Optionally add `OPENROUTER_API_KEY` and, if you want, `OPENROUTER_MODEL`, `CHAT_DAILY_LIMIT`, and
+   `CHAT_DAILY_WEB_LIMIT` ([Dive deeper](#dive-deeper-optional)). Apply the chat usage migration in Supabase first.
+   Without the key the dive-deeper panel stays hidden.
+5. Deploy.
 
 The CLI works too: `npx vercel` for a preview, `npx vercel --prod` for production. Adding or editing a course is a
 content commit, which redeploys.
