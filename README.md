@@ -14,7 +14,7 @@ Atkinson Hyperlegible at 18px, 1.6 line height, 68ch measure, with reader mode, 
   menu button in the HUD). Phones only get exercises that declare `phone`. Desktop-only ones show a **Desktop mission**
   badge and can be skipped, and the map remembers them.
 - **Progress is local-first** (localStorage), behind a `ProgressStore` interface. With Supabase configured, players can
-  **sign in** (Google or an email magic link) and their progress syncs between PC and phone. Guests keep playing with
+  **sign in** (Google, or email and password) and their progress syncs between PC and phone. Guests keep playing with
   localStorage only, and without the Supabase env vars the app runs local-only, exactly as before.
 - **Python runs in the browser** via Pyodide in a Web Worker, loaded only when you reach a code exercise.
 
@@ -35,8 +35,8 @@ npm run dev            # http://127.0.0.1:4317
 | `npm run validate-content` | Parses and cross-checks every course pack. Exits non-zero on any issue |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm test` | Vitest unit tests (schema, progress, merge rule, Supabase store, grading) |
-| `npm run test:e2e` | Playwright smoke test on desktop and a Pixel 7 viewport, including guest mode. Builds (with the Supabase env vars blanked) and serves on port 4319, or set `BASE_URL` to reuse a running server |
+| `npm test` | Vitest unit tests (schema, progress, merge rule, Supabase store, sign-in form logic, grading) |
+| `npm run test:e2e` | Playwright on desktop and a Pixel 7 viewport. Builds two copies: a guest build with the Supabase env vars blanked (port 4319; `BASE_URL` reuses a running server), and an accounts build in `.next-accounts` pointed at a fake Supabase URL that the tests intercept, to drive the login form (port 4321; `ACCOUNTS_BASE_URL` reuses a running server) |
 | `node scripts/screenshots.mjs` | Captures marketing screenshots of a running server (`BASE_URL`, `OUT` env vars) |
 
 The first Playwright run needs a browser: `npx playwright install chromium`.
@@ -263,10 +263,15 @@ because `NEXT_PUBLIC_` values are baked in at build time.
 
 ### How it works
 
-- **Sign-in**: `/login` offers **Continue with Google** and an **email magic link**. Both use the PKCE flow and come back
-  to `/auth/callback`, which exchanges the code for a session cookie. The callback also accepts `token_hash` + `type`
-  links (see the optional email template below). `src/proxy.ts` refreshes the session cookie on requests that carry
-  one, and guests skip it.
+- **Sign-in**: `/login` has **Sign in** and **Create account** tabs. Both offer **Continue with Google** and an email
+  and password form (`signInWithPassword` / `signUp`). Creating an account asks for a display name, saved as
+  `full_name` in user metadata so the signup trigger copies it into `profiles.display_name`. Passwords need at least
+  8 characters. With **Confirm email** off, sign-up signs the player straight in. If Supabase returns no session (for
+  example, confirmation was turned back on), the screen asks them to check their email instead. There's no
+  "Forgot password?" yet, because resetting needs email sending (there's a TODO in `login-screen.tsx`).
+- **Google** uses the PKCE flow and comes back to `/auth/callback`, which exchanges the code for a session cookie. The
+  callback also accepts `token_hash` + `type` links for confirmation emails. `src/proxy.ts` refreshes the session
+  cookie on requests that carry one, and guests skip it.
 - **Database**: `public.progress` holds one row per user (`user_id`, `data` jsonb holding the `ProgressState`,
   `updated_at`), with own-row RLS for select, insert and update. `public.profiles.display_name` (filled by a signup
   trigger) is shown in the account menu. No schema changes were needed.
@@ -311,20 +316,11 @@ repeated syncs are safe.
 `npm run dev` serves on port **4317**, so for local sign-in either also add `http://localhost:4317/**` or run
 `npx next dev -p 3000`. Open the app on `localhost`, not `127.0.0.1`, so the redirect matches.
 
-**Email (magic links)**: the email provider is on by default. Supabase's built-in mailer only delivers to members of
-the project's organization, and only about 2 emails an hour. To let friends sign in by email, set up custom SMTP
-under **Authentication → Emails → SMTP Settings** (for example Resend, Postmark or SES), then raise the email rate
-limit under **Authentication → Rate Limits** if needed.
-
-Optional: by default, a magic link only works in the browser that asked for it (PKCE). To make links work across
-devices (ask on the PC, tap the link on the phone), change the **Magic link** template under **Authentication →
-Emails → Templates** so its link is:
-
-```html
-<a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=email">Sign in to Gnosis</a>
-```
-
-Gnosis always includes `?next=` in the redirect URL, so appending `&token_hash=...` is safe.
+**Authentication → Sign In / Providers → Email**: keep **Email** enabled, turn **Confirm email** **off**, and set
+**Minimum password length** to 8 so the server enforces the same rule as the form. Then save.
+Sign-up then creates the account and signs the player in at once, and Gnosis never needs to send email, so the
+built-in mailer's limits don't matter. If you turn confirmation back on later, configure custom SMTP first (the
+built-in mailer only sends to members of your Supabase organization, about 2 emails an hour).
 
 ### Google OAuth setup
 

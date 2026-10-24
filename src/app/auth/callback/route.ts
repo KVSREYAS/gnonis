@@ -4,8 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { safeNextPath } from "@/lib/supabase/redirect";
 
 /**
- * Lands Google OAuth and email magic links. Handles the PKCE `code` (default) and the `token_hash`
- * form (if the email template is changed to link here with `token_hash` and `type`).
+ * Lands Google OAuth, plus sign-up confirmation links if "Confirm email" is ever turned on. Handles
+ * the PKCE `code` (default) and the `token_hash` + `type` form used by custom email templates.
  */
 /** The origin the browser used. `nextUrl` can report `localhost` behind `next start -H` or a proxy, which would drop the new cookies. */
 function publicOrigin(request: NextRequest): string {

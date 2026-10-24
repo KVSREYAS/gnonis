@@ -1,30 +1,36 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { useId, useState } from "react";
-import { ArrowLeft, Loader2, Mail, MailCheck } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useId, useRef, useState } from "react";
+import { AlertTriangle, ArrowLeft, Eye, EyeOff, Loader2, LogIn, MailCheck, UserPlus } from "lucide-react";
 import { Scene } from "@/components/art";
 import { useAuth, useProgress } from "@/components/providers";
 import { Button, buttonVariants } from "@/components/ui/button";
+import {
+  MAX_NAME_LENGTH,
+  MIN_PASSWORD_LENGTH,
+  submitEmailPassword,
+  type AuthMode,
+  type AuthValues,
+  type FieldErrors,
+} from "@/lib/auth/email-password";
 import { createClient } from "@/lib/supabase/client";
 import { safeNextPath } from "@/lib/supabase/redirect";
 import { cn } from "@/lib/utils";
 
-const ERRORS: Record<string, string> = {
-  "different-browser":
-    "That link was opened in a different browser from the one that asked for it. Ask for a new link below, then open it on this device. On iPhone, if your mail app opens links inside itself, press and hold the link and choose Open in Safari.",
-  "missing-code": "That sign-in link is incomplete. Ask for a new one below.",
+const CALLBACK_ERRORS: Record<string, string> = {
+  "different-browser": "That sign-in was finished in a different browser from the one that started it. Try again from this device.",
+  "missing-code": "That sign-in link is incomplete. Try again.",
 };
 
-function describeError(code: string | null): string | null {
+function describeCallbackError(code: string | null): string | null {
   if (!code) return null;
-  return ERRORS[code] ?? `Sign-in failed: ${code}`;
+  return CALLBACK_ERRORS[code] ?? `Sign-in failed: ${code}`;
 }
 
 function callbackUrl(next: string) {
   const url = new URL("/auth/callback", window.location.origin);
-  // Always present, so an email template can append `&token_hash=...` to {{ .RedirectTo }}.
   url.searchParams.set("next", next);
   return url.toString();
 }
@@ -40,17 +46,71 @@ export function GoogleIcon({ className }: { className?: string }) {
   );
 }
 
+/** The GTA-style "BUSTED" banner for a failed sign-in or sign-up. */
+function Busted({ message }: { message: string }) {
+  return (
+    <div role="alert" className="mt-4 rounded-lg border border-danger/70 bg-danger/10 px-4 py-3" data-testid="auth-error">
+      <p className="font-display text-2xl leading-none tracking-widest text-danger">BUSTED</p>
+      <p className="mt-1.5 text-base text-foreground">{message}</p>
+    </div>
+  );
+}
+
+function FieldError({ id, message }: { id: string; message?: string }) {
+  if (!message) return null;
+  return (
+    <p id={id} className="mt-1.5 flex items-start gap-1.5 text-base text-foreground" data-testid="field-error">
+      <AlertTriangle className="mt-1 size-4 shrink-0 text-danger" aria-hidden />
+      {message}
+    </p>
+  );
+}
+
+const inputClass = cn(
+  "mt-1.5 h-14 w-full rounded-lg border border-input bg-panel px-4 text-lg text-foreground placeholder:text-muted-foreground",
+  "focus-visible:border-gold aria-invalid:border-danger",
+);
+
+const TABS: { mode: AuthMode; label: string }[] = [
+  { mode: "signin", label: "Sign in" },
+  { mode: "signup", label: "Create account" },
+];
+
 export function LoginScreen() {
   const params = useSearchParams();
+  const router = useRouter();
   const next = safeNextPath(params.get("next"));
   const { configured, ready, user, signOut } = useAuth();
   const { flush } = useProgress();
-  const emailId = useId();
+  const id = useId();
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
-  const [email, setEmail] = useState("");
-  const [busy, setBusy] = useState<"google" | "email" | "signout" | null>(null);
-  const [sentTo, setSentTo] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(() => describeError(params.get("error")));
+  const [mode, setMode] = useState<AuthMode>(params.get("mode") === "signup" ? "signup" : "signin");
+  const [values, setValues] = useState<AuthValues>({ name: "", email: "", password: "" });
+  const [showPassword, setShowPassword] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [busy, setBusy] = useState<"google" | "form" | "signout" | null>(null);
+  const [checkEmail, setCheckEmail] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(() => describeCallbackError(params.get("error")));
+
+  function switchMode(m: AuthMode) {
+    setMode(m);
+    setFieldErrors({});
+    setError(null);
+  }
+
+  function onTabKey(e: React.KeyboardEvent, index: number) {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    const nextIndex = (index + (e.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length;
+    switchMode(TABS[nextIndex].mode);
+    tabRefs.current[nextIndex]?.focus();
+  }
+
+  function setField(field: keyof AuthValues, value: string) {
+    setValues((v) => ({ ...v, [field]: value }));
+    if (fieldErrors[field]) setFieldErrors((f) => ({ ...f, [field]: undefined }));
+  }
 
   async function google() {
     const client = createClient();
@@ -59,25 +119,33 @@ export function LoginScreen() {
     setError(null);
     const { error } = await client.auth.signInWithOAuth({ provider: "google", options: { redirectTo: callbackUrl(next) } });
     if (error) {
-      setError(`Google sign-in failed: ${error.message}`);
+      setError(`Google sign-in didn't start: ${error.message}`);
       setBusy(null);
     }
   }
 
-  async function sendLink(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     const client = createClient();
-    const address = email.trim();
-    if (!client || !address) return;
-    setBusy("email");
+    if (!client) return;
+    setBusy("form");
     setError(null);
-    const { error } = await client.auth.signInWithOtp({ email: address, options: { emailRedirectTo: callbackUrl(next) } });
+    const outcome = await submitEmailPassword(client.auth, mode, values, callbackUrl(next));
     setBusy(null);
-    if (error) {
-      setError(error.status === 429 ? "Too many links sent. Wait a minute, then try again." : `Couldn't send the link: ${error.message}`);
-      return;
+    switch (outcome.kind) {
+      case "invalid":
+        setFieldErrors(outcome.errors);
+        document.getElementById(`${id}-${Object.keys(outcome.errors)[0]}`)?.focus();
+        return;
+      case "error":
+        setError(outcome.message);
+        return;
+      case "check-email":
+        setCheckEmail(outcome.email);
+        return;
+      case "signed-in":
+        router.replace(next);
     }
-    setSentTo(address);
   }
 
   async function leave() {
@@ -86,6 +154,9 @@ export function LoginScreen() {
     await signOut();
     setBusy(null);
   }
+
+  const describedBy = (field: keyof AuthValues, hint?: string) =>
+    [fieldErrors[field] ? `${id}-${field}-error` : null, hint].filter(Boolean).join(" ") || undefined;
 
   return (
     <div className="flex flex-1 flex-col">
@@ -106,7 +177,7 @@ export function LoginScreen() {
             <div className="p-5 sm:p-7">
               <p className="text-sm font-bold tracking-widest text-gold-ink uppercase">Gnosis · Save game</p>
               <h1 className="mt-1 font-display text-5xl leading-none tracking-wide text-foreground">
-                {user ? "SAVE LOADED" : "SAVE YOUR GAME"}
+                {user ? "SAVE LOADED" : mode === "signup" && !checkEmail ? "NEW SAVE FILE" : "SAVE YOUR GAME"}
               </h1>
 
               {!configured ? (
@@ -133,84 +204,188 @@ export function LoginScreen() {
                     {busy === "signout" ? "Signing out…" : "Sign out"}
                   </Button>
                 </>
-              ) : sentTo ? (
-                <div role="status" data-testid="magic-link-sent">
+              ) : checkEmail ? (
+                <div role="status" data-testid="check-email">
                   <p className="mt-4 flex items-center gap-2 font-display text-2xl tracking-wide text-money-ink">
                     <MailCheck className="size-6" aria-hidden /> CHECK YOUR EMAIL
                   </p>
                   <p className="mt-2 text-lg text-foreground">
-                    We sent a sign-in link to <strong className="break-all">{sentTo}</strong>.
+                    Your account is made. We sent a confirmation link to <strong className="break-all">{checkEmail}</strong>.
                   </p>
-                  <p className="mt-2 text-base text-muted-foreground">
-                    Open it on this device, in this browser. It can take a minute to arrive, so check spam too.
-                  </p>
-                  <Button variant="outline" size="lg" className="mt-6 w-full" onClick={() => setSentTo(null)}>
-                    Use a different email
+                  <p className="mt-2 text-base text-muted-foreground">Open it, then come back here and sign in. Check spam if it doesn&apos;t show up.</p>
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    className="mt-6 w-full"
+                    onClick={() => {
+                      setCheckEmail(null);
+                      switchMode("signin");
+                    }}
+                  >
+                    Back to sign in
                   </Button>
                 </div>
               ) : (
                 <>
-                  <p className="mt-3 text-lg text-foreground">
-                    Sign in to keep your progress in sync between your PC and phone. Progress you made as a guest comes with you.
-                  </p>
-
-                  {error && (
-                    <p role="alert" className="mt-4 rounded-lg border border-danger/60 bg-danger/10 px-3 py-2 text-base text-foreground">
-                      {error}
-                    </p>
-                  )}
-
-                  <Button
-                    size="lg"
-                    variant="outline"
-                    className="mt-5 h-14 w-full gap-3 bg-white text-lg font-bold text-[#141414] hover:bg-white/90 hover:text-[#141414] dark:bg-white dark:hover:bg-white/90"
-                    onClick={google}
-                    disabled={busy !== null}
-                    data-testid="google-signin"
-                  >
-                    {busy === "google" ? <Loader2 className="size-5 animate-spin" aria-hidden /> : <GoogleIcon className="size-6" />}
-                    Continue with Google
-                  </Button>
-
-                  <div className="my-5 flex items-center gap-3 text-sm font-bold tracking-widest text-muted-foreground" aria-hidden>
-                    <span className="h-px flex-1 bg-border" /> OR <span className="h-px flex-1 bg-border" />
+                  <div role="tablist" aria-label="Sign in or create an account" className="mt-5 grid grid-cols-2 rounded-lg border border-border bg-ink p-1">
+                    {TABS.map((t, i) => (
+                      <button
+                        key={t.mode}
+                        ref={(el) => {
+                          tabRefs.current[i] = el;
+                        }}
+                        type="button"
+                        role="tab"
+                        id={`${id}-tab-${t.mode}`}
+                        aria-selected={mode === t.mode}
+                        aria-controls={`${id}-panel`}
+                        tabIndex={mode === t.mode ? 0 : -1}
+                        onClick={() => switchMode(t.mode)}
+                        onKeyDown={(e) => onTabKey(e, i)}
+                        className={cn(
+                          "min-h-11 rounded-md px-2 font-display text-base tracking-wider whitespace-nowrap min-[400px]:text-lg",
+                          mode === t.mode ? "bg-gold text-ink" : "text-muted-foreground hover:text-foreground",
+                        )}
+                        data-testid={`tab-${t.mode}`}
+                      >
+                        {t.label.toUpperCase()}
+                      </button>
+                    ))}
                   </div>
 
-                  <form onSubmit={sendLink}>
-                    <label htmlFor={emailId} className="block text-base font-bold text-foreground">
-                      Email
-                    </label>
-                    <input
-                      id={emailId}
-                      type="email"
-                      name="email"
-                      required
-                      autoComplete="email"
-                      inputMode="email"
-                      autoCapitalize="none"
-                      autoCorrect="off"
-                      spellCheck={false}
-                      enterKeyHint="send"
-                      placeholder="you@example.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className={cn(
-                        "mt-1.5 h-14 w-full rounded-lg border border-input bg-panel px-4 text-lg text-foreground placeholder:text-muted-foreground",
-                        "focus-visible:border-gold",
-                      )}
-                      data-testid="email-input"
-                    />
+                  <div role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-tab-${mode}`}>
+                    <p className="mt-4 text-lg text-foreground">
+                      {mode === "signup"
+                        ? "Make an account to keep your progress in sync between your PC and phone. Progress you made as a guest comes with you."
+                        : "Welcome back. Sign in to load your save on this device. Progress you made as a guest comes with you."}
+                    </p>
+
+                    {error && <Busted message={error} />}
+
                     <Button
-                      type="submit"
                       size="lg"
-                      className="mt-3 h-14 w-full font-display text-xl tracking-wider"
+                      variant="outline"
+                      className="mt-5 h-14 w-full gap-3 bg-white text-lg font-bold text-[#141414] hover:bg-white/90 hover:text-[#141414] dark:bg-white dark:hover:bg-white/90"
+                      onClick={google}
                       disabled={busy !== null}
-                      data-testid="email-submit"
+                      data-testid="google-signin"
                     >
-                      {busy === "email" ? <Loader2 className="size-5 animate-spin" aria-hidden /> : <Mail className="size-5" aria-hidden />}
-                      Email me a sign-in link
+                      {busy === "google" ? <Loader2 className="size-5 animate-spin" aria-hidden /> : <GoogleIcon className="size-6" />}
+                      Continue with Google
                     </Button>
-                  </form>
+
+                    <div className="my-5 flex items-center gap-3 text-sm font-bold tracking-widest text-muted-foreground" aria-hidden>
+                      <span className="h-px flex-1 bg-border" /> OR USE EMAIL <span className="h-px flex-1 bg-border" />
+                    </div>
+
+                    <form onSubmit={submit} noValidate data-testid="auth-form" className="grid gap-4">
+                      {mode === "signup" && (
+                        <div>
+                          <label htmlFor={`${id}-name`} className="block text-base font-bold text-foreground">
+                            Display name
+                          </label>
+                          <input
+                            id={`${id}-name`}
+                            name="name"
+                            autoComplete="nickname"
+                            autoCapitalize="words"
+                            maxLength={MAX_NAME_LENGTH}
+                            enterKeyHint="next"
+                            value={values.name}
+                            onChange={(e) => setField("name", e.target.value)}
+                            aria-invalid={!!fieldErrors.name}
+                            aria-describedby={describedBy("name")}
+                            className={inputClass}
+                            data-testid="name-input"
+                          />
+                          <FieldError id={`${id}-name-error`} message={fieldErrors.name} />
+                        </div>
+                      )}
+
+                      <div>
+                        <label htmlFor={`${id}-email`} className="block text-base font-bold text-foreground">
+                          Email
+                        </label>
+                        <input
+                          id={`${id}-email`}
+                          type="email"
+                          name="email"
+                          autoComplete={mode === "signup" ? "email" : "username"}
+                          inputMode="email"
+                          autoCapitalize="none"
+                          autoCorrect="off"
+                          spellCheck={false}
+                          enterKeyHint="next"
+                          placeholder="you@example.com"
+                          value={values.email}
+                          onChange={(e) => setField("email", e.target.value)}
+                          aria-invalid={!!fieldErrors.email}
+                          aria-describedby={describedBy("email")}
+                          className={inputClass}
+                          data-testid="email-input"
+                        />
+                        <FieldError id={`${id}-email-error`} message={fieldErrors.email} />
+                      </div>
+
+                      <div>
+                        <label htmlFor={`${id}-password`} className="block text-base font-bold text-foreground">
+                          Password
+                        </label>
+                        <div className="relative">
+                          <input
+                            id={`${id}-password`}
+                            type={showPassword ? "text" : "password"}
+                            name="password"
+                            autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                            autoCapitalize="none"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            enterKeyHint="go"
+                            minLength={mode === "signup" ? MIN_PASSWORD_LENGTH : undefined}
+                            value={values.password}
+                            onChange={(e) => setField("password", e.target.value)}
+                            aria-invalid={!!fieldErrors.password}
+                            aria-describedby={describedBy("password", mode === "signup" ? `${id}-password-hint` : undefined)}
+                            className={cn(inputClass, "pr-14")}
+                            data-testid="password-input"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword((s) => !s)}
+                            aria-label={showPassword ? "Hide password" : "Show password"}
+                            aria-pressed={showPassword}
+                            className="absolute top-1.5 right-1 grid size-12 place-items-center rounded-md text-muted-foreground hover:text-foreground"
+                          >
+                            {showPassword ? <EyeOff className="size-5" aria-hidden /> : <Eye className="size-5" aria-hidden />}
+                          </button>
+                        </div>
+                        {mode === "signup" && (
+                          <p id={`${id}-password-hint`} className="mt-1.5 text-sm text-muted-foreground">
+                            At least {MIN_PASSWORD_LENGTH} characters.
+                          </p>
+                        )}
+                        <FieldError id={`${id}-password-error`} message={fieldErrors.password} />
+                        {/* TODO: add "Forgot password?" (resetPasswordForEmail plus a reset page) once the project can send email via custom SMTP. */}
+                      </div>
+
+                      <Button
+                        type="submit"
+                        size="lg"
+                        className="h-14 w-full font-display text-xl tracking-wider"
+                        disabled={busy !== null}
+                        data-testid="auth-submit"
+                      >
+                        {busy === "form" ? (
+                          <Loader2 className="size-5 animate-spin" aria-hidden />
+                        ) : mode === "signup" ? (
+                          <UserPlus className="size-5" aria-hidden />
+                        ) : (
+                          <LogIn className="size-5" aria-hidden />
+                        )}
+                        {mode === "signup" ? "Create account" : "Sign in"}
+                      </Button>
+                    </form>
+                  </div>
 
                   <p className="mt-6 border-t border-border pt-4 text-base text-muted-foreground">
                     No account needed to play.{" "}
