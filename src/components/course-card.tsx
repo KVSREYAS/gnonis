@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { useProgress } from "@/components/providers";
 import type { CourseSummary } from "@/lib/content/types";
+import { courseHref } from "@/lib/content/navigation";
 import { respect } from "@/lib/progress/logic";
 import { RespectBar } from "@/components/respect-bar";
 
@@ -18,7 +19,7 @@ export function CourseCard({ course }: { course: CourseSummary }) {
   const ready = course.modules.filter((m) => m.status === "ready").length;
   return (
     <Link
-      href={`/courses/${course.slug}`}
+      href={courseHref(course.slug)}
       className="group flex flex-col rounded-xl border border-border bg-panel p-5 transition-colors hover:border-gold focus-visible:border-gold sm:p-6"
       data-testid={`course-${course.slug}`}
     >

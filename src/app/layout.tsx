@@ -5,6 +5,7 @@ import "./globals.css";
 import { getRenameMap } from "@/lib/content/renames";
 import { Providers } from "@/components/providers";
 import { Hud } from "@/components/hud";
+import { DIVE_PANEL_BOOT_SCRIPT } from "@/lib/chat/dive-panel";
 import { SETTINGS_BOOT_SCRIPT } from "@/lib/settings";
 
 const anton = Anton({ variable: "--font-anton", weight: "400", subsets: ["latin"], display: "swap" });
@@ -32,6 +33,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: SETTINGS_BOOT_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: DIVE_PANEL_BOOT_SCRIPT }} />
       </head>
       <body className="flex min-h-full flex-col">
         <Providers renames={getRenameMap()}>

@@ -124,10 +124,11 @@ interface CodeRunner {
 }
 ```
 
-- `PyodideRunner` loads Pyodide from the jsDelivr CDN inside `public/workers/pyodide-worker.js`, a module
-  worker (`pyodide.mjs`). Pyodide 314 refuses classic workers. The worker starts only when a code exercise
-  mounts. Runs time out after 8 seconds, and the worker is then killed and restarted, so `while True:` can't hang
-  the tab.
+- `PyodideRunner` loads Pyodide 0.29.5 (`src/lib/runner/pyodide-config.ts`) inside `public/workers/pyodide-worker.js`.
+  The worker is a classic worker so iPhone Safari can `importScripts` the runtime; if that fails it retries as a
+  module worker, then the jsDelivr npm mirror, then unpkg. One worker is kept for the browser session. Runs time out
+  after 8 seconds, and the worker is then killed and restarted, so `while True:` can't hang the tab. A failed
+  download shows **Python failed to load — Retry** instead of a zero-millisecond run.
 - `PistonRunner` (`src/lib/runner/piston-runner.ts`) posts to a [Piston](https://github.com/engineer-man/piston)
   `/api/v2/execute` endpoint. It wraps the code with the same Python harness the browser uses, which prints one
   `__IA_RESULTS__` JSON line. It is not wired up yet. To use it:
@@ -275,5 +276,6 @@ The app is a standard Next.js App Router project, and every course page is prere
 The CLI works too: `npx vercel` for a preview, `npx vercel --prod` for production. Adding or editing a course is a
 content commit, which redeploys.
 
-Learners' browsers fetch Pyodide from `cdn.jsdelivr.net`. If you add a Content-Security-Policy, allow that origin for
-`script-src` and `connect-src`, and `'wasm-unsafe-eval'`.
+Learners' browsers fetch Pyodide from jsDelivr, then unpkg if that fails. `next.config.ts` sends a
+Content-Security-Policy that allows those origins on `script-src`, `worker-src`, and `connect-src`, plus
+`'wasm-unsafe-eval'`.
