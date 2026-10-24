@@ -1,11 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
-import { useDevice, useProgress, useSettings } from "@/components/providers";
+import { useAuth, useDevice, useProgress, useSettings } from "@/components/providers";
 import { levelForXp } from "@/lib/progress/logic";
 import type { Settings } from "@/lib/settings";
 import { cn } from "@/lib/utils";
@@ -57,7 +58,8 @@ function Segmented<T extends string>({
 export function SettingsMenu() {
   const { settings, update } = useSettings();
   const device = useDevice();
-  const { state, reset } = useProgress();
+  const { state, reset, cloud } = useProgress();
+  const { configured } = useAuth();
   const [confirmReset, setConfirmReset] = useState(false);
   const lvl = levelForXp(state.xp);
 
@@ -116,7 +118,21 @@ export function SettingsMenu() {
           </div>
           <div className="py-3">
             <p className="mb-1 text-base font-bold">Save file</p>
-            <p className="mb-2 text-sm text-muted-foreground">Progress is stored on this device only.</p>
+            <p className="mb-2 text-sm text-muted-foreground">
+              {cloud ? (
+                "Progress is saved to your account. Resetting wipes it on every device you're signed in on."
+              ) : configured ? (
+                <>
+                  Progress is stored on this device only.{" "}
+                  <Link href="/login" className="font-bold text-gold-ink underline underline-offset-4">
+                    Sign in
+                  </Link>{" "}
+                  to sync it between devices.
+                </>
+              ) : (
+                "Progress is stored on this device only."
+              )}
+            </p>
             {confirmReset ? (
               <div className="flex gap-2">
                 <Button variant="destructive" onClick={() => { reset(); setConfirmReset(false); }}>

@@ -20,6 +20,8 @@ export type ProgressState = {
   exercises: Record<string, ExerciseRecord>;
   streak: { current: number; best: number; lastDay: string | null };
   updatedAt: string | null;
+  /** Bumped by every reset. When saves are merged, a higher epoch wins outright, so a reset sticks across devices. */
+  epoch: number;
 };
 
 export const emptyProgress = (): ProgressState => ({
@@ -29,7 +31,13 @@ export const emptyProgress = (): ProgressState => ({
   exercises: {},
   streak: { current: 0, best: 0, lastDay: null },
   updatedAt: null,
+  epoch: 0,
 });
+
+/** A wiped save that still outranks everything recorded before the wipe. */
+export function resetProgress(state: ProgressState, now: Date): ProgressState {
+  return { ...emptyProgress(), epoch: state.epoch + 1, updatedAt: now.toISOString() };
+}
 
 /** Local calendar day as YYYY-MM-DD. */
 export function dayKey(d: Date): string {
@@ -187,5 +195,6 @@ export function migrate(raw: unknown): ProgressState {
     exercises: r.exercises && typeof r.exercises === "object" ? r.exercises : {},
     streak: r.streak && typeof r.streak === "object" ? { ...base.streak, ...r.streak } : base.streak,
     updatedAt: typeof r.updatedAt === "string" ? r.updatedAt : null,
+    epoch: typeof r.epoch === "number" && r.epoch >= 0 ? r.epoch : 0,
   };
 }

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Star } from "lucide-react";
+import { AccountMenu } from "@/components/auth/account-menu";
 import { useProgress } from "@/components/providers";
 import { SettingsMenu } from "@/components/settings-menu";
 import { levelForXp, wantedStars } from "@/lib/progress/logic";
@@ -55,7 +56,10 @@ export function Hud() {
           >
             {loaded ? formatMoney(state.xp) : formatMoney(0)}
           </span>
-          <SettingsMenu />
+          <span className="flex items-center">
+            <AccountMenu />
+            <SettingsMenu />
+          </span>
         </div>
       </div>
     </header>
