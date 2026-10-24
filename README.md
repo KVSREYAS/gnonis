@@ -32,7 +32,7 @@ npm run dev            # http://127.0.0.1:4317
 | --- | --- |
 | `npm run dev` | Dev server on port 4317 |
 | `npm run build` / `npm start` | Production build, then serve it on port 4317 (`next start -p 4317`) |
-| `npm run validate-content` | Parses and cross-checks every course pack. Exits non-zero on any issue |
+| `npm run validate:content` | Parses and cross-checks every course pack, including ids against `origin/main`. Exits non-zero on any issue. `validate-content` is the same script. `convert:legacy` rewrites a `modules/` pack into the flat layout |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm test` | Vitest unit tests (schema, progress, merge rule, Supabase store, sign-in form logic, grading) |
@@ -46,14 +46,15 @@ CI (`.github/workflows/ci.yml`) runs content validation, lint, typecheck, unit t
 ## Project layout
 
 ```
-content/courses/<course>/          course packs (YAML + MDX, no code)
-src/app/                           routes: /, /courses/[course], /[module], /[module]/[lesson], /login, /auth/callback
+content/courses/<course>/          course.yaml, lessons/<nn>-<slug>.mdx, assets/ (see docs/AUTHORING.md)
+src/app/                           routes: /, /courses/..., /preview/[course]/[lesson], /login, /auth/callback
 src/app/api/chat/route.ts          signed-in dive-deeper tutor (streams from OpenRouter)
 src/proxy.ts                       refreshes the Supabase session cookie (Next 16's renamed middleware)
 src/components/                    HUD, map, module intro, lesson player, MISSION PASSED
 src/components/auth/               login screen and the HUD account menu
-src/components/widgets/            one widget per exercise type + registry.tsx
-src/lib/content/                   Zod schema, loader, summaries, navigation
+src/exercises/                     one folder per exercise type (Zod schema + renderer) and registry.ts
+src/components/widgets/            shared widget UI the exercise renderers reuse
+src/lib/content/                   Zod schema, MDX parser, loader, summaries, navigation
 src/lib/sims/                      simulator models (pure functions)
 src/lib/grading.ts                 graders for every exercise type + boss state machine
 src/lib/progress/                  XP / streak / level logic, ProgressStore, merge rule, Supabase store
@@ -68,130 +69,11 @@ scripts/validate-content.ts        the content linter used in CI
 
 ## Adding a course
 
-A course is a folder. Drop it in, run `npm run validate-content`, and it shows up on the home screen. No code changes.
+A course is a folder of `course.yaml` plus `lessons/<nn>-<slug>.mdx`. Drop it in, run `npm run validate:content`, and it shows up on the home screen. The field list, the exercise components, and how to add an exercise type are in [docs/AUTHORING.md](docs/AUTHORING.md). The smallest pack is `content/courses/sample-bits-bytes/`.
 
-```
-content/courses/my-course/
-  course.yaml
-  modules/
-    01-first-district/
-      module.yaml
-      lessons/
-        01-hello.mdx
-        02-boss-hello.mdx
-```
+Lesson URLs stay `/courses/<course>/<district>/<url-slug>`. The url slug is the last segment of the lesson's explicit id (for example `01-bytes-per-number`), so existing links keep working. `/preview/<course>/<lesson>` skips progress.
 
-Folder and file names are kebab-case slugs, and they become the URL (`/courses/my-course/01-first-district/01-hello`).
-Order comes from the lists in `course.yaml` and `module.yaml`, not from file names. Every lesson file must be listed,
-and every listed lesson must exist.
-
-The smallest complete example is `content/courses/sample-bits-bytes/`.
-
-### `course.yaml`
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| `title` | string | required |
-| `tagline` | string | one line on the course card |
-| `description` | string | a paragraph on the course page |
-| `order` | int | home screen sort order, default `100` |
-| `level` | `intro` \| `intermediate` \| `advanced` | default `intermediate` |
-| `modules` | slug[] | module folder names in order, at least one |
-
-### `module.yaml`
-
-Each module is a "district" on the map.
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| `title` | string | required |
-| `district` | string | district name on the map, e.g. `Token Flats` |
-| `summary` | string | shown on the loading-screen intro |
-| `tip` | string | the loading-screen tip line |
-| `art` | `skyline` \| `docks` \| `hills` \| `grid` \| `bridge` \| `desert` \| `pier` \| `tower` | intro and tile art, default `skyline` |
-| `status` | `ready` \| `stub` | stubs show as "Coming soon" and may have no lessons. Default `ready` |
-| `lessons` | slug[] | lesson file names (without `.mdx`) in order. `ready` modules need at least one |
-
-### Lesson files (`*.mdx`)
-
-Frontmatter holds metadata and every exercise. The body holds the reading cards and says where each exercise goes.
-
-```mdx
----
-title: Bytes per number
-summary: fp32, fp16, bf16, fp8, int4. Know the sizes cold.
-xp: 30
-keyIdeas:
-  - fp32 is 4 bytes, fp16 and bf16 are 2, fp8 and int8 are 1, and int4 is half a byte.
-  - bf16 keeps fp32's exponent range with fewer mantissa bits.
-  - Halving the bytes per number halves memory and bandwidth.
-exercises:
-  bf16-size:
-    type: mcq
-    devices: [phone, desktop]
-    prompt: How many bytes does one bf16 number take?
-    options: ["1", "2", "4", "8"]
-    answer: 1
-    explanation: bf16 is 16 bits = 2 bytes.
----
-
-## Bits on a budget
-
-Every weight is stored in some number format...
-
-<Exercise id="bf16-size" />
-
-## Why it matters
-
-Bytes are what you pay for twice...
-```
-
-| Frontmatter field | Type | Notes |
-| --- | --- | --- |
-| `title` | string | required |
-| `kind` | `lesson` \| `boss` | default `lesson`. Boss lessons must contain a `boss` exercise and show a skull on the map |
-| `summary` | string | one line in lesson lists |
-| `xp` | int 0-1000 | base payout on first completion. Each exercise solved first try adds a $10 bonus, once |
-| `minutes` | int | optional. Otherwise estimated from words (180 wpm) plus 45s per exercise |
-| `keyIdeas` | string[3] | exactly three. They are the MISSION PASSED recap |
-| `exercises` | map of id to exercise | ids are kebab-case. Every exercise must be placed in the body exactly once |
-
-Body rules, enforced by the validator:
-
-- Each `## Heading` starts a new card. A card holds at most **170 words** (code fences don't count). Aim for about 120.
-- `# ` headings are not allowed, and text can't appear before the first card heading.
-- `<Exercise id="..." />` goes on its own line between cards. Text after an exercise needs its own `## ` heading.
-- Cards are GitHub-flavoured markdown with tables, fenced code and KaTeX math (`$x$`, `$$...$$`). Arbitrary JSX is
-  **not** supported. `<Exercise />` is the only tag.
-
-### Exercise reference
-
-Every exercise needs `type`, `devices` (a non-empty subset of `[phone, desktop]`) and `explanation` (shown with the
-feedback). The rest depends on the type.
-
-| `type` | Fields | Phone? |
-| --- | --- | --- |
-| `mcq` | `prompt`, `options` (2-6), `answer` (0-based index) | yes |
-| `fill` | optional `prompt`, `text` with blanks `{{0}}`, `{{1}}`..., `chips` (2-10, distractors welcome), `answers` (the chip for each blank, in blank order) | yes |
-| `ordering` | `prompt`, `items` (3-8, listed in the **correct** order; the widget shuffles them) | yes (tap to swap; drag on desktop) |
-| `predict` | `prompt`, `answer` (number), optional `tolerance` `{mode: relative\|absolute, value}` (default relative 0.05), `unit`, `hint` | yes. Accepts `1.3k`, `2 GB`, `4e9`, `131,072` |
-| `simulator` | `sim` (registry id), `prompt`, optional `params` (initial slider values), `locked` (slider ids to hide), `goal` `{output, op: lt\|lte\|gt\|gte\|between, value, max?, description}` | yes |
-| `stepper` | `prompt`, `frames` (2+), each `{caption, view}`. A view is `tokens` `{tokens, highlight?, dim?, label?}`, `matrix` `{rows, cols, cells (number or null for masked), highlight? [[r,c]], label?}` or `bars` `{bars: [{label, value, tone?}], unit?, max?, label?}` | yes |
-| `code` | `language: python`, `prompt`, `starter`, `tests`, `solution`, optional `hints` | desktop only in practice |
-| `debug` | `mode: line` with `code` and `bugLine` (1-based; the learner taps the buggy line), or `mode: code` with `code`, `tests` and `solution` (the learner fixes it). Plus `language: python` and `prompt` | `line` mode works on phones |
-| `boss` | `title`, `briefing`, `timeLimit` (20-900 s), `playerHp` (1-6, default 3), `parts` (2-8 `mcq` / `fill` / `ordering` / `predict` exercises without `devices`) | yes, if every part is |
-
-**Hidden tests** for `code` and code-mode `debug` are plain Python: define `test_*` functions that `assert`. They run in
-the same namespace as the learner's code. An assertion message becomes the feedback text:
-
-```python
-def test_sums_to_one():
-    p = softmax([1.0, 2.0, 3.0])
-    assert abs(sum(p) - 1) < 1e-6, "probabilities should sum to 1"
-```
-
-With `python3` installed, `validate-content` checks that every `solution` passes its tests and that the `starter`
-(or the buggy `code`) does not.
+With `python3` installed, `validate:content` checks that every code `solution` passes its hidden tests and that the starter does not. Hidden tests are `test_*` functions that `assert`, run in the same namespace as the learner's code.
 
 ### Simulators
 
@@ -345,7 +227,7 @@ started the sign-in, so preview deployments work without extra Google configurat
 
 ## Dive deeper (optional)
 
-On a lesson, a **Dive deeper** button opens a tutor for the step that's on screen. Desktop gets a right-hand drawer; phones get a bottom sheet. Highlight text in the lesson and an **Ask about this** chip quotes it into the next message (Ctrl/Cmd+L does the same on desktop). Ctrl/Cmd+Shift+K focuses the calculator. Chat history stays in this browser, one transcript per lesson, with a Clear button.
+On a lesson, and on `/preview`, a **Dive deeper** button opens a tutor for the step that's on screen. Desktop gets a right-hand drawer; phones get a bottom sheet. Highlight text in a reading card (prose, code, and tables from the MDX lesson) and an **Ask about this** chip quotes it into the next message (Ctrl/Cmd+L does the same on desktop). Ctrl/Cmd+Shift+K focuses the calculator. Chat history stays in this browser, one transcript per lesson, with a Clear button.
 
 The tutor is told the course, lesson, and step, and it will not hand out an unanswered quiz or puzzle answer. A globe turns on [OpenRouter web search](https://openrouter.ai/docs/guides/features/plugins/web-search) (`plugins: [{ id: "web", max_results: 3 }]`). It is off by default. Citations come back as links under the reply. **Go deeper in ChatGPT** (plus Claude and Grok) opens that chat with the step, any highlights, and the latest question filled in. The link stays under about 6000 characters by shortening the on-screen text first.
 

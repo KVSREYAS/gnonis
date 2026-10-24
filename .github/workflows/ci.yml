@@ -17,7 +17,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: npm ci
-      - run: npm run validate-content
+      - run: git fetch origin main --depth=1
+      - run: npm run validate:content
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test

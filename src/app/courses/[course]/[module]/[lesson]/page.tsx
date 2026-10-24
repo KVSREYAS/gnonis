@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { notFound } from "next/navigation";
+import { ContentHotReload } from "@/components/content-hot-reload";
 import { LessonPlayer, type PlayerStep } from "@/components/lesson/lesson-player";
 import { Markdown } from "@/components/markdown";
 import { clientDefaultModel } from "@/lib/chat/model-server";
 import { getCourse, getCourses } from "@/lib/content/loader";
 import { courseHref, nextAfter } from "@/lib/content/navigation";
 import type { Exercise } from "@/lib/content/schema";
-import { lessonKey } from "@/lib/content/types";
 
 export const dynamicParams = false;
 
@@ -29,6 +30,7 @@ function forClient(ex: Exercise): Exercise {
 }
 
 export default async function LessonPage({ params }: PageProps<"/courses/[course]/[module]/[lesson]">) {
+  if (process.env.NODE_ENV === "development") await connection();
   const { course: cslug, module: mslug, lesson: lslug } = await params;
   const course = getCourse(cslug);
   const mod = course?.modules.find((m) => m.slug === mslug);
@@ -43,26 +45,30 @@ export default async function LessonPage({ params }: PageProps<"/courses/[course
   const next = nextAfter(course, mod.slug, lesson.slug);
 
   return (
-    <LessonPlayer
-      key={lessonKey(course.slug, mod.slug, lesson.slug)}
-      lesson={{
-        key: lessonKey(course.slug, mod.slug, lesson.slug),
-        courseTitle: course.title,
-        title: lesson.title,
-        kind: lesson.kind,
-        xp: lesson.xp,
-        keyIdeas: lesson.keyIdeas,
-        district: mod.district,
-        moduleIndex: mod.index,
-        lessonIndex: lesson.index,
-        lessonCount: mod.lessons.length,
-      }}
-      steps={steps}
-      nextHref={next.href}
-      nextLabel={next.label}
-      mapHref={courseHref(course.slug)}
-      chatEnabled={Boolean(process.env.OPENROUTER_API_KEY?.trim())}
-      defaultModel={clientDefaultModel()}
-    />
+    <>
+      <ContentHotReload />
+      <LessonPlayer
+        key={lesson.id}
+        lesson={{
+          key: lesson.id,
+          courseTitle: course.title,
+          title: lesson.title,
+          kind: lesson.kind,
+          xp: lesson.xp,
+          keyIdeas: lesson.keyIdeas,
+          district: mod.district,
+          moduleIndex: mod.index,
+          lessonIndex: lesson.index,
+          lessonCount: mod.lessons.length,
+          hashes: lesson.exerciseHashes,
+        }}
+        steps={steps}
+        nextHref={next.href}
+        nextLabel={next.label}
+        mapHref={courseHref(course.slug)}
+        chatEnabled={Boolean(process.env.OPENROUTER_API_KEY?.trim())}
+        defaultModel={clientDefaultModel()}
+      />
+    </>
   );
 }

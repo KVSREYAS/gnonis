@@ -1,0 +1,83 @@
+---
+id: llm-inference/01-tokens-forward-pass/04-prefill-and-decode
+title: Prefill and decode
+estMinutes: 4
+xp: 70
+missionIntro: Generation has two very different phases. Knowing which one you
+  are in explains almost every latency number.
+keyIdeas:
+  - Prefill processes the whole prompt in one parallel pass and produces the
+    first token (TTFT).
+  - Decode produces one token per forward pass, so per-token latency (TPOT) adds
+    up.
+  - Prefill is usually compute-bound, while small-batch decode is
+    memory-bandwidth-bound.
+---
+
+## Mission briefing
+
+Prefill is the planning meeting: the whole prompt at once. Decode is the chase: one token per step, forever.
+
+**Mission:** Plan the heist in one go, then drive the getaway one turn at a time without crashing.
+
+## Two phases
+
+Generating text is a loop, but the first iteration is special.
+
+**Prefill.** The whole prompt goes through the model in one forward pass. All positions are
+processed in parallel as big matrix-matrix multiplies. The logits at the last position give the
+first output token.
+
+**Decode.** Now the model produces one token per forward pass. Each step feeds in just the newest
+token and gets back the next one. This continues until an end-of-sequence token or a length limit.
+
+<Stepper
+  id="decode-steps"
+  devices={["phone","desktop"]}
+  prompt={"Watch a model answer \"The cat sat\". Gold tokens are processed in that step."}
+  frames={[{"caption":"Prefill: all three prompt tokens go through the model in ONE forward pass.","view":{"kind":"tokens","tokens":["The"," cat"," sat"],"highlight":[0,1,2],"label":"step 1 (prefill)"}},{"caption":"The logits at the last position pick \" on\". This is the first token, and the time until now is the TTFT.","view":{"kind":"tokens","tokens":["The"," cat"," sat"," on"],"highlight":[3],"dim":[0,1,2],"label":"step 1 output"}},{"caption":"Decode step: only the new token \" on\" is fed in. It produces \" the\".","view":{"kind":"tokens","tokens":["The"," cat"," sat"," on"," the"],"highlight":[4],"dim":[0,1,2,3],"label":"step 2 (decode)"}},{"caption":"Another full pass through every layer, just to produce \" mat\".","view":{"kind":"tokens","tokens":["The"," cat"," sat"," on"," the"," mat"],"highlight":[5],"dim":[0,1,2,3,4],"label":"step 3 (decode)"}},{"caption":"The end-of-sequence token stops generation. Three output tokens took three forward passes.","view":{"kind":"tokens","tokens":["The"," cat"," sat"," on"," the"," mat","<eos>"],"highlight":[6],"dim":[0,1,2,3,4,5],"label":"step 4 (decode)"}}]}
+  explanation={"Prefill handles many tokens per pass. Decode handles one new token per sequence per pass, which is why long answers take long."}
+/>
+
+## The two latency numbers
+
+Users feel two different delays:
+
+- **TTFT** (time to first token): how long prefill takes, plus any queueing.
+- **TPOT** (time per output token), also called inter-token latency: the gap between streamed
+  tokens during decode.
+
+Total time for an answer of $N$ tokens is roughly:
+
+$$T \approx \text{TTFT} + (N - 1) \times \text{TPOT}$$
+
+![Timeline showing one large prefill block then many small decode steps, with TTFT and TPOT marked](/diagrams/llm-inference/01-tokens-forward-pass/04-prefill-and-decode.png)
+
+<Predict
+  id="total-latency"
+  devices={["phone","desktop"]}
+  prompt={"A server has a TTFT of 200 ms and a steady time-per-output-token of 20 ms. How long until a 101-token answer is complete?"}
+  answer={2200}
+  tolerance={{"mode":"relative","value":0.01}}
+  unit="ms"
+  hint="The first token arrives at TTFT, and each of the remaining 100 tokens adds one TPOT."
+  explanation="200 + 100 x 20 = 2,200 ms. For long answers, decode dominates."
+/>
+
+## Different bottlenecks
+
+Prefill of 2,000 prompt tokens loads each weight once and uses it 2,000 times. That is plenty of
+maths per byte, so the GPU's compute units are the limit.
+
+Decode at batch size 1 loads **every weight** to process **one token**. The tensor cores sit mostly
+idle, waiting on memory. That one fact drives batching, quantization and speculative decoding,
+which you will meet later.
+
+<Fill
+  id="bound-fill"
+  devices={["phone","desktop"]}
+  text={"At batch size 1, prefill of a long prompt is usually {{0}}-bound, while decode is usually {{1}}-bound."}
+  chips={["compute","memory-bandwidth","network","disk"]}
+  answers={["compute","memory-bandwidth"]}
+  explanation={"Prefill multiplies many tokens against each weight it loads. Decode loads every weight to process a single token, so it waits on memory. Module 4 makes this precise."}
+/>

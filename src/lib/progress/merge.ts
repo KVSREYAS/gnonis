@@ -63,11 +63,19 @@ function mergeLesson(a: LessonRecord | undefined, b: LessonRecord | undefined): 
 
 function mergeExercise(a: ExerciseRecord | undefined, b: ExerciseRecord | undefined): ExerciseRecord {
   if (!a || !b) return { ...(a ?? b)! };
-  return {
-    attempts: Math.max(a.attempts, b.attempts),
-    correct: a.correct || b.correct,
-    firstTry: a.firstTry || b.firstTry,
-  };
+  const attempts = Math.max(a.attempts, b.attempts);
+  const correct = a.correct || b.correct;
+  const firstTry = a.firstTry || b.firstTry;
+  const contentHash = !a.contentHash
+    ? b.contentHash
+    : !b.contentHash
+      ? a.contentHash
+      : a.contentHash === b.contentHash
+        ? a.contentHash
+        : a.attempts >= b.attempts
+          ? a.contentHash
+          : b.contentHash;
+  return contentHash ? { attempts, correct, firstTry, contentHash } : { attempts, correct, firstTry };
 }
 
 function mergeStreak(a: ProgressState["streak"], b: ProgressState["streak"]): ProgressState["streak"] {

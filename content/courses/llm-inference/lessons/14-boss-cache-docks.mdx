@@ -1,0 +1,29 @@
+---
+id: llm-inference/03-kv-cache/04-boss-cache-docks
+title: "Boss: Cache Docks"
+estMinutes: 2
+xp: 175
+missionIntro: Size caches under pressure. The docks only take exact cargo.
+kind: boss
+keyIdeas:
+  - The cache exists because past K and V never change, and Q is never reused.
+  - bytes/token = 2 x layers x kv_heads x head_dim x bytes per element.
+  - Concurrency = (usable memory − weights) / bytes per sequence.
+---
+
+## Mission briefing
+
+Every container on these docks is somebody's KV cache, and the dockmaster wants exact weights. Not vibes. Numbers.
+
+Five questions. Right answers chip the boss. Wrong ones cost a heart, and the crate goes in the water.
+
+<Boss
+  id="docks"
+  devices={["phone","desktop"]}
+  title="Cache Docks"
+  briefing={"The dockmaster wants numbers, not vibes. Five questions, three hearts, three minutes. Keep a calculator handy, or do the powers of two in your head."}
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type":"mcq","prompt":"Which of these is NOT stored in the KV cache?","options":["Keys of past tokens","Values of past tokens","Queries of past tokens","Nothing, all three are stored"],"answer":2,"explanation":"Past queries are never used again."},{"type":"predict","prompt":"A model has 40 layers, 8 KV heads, head dim 128, fp16. KV bytes per token, in KiB (1 KiB = 1,024 bytes)?","answer":160,"tolerance":{"mode":"relative","value":0.01},"unit":"KiB","explanation":"2 x 40 x 8 x 128 x 2 = 163,840 bytes = 160 KiB."},{"type":"fill","text":"Switching the cache from fp16 to fp8 makes it {{0}} as large, and moving from MHA with 32 KV heads to GQA with 8 makes it {{1}} as large.","chips":["half","a quarter","twice","the same"],"answers":["half","a quarter"],"explanation":"Bytes per element go 2 → 1, and KV heads go 32 → 8."},{"type":"predict","prompt":"Llama 3 8B fp16 cache: 128 KiB per token. How many GiB for one 16,384-token sequence?","answer":2,"tolerance":{"mode":"relative","value":0.02},"unit":"GiB","explanation":"128 KiB x 16,384 = 2,097,152 KiB = 2 GiB."},{"type":"mcq","prompt":"You double max context from 8k to 16k on the same GPU. Roughly what happens to the number of full-length sequences you can serve at once?","options":["It doubles","It stays the same","It halves","It drops by 4x"],"answer":2,"explanation":"Each sequence's cache doubles, so the same budget holds half as many."}]}
+  explanation="Cache Docks is cleared. Next, why all these bytes matter more than the FLOPs."
+/>

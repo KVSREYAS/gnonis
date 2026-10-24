@@ -23,6 +23,16 @@ function fixtures() {
 }
 
 describe("mergeProgress", () => {
+  it("keeps a shared content hash and omits the field when neither side has one", () => {
+    const hashed = recordExercise(emptyProgress(), "k", true, "h1");
+    const other = recordExercise(emptyProgress(), "k", true, "h1");
+    expect(mergeProgress(hashed, other).exercises.k.contentHash).toBe("h1");
+    const legacy = recordExercise(emptyProgress(), "k", false);
+    expect(mergeProgress(hashed, legacy).exercises.k.contentHash).toBe("h1");
+    const plain = mergeProgress(recordExercise(emptyProgress(), "k", true), recordExercise(emptyProgress(), "k", false));
+    expect(plain.exercises.k).not.toHaveProperty("contentHash");
+  });
+
   it("unions completed lessons and exercises", () => {
     const { phone, pc } = fixtures();
     const m = mergeProgress(phone, pc);

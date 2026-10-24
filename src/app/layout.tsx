@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Anton, Atkinson_Hyperlegible, JetBrains_Mono } from "next/font/google";
 import "katex/dist/katex.min.css";
 import "./globals.css";
+import { getRenameMap } from "@/lib/content/renames";
 import { Providers } from "@/components/providers";
 import { Hud } from "@/components/hud";
 import { SETTINGS_BOOT_SCRIPT } from "@/lib/settings";
@@ -33,7 +34,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <script dangerouslySetInnerHTML={{ __html: SETTINGS_BOOT_SCRIPT }} />
       </head>
       <body className="flex min-h-full flex-col">
-        <Providers>
+        <Providers renames={getRenameMap()}>
           <a
             href="#main"
             className="sr-only z-50 rounded bg-gold px-4 py-2 text-ink focus:not-sr-only focus:fixed focus:top-2 focus:left-2"

@@ -1,0 +1,140 @@
+---
+id: sample-bits-bytes/01-number-formats/03-field-kit
+title: Field kit
+estMinutes: 8
+xp: 40
+missionIntro: Eight new mission types, each small enough to finish on a phone.
+keyIdeas:
+  - Guess first, then let the chart show the real bar.
+  - A back-of-the-envelope sum is just the facts, multiplied once.
+  - Reorder, tap the bad line, or fill the blank. Same respect either way.
+---
+
+## Mission briefing
+
+The kit in the trunk is new. Each tool does one job. Try them in order, and the bay stays open.
+
+## Guess the footprint
+
+A 7 billion parameter model in bf16 is 2 bytes a weight. That is 14 GB of weights before the cache shows up.
+
+<PredictReveal
+  id="weight-footprint"
+  devices={["phone","desktop"]}
+  prompt="How many GB of weights is a 7B model in bf16?"
+  min={1}
+  max={40}
+  step={1}
+  answer={14}
+  unit="GB"
+  series={[{"label":"fp32","value":28},{"label":"bf16","value":14},{"label":"int8","value":7},{"label":"int4","value":3.5}]}
+  explanation="7e9 parameters times 2 bytes is 14 GB. The gold bar is bf16."
+/>
+
+## Cache on a napkin
+
+One token of KV cache is layers, times kv heads, times head dim, times bytes, times 2 for K and V.
+
+<Envelope
+  id="kv-napkin"
+  devices={["phone","desktop"]}
+  prompt="How many MiB of KV cache do 1,024 tokens need?"
+  given={["32 layers","8 kv heads","128 head dim","2 bytes per element","K and V, so times 2","1,024 tokens"]}
+  hints={["One token is 32 x 8 x 128 x 2 x 2 bytes.","That is 131,072 bytes, or 0.125 MiB.","Times 1,024 tokens is 128 MiB."]}
+  answer={128}
+  tolerance={{"mode":"absolute","value":1}}
+  unit="MiB"
+  explanation="32 x 8 x 128 x 2 x 2 x 1024 bytes = 128 MiB."
+/>
+
+## Trace the loop
+
+Step the lines, then say what it prints.
+
+<Trace
+  id="double-sum"
+  devices={["phone","desktop"]}
+  prompt="What does this snippet print?"
+  code={`total = 0
+for i in range(3):
+    total += i * 2
+print(total)`}
+  steps={[{"line":1,"note":"total starts at 0"},{"line":2,"note":"i runs 0, 1, 2"},{"line":3,"note":"add 0, then 2, then 4"},{"line":4,"note":"print the total"}]}
+  question="What does it print?"
+  answer="6"
+  explanation="0 + 2 + 4 = 6."
+/>
+
+## Fastest first
+
+Put these stores in order from the fastest read to the slowest.
+
+<DragSort
+  id="latency-order"
+  devices={["phone","desktop"]}
+  prompt="Order these from fastest to slowest."
+  items={["Register","L2 cache","GPU HBM","Host DRAM","SSD"]}
+  explanation="Registers beat caches, caches beat HBM, HBM beats host memory, and a disk is last."
+/>
+
+## Spot the missing two
+
+The formula forgot that K and V are both stored.
+
+<SpotBug
+  id="missing-kv"
+  devices={["phone","desktop"]}
+  prompt="Tap the line that under-counts the cache."
+  code={`layers = 32
+kv_heads = 8
+dim = 128
+bytes = 2
+kv = layers * kv_heads * dim * bytes`}
+  bugLine={5}
+  explanation="Multiply by 2 again. Keys and values are both cached."
+/>
+
+## Softmax, scrambled
+
+Put the lines back so softmax subtracts the max, then divides by the sum.
+
+<Parsons
+  id="softmax-lines"
+  devices={["phone","desktop"]}
+  prompt="Restore softmax. Top line first."
+  lines={["def softmax(xs):","    m = max(xs)","    exps = [math.exp(x - m) for x in xs]","    total = sum(exps)","    return [e / total for e in exps]"]}
+  explanation="Subtract the max, exponentiate, sum, then divide."
+/>
+
+## Fill the product
+
+Two holes in the per-token product. Dim first, then the K and V factor.
+
+<CodeBlanks
+  id="kv-blanks"
+  devices={["phone","desktop"]}
+  prompt="Fill the two blanks in the per-token formula."
+  code={`kv = layers * kv_heads * {{0}} * bytes * {{1}}`}
+  blanks={[{"answer":"dim"},{"answer":"2","pattern":"^2$"}]}
+  explanation="Head dim, then 2 for K and V."
+/>
+
+## Batch versus throughput
+
+Slide the batch until decode throughput clears 3,000 tokens a second.
+
+<SliderDiagram
+  id="batch-throughput"
+  devices={["phone","desktop"]}
+  prompt="Find a batch size that clears the goal."
+  xLabel="Batch size"
+  yLabel="Tokens per second"
+  unit="tok/s"
+  min={1}
+  max={32}
+  step={1}
+  initial={1}
+  points={[{"x":1,"y":800},{"x":8,"y":3000},{"x":16,"y":4200},{"x":32,"y":4500}]}
+  goal={{"op":"gte","value":3000,"description":"Reach at least 3,000 tok/s."}}
+  explanation="Past a batch of 8 the curve is over the line. Bigger batches buy less after that."
+/>

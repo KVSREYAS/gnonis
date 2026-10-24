@@ -6,18 +6,43 @@ import { courseLessons } from "@/components/course-card";
 import { useDevice, useProgress } from "@/components/providers";
 import { RespectBar } from "@/components/respect-bar";
 import { buttonVariants } from "@/components/ui/button";
-import type { CourseSummary, LessonSummary, ModuleSummary } from "@/lib/content/types";
+import { exerciseKey, type CourseSummary, type LessonSummary, type ModuleSummary } from "@/lib/content/types";
+import type { ProgressState } from "@/lib/progress/logic";
 import { levelForXp, nextLessonKey, respect } from "@/lib/progress/logic";
 import { cn } from "@/lib/utils";
 
-function Blip({ course, mod, lesson, done, isNext, pending }: { course: string; mod: string; lesson: LessonSummary; done: boolean; isNext: boolean; pending: boolean }) {
+function lessonUpdated(state: ProgressState, lesson: LessonSummary) {
+  return lesson.exerciseIds.some((id) => {
+    const saved = state.exercises[exerciseKey(lesson.key, id)]?.contentHash;
+    const current = lesson.exerciseHashes[id];
+    return !!saved && !!current && saved !== current;
+  });
+}
+
+function Blip({
+  course,
+  mod,
+  lesson,
+  done,
+  isNext,
+  pending,
+  updated,
+}: {
+  course: string;
+  mod: string;
+  lesson: LessonSummary;
+  done: boolean;
+  isNext: boolean;
+  pending: boolean;
+  updated: boolean;
+}) {
   const boss = lesson.kind === "boss";
   const state = done ? "complete" : isNext ? "next up" : "not started";
   return (
     <Link
       href={`/courses/${course}/${mod}/${lesson.slug}`}
       className="tap group relative grid place-items-center rounded-full"
-      aria-label={`${lesson.title}, ${state}${boss ? ", boss fight" : ""}${pending ? ", desktop mission pending" : ""}`}
+      aria-label={`${lesson.title}, ${state}${boss ? ", boss fight" : ""}${pending ? ", desktop mission pending" : ""}${updated ? ", exercise updated" : ""}`}
       title={lesson.title}
       data-testid={isNext ? "next-blip" : undefined}
     >
@@ -34,6 +59,11 @@ function Blip({ course, mod, lesson, done, isNext, pending }: { course: string; 
       {pending && (
         <span className="absolute -top-0.5 -right-0.5 grid size-4 place-items-center rounded-full bg-panel-2 text-gold-ink" aria-hidden>
           <Monitor className="size-3" />
+        </span>
+      )}
+      {updated && (
+        <span className="absolute -top-1 -left-1 rounded bg-gold px-0.5 font-display text-[9px] leading-tight text-ink" aria-hidden>
+          UPD
         </span>
       )}
     </Link>
@@ -98,6 +128,7 @@ function District({ course, mod, nextKey }: { course: string; mod: ModuleSummary
                     done={!!state.lessons[l.key]}
                     isNext={l.key === nextKey}
                     pending={(state.lessons[l.key]?.pendingDesktop.length ?? 0) > 0}
+                    updated={lessonUpdated(state, l)}
                   />
                 </span>
               ))}

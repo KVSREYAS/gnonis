@@ -1,7 +1,0 @@
-title: FlashAttention
-district: Flash Gardens
-summary: >-
-  Tile attention so the n-by-n score matrix never touches HBM: online softmax, SRAM tiling, and why an IO-aware kernel beats a FLOP-optimal one.
-tip: "TIP: FlashAttention does the same math with far fewer HBM reads and writes."
-art: hills
-status: stub

@@ -144,3 +144,101 @@ export function bossAnswer(s: BossState, correct: boolean, totalParts: number): 
 export function bossTimeout(s: BossState): BossState {
   return s.status === "fighting" ? { ...s, status: "lost", reason: "time" } : s;
 }
+
+/* ---------- Phase 2 graders ---------- */
+
+type NumGoal = { op: "lt" | "lte" | "gt" | "gte" | "between"; value: number; max?: number };
+
+export function numberGoalMet(goal: NumGoal, value: number): boolean {
+  switch (goal.op) {
+    case "lt":
+      return value < goal.value;
+    case "lte":
+      return value <= goal.value;
+    case "gt":
+      return value > goal.value;
+    case "gte":
+      return value >= goal.value;
+    case "between":
+      return value >= goal.value && value <= (goal.max ?? Infinity);
+  }
+}
+
+export function interpolateCurve(points: { x: number; y: number }[], x: number): number {
+  const pts = [...points].sort((a, b) => a.x - b.x);
+  if (pts.length === 0 || Number.isNaN(x)) return NaN;
+  if (x <= pts[0].x) return pts[0].y;
+  const last = pts[pts.length - 1];
+  if (x >= last.x) return last.y;
+  for (let i = 1; i < pts.length; i++) {
+    if (x <= pts[i].x) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      const t = (x - a.x) / (b.x - a.x || 1);
+      return a.y + t * (b.y - a.y);
+    }
+  }
+  return last.y;
+}
+
+export function gradePredictReveal(
+  ex: PredictLike & { series?: unknown },
+  value: number,
+): Grade {
+  const unit = ex.unit ? ` ${ex.unit}` : "";
+  const target = `${formatNumber(ex.answer)}${unit}`;
+  if (withinTolerance(ex, value)) return ok(`Spot on, the answer is ${target}. ${ex.explanation}`);
+  const dir = value < ex.answer ? "low" : "high";
+  return no(`Too ${dir}: the answer is ${target}. ${ex.explanation}`);
+}
+
+export function gradeEnvelope(ex: PredictLike, raw: string): Grade {
+  return gradePredict(ex, raw);
+}
+
+export function gradeTrace(ex: { answer: string; explanation: string }, raw: string): Grade {
+  if (raw.trim() === "") return no("Enter what the snippet produces.");
+  if (raw.trim() === ex.answer.trim()) return ok(ex.explanation);
+  return no(`Not ${JSON.stringify(ex.answer.trim())}. ${ex.explanation}`);
+}
+
+export function gradeDragSort(ex: { items: string[]; explanation: string }, order: string[]): Grade {
+  return gradeOrdering(ex, order);
+}
+
+export function gradeParsons(ex: { lines: string[]; explanation: string }, order: string[]): Grade {
+  const inPlace = order.filter((item, i) => ex.lines[i] === item).length;
+  if (inPlace === ex.lines.length && order.length === ex.lines.length) return ok(ex.explanation);
+  return no(`${inPlace} of ${ex.lines.length} lines in the right spot. ${ex.explanation}`);
+}
+
+export function gradeSpotBug(ex: { bugLine: number; explanation: string }, line: number | null): Grade {
+  return gradeDebugLine(ex, line);
+}
+
+export function blankAccepted(blank: { answer: string; pattern?: string }, raw: string): boolean {
+  const value = raw.trim();
+  if (!blank.pattern) return value === blank.answer.trim();
+  try {
+    return new RegExp(blank.pattern).test(value);
+  } catch {
+    return false;
+  }
+}
+
+export function gradeCodeBlanks(
+  ex: { blanks: { answer: string; pattern?: string }[]; explanation: string },
+  values: string[],
+): Grade {
+  if (values.length !== ex.blanks.length || values.some((v) => v.trim() === "")) return no("Fill every blank first.");
+  const wrong = ex.blanks.filter((b, i) => !blankAccepted(b, values[i] ?? "")).length;
+  return wrong === 0 ? ok(ex.explanation) : no(`${wrong} blank${wrong > 1 ? "s are" : " is"} off. ${ex.explanation}`);
+}
+
+export function gradeSliderDiagram(
+  ex: { points: { x: number; y: number }[]; goal: NumGoal & { description: string }; explanation: string },
+  x: number,
+): Grade {
+  const y = interpolateCurve(ex.points, x);
+  return numberGoalMet(ex.goal, y) ? ok(ex.explanation) : no(`Not yet: ${ex.goal.description}`);
+}

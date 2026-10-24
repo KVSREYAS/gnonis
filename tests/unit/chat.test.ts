@@ -157,6 +157,53 @@ describe("exercise brief", () => {
     } as Exercise);
     expect(predict).not.toContain("42");
     expect(predict).not.toContain("SECRET");
+
+    const spot = exerciseBrief({
+      type: "spot-bug",
+      prompt: "Which line drops the mask?",
+      code: "scores = q @ k.T\nscores = scores / scale",
+      bugLine: 2,
+      explanation: "SECRET_EXPLANATION",
+      devices: ["phone", "desktop"],
+    } as Exercise);
+    expect(spot).toContain("q @ k.T");
+    expect(spot).not.toMatch(/line 2/i);
+    expect(spot).not.toContain("SECRET");
+
+    const blanks = exerciseBrief({
+      type: "code-blanks",
+      prompt: "Finish the mask",
+      code: "mask = {{0}}",
+      blanks: [{ answer: "SECRET_ANSWER" }],
+      explanation: "SECRET_EXPLANATION",
+      devices: ["desktop"],
+    } as Exercise);
+    expect(blanks).toContain("____");
+    expect(blanks).not.toContain("SECRET");
+
+    const parsons = exerciseBrief({
+      type: "parsons",
+      prompt: "Rebuild the loop",
+      lines: ["for token in ids:", "    logits.append(token)", "return logits"],
+      explanation: "SECRET_EXPLANATION",
+      devices: ["phone"],
+    } as Exercise);
+    expect(parsons.indexOf("for token")).toBeGreaterThan(parsons.indexOf("logits.append"));
+    expect(parsons).not.toContain("SECRET");
+
+    const envelope = exerciseBrief({
+      type: "envelope",
+      prompt: "How many bytes?",
+      given: ["2 bytes per value"],
+      hints: ["SECRET_HINT"],
+      answer: 99,
+      tolerance: { mode: "absolute", value: 1 },
+      explanation: "SECRET_EXPLANATION",
+      devices: ["phone"],
+    } as Exercise);
+    expect(envelope).toContain("2 bytes per value");
+    expect(envelope).not.toContain("99");
+    expect(envelope).not.toContain("SECRET");
   });
 });
 

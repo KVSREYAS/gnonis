@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { emptyProgress, migrate, type ProgressState } from "./logic";
 import { isEmptyProgress, mergeProgress, sameProgress } from "./merge";
+import { EMPTY_RENAMES, type RenameMap } from "./rename-map";
 import { PROGRESS_KEY, type ProgressStore } from "./store";
 
 /** The two calls the store needs from the backend. Kept tiny so tests can fake it. */
@@ -11,12 +12,12 @@ export interface ProgressRemote {
 }
 
 /** `public.progress` (user_id uuid PK, data jsonb, updated_at timestamptz), protected by own-row RLS. */
-export function supabaseRemote(client: SupabaseClient, userId: string): ProgressRemote {
+export function supabaseRemote(client: SupabaseClient, userId: string, renames: RenameMap = EMPTY_RENAMES): ProgressRemote {
   return {
     async pull() {
       const { data, error } = await client.from("progress").select("data").eq("user_id", userId).maybeSingle();
       if (error) throw error;
-      return data ? migrate(data.data) : null;
+      return data ? migrate(data.data, renames) : null;
     },
     async push(state) {
       const { error } = await client
@@ -48,6 +49,8 @@ export type SupabaseStoreOptions = {
   /** How long `load()` waits for the cloud before showing the copy on this device. */
   loadTimeoutMs?: number;
   onStatus?: (status: SyncStatus) => void;
+  /** Applied when a save is read, so renamed lesson and exercise ids keep their progress. */
+  renames?: RenameMap;
 };
 
 const MAX_BACKOFF_MS = 60_000;
@@ -68,6 +71,7 @@ export class SupabaseProgressStore implements ProgressStore {
   private readonly debounceMs: number;
   private readonly loadTimeoutMs: number;
   private readonly onStatus?: (status: SyncStatus) => void;
+  private readonly renames: RenameMap;
 
   private listeners = new Set<(state: ProgressState) => void>();
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -89,6 +93,11 @@ export class SupabaseProgressStore implements ProgressStore {
     this.debounceMs = opts.debounceMs ?? 1500;
     this.loadTimeoutMs = opts.loadTimeoutMs ?? 5000;
     this.onStatus = opts.onStatus;
+    this.renames = opts.renames ?? EMPTY_RENAMES;
+  }
+
+  private readState(raw: unknown): ProgressState {
+    return migrate(raw, this.renames);
   }
 
   async load(): Promise<ProgressState> {
@@ -232,7 +241,7 @@ export class SupabaseProgressStore implements ProgressStore {
     let guest: ProgressState | null = null;
     try {
       const raw = this.storage?.getItem(this.guestKey);
-      guest = raw ? migrate(JSON.parse(raw)) : null;
+      guest = raw ? this.readState(JSON.parse(raw)) : null;
     } catch {
       guest = null;
     }
@@ -291,9 +300,9 @@ export class SupabaseProgressStore implements ProgressStore {
       const parsed = JSON.parse(raw) as Partial<Cache>;
       if (!parsed || typeof parsed !== "object") return null;
       return {
-        state: migrate(parsed.state),
+        state: this.readState(parsed.state),
         dirty: parsed.dirty === true,
-        ...(parsed.guest ? { guest: migrate(parsed.guest) } : {}),
+        ...(parsed.guest ? { guest: this.readState(parsed.guest) } : {}),
       };
     } catch {
       return null;

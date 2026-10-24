@@ -4,10 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 4317",
-    "build": "next build",
+    "build": "npm run validate:content && next build",
     "start": "next start -p 4317",
     "lint": "eslint",
-    "validate-content": "tsx scripts/validate-content.ts",
+    "validate:content": "tsx scripts/validate-content.ts",
+    "validate-content": "npm run validate:content",
+    "convert:legacy": "tsx scripts/convert-legacy-content.ts",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test"
