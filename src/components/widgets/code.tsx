@@ -68,51 +68,151 @@ export function TestReport({ result }: { result: RunResult }) {
           <pre className="mt-1 whitespace-pre-wrap font-mono text-foreground">{result.stdout}</pre>
         </details>
       )}
-      <p className="mt-2 text-muted-foreground">Ran in {Math.round(result.durationMs)} ms</p>
+      {result.failure !== "load" && (
+        <p className="mt-2 text-muted-foreground" data-testid="run-timing">
+          Ran in {Math.round(result.durationMs)} ms
+        </p>
+      )}
     </div>
   );
 }
 
-/** Shared engine for "code" and code-mode "debug" exercises. */
+export type PythonRunStatus = "idle" | "loading" | "running" | "load-error";
+
+export function pythonActionLabel(status: PythonRunStatus): string {
+  if (status === "loading") return "Loading Python…";
+  if (status === "running") return "Running…";
+  if (status === "load-error") return "Retry";
+  return "Run hidden tests";
+}
+
+/** Shared engine for "code" and code-mode "debug" exercises. The Python runtime is loaded once per session. */
 export function useCodeRun(tests: string) {
-  const [status, setStatus] = useState<"idle" | "loading" | "running">("idle");
+  const [status, setStatus] = useState<PythonRunStatus>("idle");
   const [result, setResult] = useState<RunResult | null>(null);
-  const firstRun = useRef(true);
+  const [loadDetail, setLoadDetail] = useState<string | null>(null);
+  const inflight = useRef(0);
 
   useEffect(() => {
-    // Warm Pyodide in the background as soon as a code exercise is on screen.
     const runner = getRunner("python");
-    const id = setTimeout(() => void runner.prepare?.().catch(() => {}), 400);
-    return () => clearTimeout(id);
+    if (runner.isReady?.()) return;
+    let cancel = false;
+    const id = window.setTimeout(() => {
+      if (cancel || inflight.current > 0) return;
+      setStatus("loading");
+      void runner
+        .prepare?.()
+        .then(() => {
+          if (!cancel && inflight.current === 0) setStatus("idle");
+        })
+        .catch((err: unknown) => {
+          if (cancel || inflight.current > 0) return;
+          setLoadDetail(err instanceof Error ? err.message : String(err));
+          setStatus("load-error");
+        });
+    }, 400);
+    return () => {
+      cancel = true;
+      window.clearTimeout(id);
+    };
   }, []);
 
   const run = async (code: string) => {
-    setStatus(firstRun.current ? "loading" : "running");
-    const r = await getRunner("python").run({ language: "python", code, tests });
-    firstRun.current = false;
-    setResult(r);
-    setStatus("idle");
-    return r;
+    const runner = getRunner("python");
+    inflight.current += 1;
+    setStatus(runner.isReady?.() ? "running" : "loading");
+    try {
+      const response = await runner.run({ language: "python", code, tests });
+      setResult(response);
+      if (response.failure === "load") {
+        setLoadDetail(response.error);
+        setStatus("load-error");
+      } else {
+        setLoadDetail(null);
+        setStatus("idle");
+      }
+      return response;
+    } finally {
+      inflight.current -= 1;
+    }
   };
-  return { status, result, run };
+
+  const retry = async () => {
+    const runner = getRunner("python");
+    inflight.current += 1;
+    setStatus("loading");
+    setResult(null);
+    try {
+      await runner.prepare?.();
+      setLoadDetail(null);
+      setStatus("idle");
+    } catch (err) {
+      setLoadDetail(err instanceof Error ? err.message : String(err));
+      setStatus("load-error");
+    } finally {
+      inflight.current -= 1;
+    }
+  };
+
+  return { status, result, loadDetail, run, retry, warmed: getRunner("python").isWarmed?.() ?? false };
+}
+
+export function PythonRunFeedback({
+  status,
+  result,
+  loadDetail,
+  warmed,
+  onRetry,
+}: {
+  status: PythonRunStatus;
+  result: RunResult | null;
+  loadDetail: string | null;
+  warmed: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <>
+      {status === "loading" && (
+        <p className="mt-3 flex items-center gap-2 text-base text-muted-foreground" role="status" data-testid="python-loading">
+          <Loader2 className="size-4 animate-spin" aria-hidden />
+          {warmed ? "Restarting Python…" : "Downloading the Python runtime (first run only, about 10 MB)…"}
+        </p>
+      )}
+      {status === "load-error" && (
+        <div role="alert" data-testid="python-load-error" className="mt-3 rounded-lg border-2 border-danger bg-ink p-3">
+          <p className="font-bold text-danger">Python failed to load — Retry</p>
+          {loadDetail && <p className="mt-1 whitespace-pre-wrap font-mono text-sm text-muted-foreground">{loadDetail}</p>}
+          <Button type="button" className="mt-3" onClick={onRetry} data-testid="python-retry">
+            Retry
+          </Button>
+        </div>
+      )}
+      {status !== "load-error" && result && result.failure !== "load" && <TestReport result={result} />}
+    </>
+  );
 }
 
 export function CodeWidget({ exercise, setAction, onGrade, locked }: WidgetProps<ExerciseOf<"code">>) {
   const [code, setCode] = useState(exercise.starter);
   const [hints, setHints] = useState(0);
-  const { status, result, run } = useCodeRun(exercise.tests);
-  const busy = status !== "idle";
+  const { status, result, loadDetail, run, retry, warmed } = useCodeRun(exercise.tests);
+  const busy = status === "loading" || status === "running";
 
   usePrimaryAction(
     setAction,
     locked
       ? null
       : {
-          label: status === "loading" ? "Loading Python…" : status === "running" ? "Running…" : "Run hidden tests",
+          label: pythonActionLabel(status),
           busy,
           disabled: busy,
           onPress: async () => {
+            if (status === "load-error") {
+              await retry();
+              return;
+            }
             const r = await run(code);
+            if (r.failure === "load") return;
             const g = gradeTests(r.tests, r.error);
             if (g.correct) onGrade({ correct: true, message: `${g.message} ${exercise.explanation}` });
           },
@@ -144,13 +244,8 @@ export function CodeWidget({ exercise, setAction, onGrade, locked }: WidgetProps
           ))}
         </ul>
       )}
-      {status === "loading" && (
-        <p className="mt-3 flex items-center gap-2 text-base text-muted-foreground" role="status">
-          <Loader2 className="size-4 animate-spin" aria-hidden /> Downloading the Python runtime (first run only, about 10 MB)…
-        </p>
-      )}
-      {result && <TestReport result={result} />}
-      {result && !gradeTests(result.tests, result.error).correct && (
+      <PythonRunFeedback status={status} result={result} loadDetail={loadDetail} warmed={warmed} onRetry={() => void retry()} />
+      {result && result.failure !== "load" && status !== "load-error" && !gradeTests(result.tests, result.error).correct && (
         <p className={cn("mt-2 text-base text-muted-foreground")}>Fix the code and run again. Tests stay hidden, but their names give you a clue.</p>
       )}
     </div>

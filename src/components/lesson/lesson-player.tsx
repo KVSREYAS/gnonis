@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ArrowLeft, CheckCircle2, MessagesSquare, Monitor, Smartphone, X, XCircle } from "lucide-react";
@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { AskSelection, readLessonSelection } from "@/components/lesson/ask-selection";
 import { useAuth, useDevice, useProgress } from "@/components/providers";
 import { exerciseBrief, exerciseTitle } from "@/lib/chat/context";
+import { DIVE_PANEL_STORAGE_KEY, resolveDivePanelOpen, parseDivePanelChoice } from "@/lib/chat/dive-panel";
+import { PHONE_QUERY } from "@/lib/settings";
 import { studyLinks } from "@/lib/chat/prompt";
 import { Radar } from "@/components/viz";
 import { ExerciseRenderer, exerciseLabel } from "@/exercises/renderer";
@@ -199,16 +201,47 @@ export function LessonPlayer({
     setLatestQuestion((prev) => (prev === question ? prev : question));
   }, []);
 
+  const panelRef = useRef(false);
+  const rememberDive = useCallback((open: boolean) => {
+    if (panelRef.current === open) return;
+    panelRef.current = open;
+    if (typeof document !== "undefined") document.documentElement.dataset.divePanel = open ? "open" : "closed";
+    try {
+      localStorage.setItem(DIVE_PANEL_STORAGE_KEY, open ? "open" : "closed");
+    } catch {
+      /* private mode */
+    }
+    setPanelOpen(open);
+  }, []);
+
+  useLayoutEffect(() => {
+    // Match the boot script before paint. SSR stays closed so hydration does not mismatch.
+    if (!chatEnabled) {
+      panelRef.current = false;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPanelOpen(false);
+      return;
+    }
+    const choice = parseDivePanelChoice(localStorage.getItem(DIVE_PANEL_STORAGE_KEY));
+    const layout = document.documentElement.dataset.diveLayout;
+    const phone = layout === "sheet" || (layout !== "drawer" && window.matchMedia(PHONE_QUERY).matches);
+    const open = resolveDivePanelOpen({ chatEnabled, phone, choice });
+    document.documentElement.dataset.divePanel = open ? "open" : "closed";
+    if (!layout) document.documentElement.dataset.diveLayout = phone ? "sheet" : "drawer";
+    panelRef.current = open;
+    setPanelOpen(open);
+  }, [chatEnabled]);
+
   const openChat = useCallback(() => {
     setPanelTab("chat");
-    setPanelOpen(true);
-  }, []);
+    rememberDive(true);
+  }, [rememberDive]);
 
   useEffect(() => {
     if (!chatEnabled) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setPanelOpen(false);
+        rememberDive(false);
         return;
       }
       const meta = event.metaKey || event.ctrlKey;
@@ -217,7 +250,7 @@ export function LessonPlayer({
       if (key === "k" && event.shiftKey) {
         event.preventDefault();
         setPanelTab("calc");
-        setPanelOpen(true);
+        rememberDive(true);
         setCalcFocus((n) => n + 1);
         return;
       }
@@ -228,11 +261,11 @@ export function LessonPlayer({
       const found = readLessonSelection();
       if (found) addQuote(found.text);
       setPanelTab("chat");
-      setPanelOpen(true);
+      rememberDive(true);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [addQuote, chatEnabled, device]);
+  }, [addQuote, chatEnabled, device, rememberDive]);
 
   const chatgptFor = useCallback(
     (text: string) =>
@@ -248,7 +281,11 @@ export function LessonPlayer({
   );
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-3 sm:px-6">
+    <div
+      className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-3 sm:px-6"
+      data-lesson-player
+      data-chat-enabled={chatEnabled ? "true" : "false"}
+    >
       {lesson.preview && (
         <p className="mt-3 rounded-lg border border-gold bg-ink px-3 py-2 text-center text-sm font-bold tracking-widest text-gold-ink uppercase" data-testid="preview-banner">
           Preview · progress is not saved
@@ -279,7 +316,7 @@ export function LessonPlayer({
               data-testid="dive-toggle"
               onClick={() => {
                 setPanelTab("chat");
-                setPanelOpen((open) => !open);
+                rememberDive(!panelOpen);
               }}
             >
               <MessagesSquare />
@@ -366,10 +403,7 @@ export function LessonPlayer({
       </section>
 
       <div
-        className={cn(
-          "fixed inset-x-0 bottom-0 z-30 border-t border-border bg-ink/95 backdrop-blur",
-          panelOpen && device !== "phone" && "pr-[min(100vw,26rem)]",
-        )}
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-ink/95 backdrop-blur"
         data-testid="action-bar"
       >
         <div className="mx-auto flex max-w-4xl items-center gap-2 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6">
@@ -417,7 +451,7 @@ export function LessonPlayer({
           device={device}
           tab={panelTab}
           onTab={setPanelTab}
-          onClose={() => setPanelOpen(false)}
+          onClose={() => rememberDive(false)}
           lessonKey={lesson.key}
           context={tutorContext}
           quotes={quotes}

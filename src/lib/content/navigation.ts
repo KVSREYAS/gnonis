@@ -1,6 +1,11 @@
 import type { CourseData } from "./types";
 
 export const courseHref = (c: string) => `/courses/${c}`;
+
+/** Links rendered on the /courses index. One entry per course pack, in catalog order. */
+export function courseIndexLinks(courses: { slug: string }[]) {
+  return courses.map((course) => ({ slug: course.slug, href: courseHref(course.slug) }));
+}
 export const moduleHref = (c: string, m: string) => `/courses/${c}/${m}`;
 export const lessonHref = (c: string, m: string, l: string) => `/courses/${c}/${m}/${l}`;
 

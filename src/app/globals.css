@@ -376,3 +376,8 @@
 [data-reader="on"] .blip-next {
   animation: none;
 }
+
+/* Reserve drawer space before React hydrates so opening Dive deeper does not shift the action bar. */
+html[data-dive-panel="open"][data-dive-layout="drawer"] [data-lesson-player][data-chat-enabled="true"] [data-testid="action-bar"] {
+  padding-right: min(100vw, 26rem);
+}
