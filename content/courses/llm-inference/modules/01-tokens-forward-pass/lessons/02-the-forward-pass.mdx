@@ -1,0 +1,88 @@
+---
+title: The forward pass
+summary: Follow one token id from the embedding table, through every transformer block, to the logits.
+xp: 60
+keyIdeas:
+  - Embedding lookup, then N identical transformer blocks, then a final norm and the LM head.
+  - Each block is attention plus an MLP, each wrapped in a norm and a residual add.
+  - The output is one logit per vocabulary entry for every position.
+exercises:
+  pipeline-order:
+    type: ordering
+    devices: [phone, desktop]
+    prompt: Put the stages of a decoder-only forward pass in order.
+    items:
+      - Tokenize the text into ids
+      - Look up embeddings
+      - Run the stack of transformer blocks
+      - Apply the final norm
+      - Project to vocabulary logits (LM head)
+    explanation: >-
+      Ids become vectors, the vectors are refined block by block, and the LM head turns the last
+      hidden state into one score per vocabulary entry.
+  embedding-params:
+    type: predict
+    devices: [phone, desktop]
+    prompt: >-
+      Llama 3 8B has a vocabulary of 128,256 and a hidden size of 4,096. How many parameters are in
+      its embedding table, in millions?
+    answer: 525.3
+    tolerance: { mode: relative, value: 0.02 }
+    unit: million
+    hint: rows x columns
+    explanation: >-
+      128,256 x 4,096 ≈ 525 million parameters, about 6.5% of the model. The LM head is another
+      matrix of the same shape (Llama 3 8B does not share them).
+  block-flow:
+    type: stepper
+    devices: [phone, desktop]
+    prompt: Step through one block and watch where the hidden state goes.
+    frames:
+      - caption: The hidden state for each position enters the block (one 4,096-wide vector per token).
+        view: { kind: tokens, tokens: ["x₀", "x₁", "x₂", "x₃"], highlight: [0, 1, 2, 3], label: hidden states }
+      - caption: RMSNorm rescales each vector, then attention mixes information across positions.
+        view: { kind: tokens, tokens: ["norm", "attention", "+ residual", "norm", "MLP", "+ residual"], highlight: [0, 1], label: block internals }
+      - caption: The attention output is added back to the input (the residual stream).
+        view: { kind: tokens, tokens: ["norm", "attention", "+ residual", "norm", "MLP", "+ residual"], highlight: [2], label: block internals }
+      - caption: A second norm, then the MLP transforms each position independently. Most of the parameters live here.
+        view: { kind: tokens, tokens: ["norm", "attention", "+ residual", "norm", "MLP", "+ residual"], highlight: [3, 4], label: block internals }
+      - caption: Add the residual again. Same shape out as in, ready for the next of 32 blocks.
+        view: { kind: tokens, tokens: ["x₀'", "x₁'", "x₂'", "x₃'"], highlight: [0, 1, 2, 3], label: hidden states out }
+    explanation: Every block keeps the shape [tokens x hidden] so blocks can be stacked as deep as you like.
+---
+
+## From ids to vectors
+
+The first layer is just a lookup. The **embedding table** is a matrix with one row per vocabulary
+entry. Token id 644 selects row 644, a vector of `d_model` numbers (4,096 for Llama 3 8B).
+
+So a prompt of $n$ tokens becomes a matrix of shape $[n \times d_{model}]$. Everything after this
+point is matrix maths on that hidden state.
+
+<Exercise id="embedding-params" />
+
+## The block, repeated
+
+A decoder-only transformer stacks $N$ identical **blocks** (32 in Llama 3 8B). Each block does two
+things:
+
+1. **Attention** lets every position read from earlier positions.
+2. An **MLP** (feed-forward network) transforms each position on its own.
+
+Each half starts with a normalization (RMSNorm in Llama) and ends by *adding* its output back to its
+input. That running sum is called the **residual stream**.
+
+<Exercise id="block-flow" />
+
+## Out come the logits
+
+After the last block, a final norm and the **LM head** (a $[d_{model} \times vocab]$ matrix) turn
+each hidden vector into one score per vocabulary entry. These raw scores are **logits**.
+
+For generation, only the logits at the *last* position matter: they rank every possible next
+token. Turning them into an actual choice is the next lesson.
+
+Cost check: a forward pass does about **2 FLOPs per parameter per token**, so an 8B model needs
+roughly 16 GFLOPs for every token it processes.
+
+<Exercise id="pipeline-order" />

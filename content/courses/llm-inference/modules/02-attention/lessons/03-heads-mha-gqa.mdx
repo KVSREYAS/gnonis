@@ -1,0 +1,70 @@
+---
+title: Heads, MQA and GQA
+summary: Many small attention heads beat one big one. Sharing their keys and values saves inference memory.
+xp: 60
+keyIdeas:
+  - Multi-head attention splits d_model into h heads of size d_model / h that attend independently.
+  - MQA shares one K/V head across all query heads, and GQA shares one per group.
+  - Fewer KV heads mean a smaller KV cache and less memory traffic during decode.
+exercises:
+  head-fill:
+    type: fill
+    devices: [phone, desktop]
+    text: In MHA every {{0}} head has its own K/V head. MQA shares {{1}} K/V head across all of them, and GQA sits in between.
+    chips: [query, value, one, two, every]
+    answers: [query, one]
+    explanation: MHA has h query heads and h KV heads, MQA has 1 KV head, and GQA has g KV heads where 1 < g < h.
+  group-size:
+    type: predict
+    devices: [phone, desktop]
+    prompt: Llama 3 8B has 32 query heads and 8 KV heads. How many query heads share each KV head?
+    answer: 4
+    tolerance: { mode: absolute, value: 0 }
+    unit: query heads
+    explanation: 32 / 8 = 4. The KV cache is 4x smaller than it would be with full multi-head attention.
+  gqa-why:
+    type: mcq
+    devices: [phone, desktop]
+    prompt: What is the main inference win from GQA?
+    options:
+      - Fewer FLOPs in the MLP layers
+      - A smaller KV cache, so more sequences fit and decode reads fewer bytes
+      - It removes the need for softmax
+      - It makes the vocabulary smaller
+    answer: 1
+    explanation: >-
+      Query heads are cheap at decode time (one token). Keys and values are stored for every past
+      token, so cutting KV heads cuts memory and bandwidth directly.
+---
+
+## Many heads
+
+One attention pattern per layer is limiting. **Multi-head attention (MHA)** splits the
+$d_{model}$ dimensions into $h$ heads of size $d_{head} = d_{model} / h$. Each head has its own
+$W_Q, W_K, W_V$ slices and its own attention pattern.
+
+In Llama 3 8B, $d_{model} = 4096$ with 32 heads of 128. Heads run in parallel, then their outputs
+are concatenated and mixed by an output projection $W_O$.
+
+## Sharing keys and values
+
+At inference time, keys and values are stored for every past token (the KV cache, next module).
+Variants cut that cost:
+
+- **MQA** (multi-query): all query heads share a single K/V head.
+- **GQA** (grouped-query): query heads are split into groups, with one K/V head per group.
+
+GQA keeps most of MHA's quality at a fraction of the memory. Llama 3 uses it at every size.
+
+<Exercise id="head-fill" />
+
+<Exercise id="group-size" />
+
+## Why it matters for serving
+
+A decode step computes one query per head but reads **all** cached keys and values. With 4x
+fewer KV heads, you read 4x fewer bytes per step and can fit 4x more tokens in memory.
+
+Llama 3 70B goes further: 64 query heads, 8 KV heads, a group size of 8.
+
+<Exercise id="gqa-why" />

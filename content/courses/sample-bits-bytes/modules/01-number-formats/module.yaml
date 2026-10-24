@@ -1,0 +1,9 @@
+title: Number formats
+district: Byte Bay
+summary: How many bytes is a number? Enough to size any model in your head.
+tip: "TIP: Parameters x bytes per parameter = weight memory."
+art: pier
+status: ready
+lessons:
+  - 01-bytes-per-number
+  - 02-model-size-maths

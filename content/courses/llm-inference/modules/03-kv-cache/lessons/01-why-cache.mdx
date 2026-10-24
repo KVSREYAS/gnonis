@@ -1,0 +1,87 @@
+---
+title: Why cache keys and values?
+summary: Decoding re-reads the past at every step. Recomputing it each time would be absurdly wasteful.
+xp: 60
+keyIdeas:
+  - A token's key and value never change once computed, because the causal mask keeps the past fixed.
+  - The KV cache stores them per layer, so each decode step computes K and V only for the new token.
+  - Queries are not cached, because only the newest token's query is ever used again.
+exercises:
+  cache-growth:
+    type: stepper
+    devices: [phone, desktop]
+    prompt: Watch one layer's KV cache during generation. Gold entries are computed this step, and grey ones are read from the cache.
+    frames:
+      - caption: "Prefill: K and V are computed for all 4 prompt tokens at once and written to the cache."
+        view: { kind: tokens, tokens: ["k,v The", "k,v cat", "k,v sat", "k,v on"], highlight: [0, 1, 2, 3], label: layer 1 KV cache }
+      - caption: "Decode step 1: only the new token \" the\" gets its k and v computed. Its query attends over all 5 cached entries."
+        view: { kind: tokens, tokens: ["k,v The", "k,v cat", "k,v sat", "k,v on", "k,v the"], highlight: [4], dim: [0, 1, 2, 3], label: layer 1 KV cache }
+      - caption: "Decode step 2: one more entry appended. Nothing old is recomputed."
+        view: { kind: tokens, tokens: ["k,v The", "k,v cat", "k,v sat", "k,v on", "k,v the", "k,v mat"], highlight: [5], dim: [0, 1, 2, 3, 4], label: layer 1 KV cache }
+      - caption: The same thing happens in every layer. The cache grows by one entry per layer per generated token.
+        view:
+          kind: bars
+          bars:
+            - { label: "after prefill", value: 4, tone: muted }
+            - { label: "step 1", value: 5, tone: gold }
+            - { label: "step 2", value: 6, tone: gold }
+            - { label: "step 100", value: 104, tone: red }
+          unit: entries per layer
+          label: cache length
+    explanation: The cache trades memory for compute. That trade is so good that every serving engine makes it.
+  why-not-q:
+    type: mcq
+    devices: [phone, desktop]
+    prompt: Why is there a KV cache but no Q cache?
+    options:
+      - Queries are too large to store
+      - Only the newest token's query is needed, and past queries are never used again
+      - Queries are recomputed from the keys
+      - Queries are cached too, just inside the MLP
+    answer: 1
+    explanation: >-
+      At each decode step, the new token's query is compared with every key. Old queries were only
+      needed to produce old outputs, which already exist.
+  what-is-read:
+    type: mcq
+    devices: [phone, desktop]
+    prompt: With a KV cache, what must a decode step still read from GPU memory?
+    options:
+      - Only the newest token's embedding
+      - All model weights, plus that sequence's cached K and V for every layer
+      - Only the attention weights
+      - Nothing, because everything is in registers
+    answer: 1
+    explanation: >-
+      The cache removes recomputation, not reading. Every step streams all weights and the whole
+      KV history through the GPU, which is why decode is bandwidth-bound.
+---
+
+## The waste
+
+Without a cache, step $t$ of decoding would run the model over all $t$ tokens again, just to get
+the last row of attention. Keys and values for the old tokens would be recomputed every single
+step, giving quadratic total work for nothing.
+
+They come out identical each time because the causal mask means old tokens never see new ones.
+
+## The cache
+
+So store them. For each layer, keep the $K$ and $V$ vectors of every token so far:
+
+1. **Prefill** computes K and V for the whole prompt and writes them to the cache.
+2. Each **decode** step computes $q, k, v$ for the one new token, appends $k, v$, and attends with
+   $q$ over the full cache.
+
+<Exercise id="cache-growth" />
+
+## What still costs
+
+There is no Q cache. Only the newest query matters, so old ones are never used again.
+
+The cache turns recomputation into memory: it grows by one entry per layer per token, for every
+sequence being served. The next lesson puts a number on it.
+
+<Exercise id="why-not-q" />
+
+<Exercise id="what-is-read" />

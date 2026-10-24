@@ -1,0 +1,121 @@
+---
+title: The quadratic bill
+summary: Attention compares every token with every token. Double the context, quadruple the scores.
+xp: 80
+keyIdeas:
+  - The score matrix has n² entries per head, so its memory and FLOPs grow quadratically with context.
+  - Materialising it naively for long contexts would not fit on any GPU.
+  - FlashAttention computes the same result in tiles, without ever storing the full matrix.
+exercises:
+  quad-factor:
+    type: predict
+    devices: [phone, desktop]
+    prompt: You grow the context from 4k to 16k tokens. By what factor does the number of attention scores per head grow?
+    answer: 16
+    tolerance: { mode: absolute, value: 0 }
+    unit: x
+    explanation: 4x the tokens gives 4² = 16x the scores. The MLP's cost only grows 4x.
+  blow-the-budget:
+    type: simulator
+    devices: [phone, desktop]
+    sim: attention-cost
+    prompt: >-
+      With 32 heads, find the context length at which materialising ONE layer's fp16 score matrix
+      would need more than a whole 80 GB GPU.
+    params: { seqLen: 4096, heads: 32, headDim: 128 }
+    locked: [headDim]
+    goal:
+      output: scoresGB
+      op: gte
+      value: 80
+      description: push the score matrix to 80 GB or more.
+    explanation: >-
+      At 64k tokens, one layer's scores need about 275 GB. Real kernels never store this matrix,
+      which is exactly what FlashAttention (module 8) is about.
+  attend-code:
+    type: code
+    devices: [desktop]
+    language: python
+    prompt: >-
+      Implement attend(q, keys, values) for a single query in pure Python: scaled dot-product scores,
+      a stable softmax, then the weighted sum of the value vectors.
+    starter: |
+      import math
+
+      def attend(q, keys, values):
+          """q: list[float] of length d. keys: n vectors of length d. values: n vectors of length d_v.
+          Return the attention output, a list of length d_v."""
+          # 1. scores[i] = dot(q, keys[i]) / sqrt(d)
+          # 2. weights = softmax(scores)
+          # 3. output[j] = sum_i weights[i] * values[i][j]
+          return []
+    tests: |
+      import math
+
+      def test_shape():
+          """returns one number per value dimension"""
+          out = attend([1.0, 0.0], [[1.0, 0.0], [0.0, 1.0]], [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+          assert len(out) == 3, f"expected 3 numbers, got {out}"
+
+      def test_equal_keys_average():
+          """identical keys give the plain average of the values"""
+          out = attend([0.3, 0.7], [[1.0, 1.0]] * 3, [[0.0], [3.0], [6.0]])
+          assert abs(out[0] - 3.0) < 1e-9, f"got {out}"
+
+      def test_scaling():
+          """scores are divided by sqrt(d)"""
+          out = attend([2.0, 2.0, 2.0, 2.0], [[1.0, 1.0, 1.0, 1.0], [0.0, 0.0, 0.0, 0.0]], [[1.0], [0.0]])
+          expected = 1 / (1 + math.exp(-4.0))
+          assert abs(out[0] - expected) < 1e-6, f"expected {expected:.5f}, got {out[0]:.5f}"
+
+      def test_stable():
+          """large scores do not overflow"""
+          out = attend([100.0, 100.0], [[100.0, 100.0], [99.0, 99.0]], [[1.0], [0.0]])
+          assert 0.99 < out[0] <= 1.0, f"got {out}"
+    solution: |
+      import math
+
+      def attend(q, keys, values):
+          d = len(q)
+          scores = [sum(a * b for a, b in zip(q, k)) / math.sqrt(d) for k in keys]
+          m = max(scores)
+          w = [math.exp(s - m) for s in scores]
+          z = sum(w)
+          w = [x / z for x in w]
+          return [sum(w[i] * values[i][j] for i in range(len(values))) for j in range(len(values[0]))]
+    hints:
+      - "Scale with math.sqrt(len(q))."
+      - Subtract the max score before exponentiating.
+    explanation: This is exactly what one decode step does per head, for the newest query against every cached key.
+---
+
+## n squared
+
+For $n$ tokens, each head computes an $n \times n$ score matrix. Going from 4k to 128k context
+is 32x more tokens but **1,024x** more scores.
+
+The FLOPs grow the same way. $QK^\top$ and the weighted sum over $V$ each cost about
+$2 n^2 d_{head}$ per head. The MLP grows only linearly with $n$, so at long context, attention
+dominates prefill.
+
+<Exercise id="quad-factor" />
+
+## Do not materialise it
+
+A naive implementation writes the full score matrix to GPU memory, softmaxes it, and reads it
+back. Try the meter: at long context that matrix alone dwarfs the model.
+
+<Exercise id="blow-the-budget" />
+
+## Tile it instead
+
+The fix is to never store it. **FlashAttention** streams tiles of $K$ and $V$ through fast
+on-chip memory and keeps a running softmax. The FLOPs stay the same, but the memory traffic
+collapses.
+
+## One query, by hand
+
+During decode there is only one new query per head, so the "matrix" is a single row. Write that
+row's computation yourself.
+
+<Exercise id="attend-code" />

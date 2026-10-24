@@ -1,0 +1,59 @@
+---
+title: "Boss: Attention Heights"
+kind: boss
+summary: Scores, masks, heads and the n² bill, against the clock.
+xp: 150
+keyIdeas:
+  - softmax(QKᵀ/√d_k)V, with the causal mask applied before softmax.
+  - GQA shares K/V heads across groups of query heads to shrink the KV cache.
+  - Attention cost grows with n², so long contexts need tiled kernels like FlashAttention.
+exercises:
+  showdown:
+    type: boss
+    devices: [phone, desktop]
+    title: Attention Heights
+    briefing: Five hits to clear the district. Three hearts. Two minutes.
+    timeLimit: 120
+    playerHp: 3
+    parts:
+      - type: fill
+        text: "Scores are scaled by {{0}} and the mask sets future scores to {{1}} before softmax."
+        chips: ["1/√d_k", "−∞", "0", "d_model", "1"]
+        answers: ["1/√d_k", "−∞"]
+        explanation: Scaling keeps softmax well-behaved, and −∞ becomes exactly zero weight.
+      - type: predict
+        prompt: Llama 3 70B has 64 query heads and 8 KV heads. What is the GQA group size?
+        answer: 8
+        tolerance: { mode: absolute, value: 0 }
+        explanation: 64 / 8 = 8 query heads per KV head.
+      - type: mcq
+        prompt: Which variant stores the fewest bytes of KV cache per token (same layers and head size)?
+        options: [MHA, GQA with 8 KV heads, MQA, They are all equal]
+        answer: 2
+        explanation: MQA keeps a single K/V head per layer.
+      - type: predict
+        prompt: Context goes from 8k to 32k tokens. How many times more attention scores per head?
+        answer: 16
+        tolerance: { mode: absolute, value: 0 }
+        unit: x
+        explanation: 4x the tokens gives 16x the scores.
+      - type: ordering
+        prompt: Order one head's attention computation.
+        items:
+          - Project hidden states to Q, K and V
+          - Compute QKᵀ / √d_k
+          - Apply the causal mask
+          - Softmax each row
+          - Multiply the weights by V
+        explanation: Project, score, mask, normalise, mix.
+    explanation: Attention Heights is cleared. Next, why decoding caches keys and values.
+---
+
+## Mission briefing
+
+The tower at the top of Attention Heights runs on scaled dot products. Show it you know how the
+scores are made, masked and paid for.
+
+Each correct answer knocks the boss down a notch. Each wrong one costs a heart.
+
+<Exercise id="showdown" />

@@ -1,0 +1,13 @@
+title: The KV cache
+district: Cache Docks
+summary: >-
+  Decoding one token at a time would redo the same work over and over. Caching keys and values fixes
+  that, and quietly becomes the biggest consumer of GPU memory in a serving system.
+tip: "TIP: KV bytes per token = 2 x layers x kv_heads x head_dim x bytes per element."
+art: docks
+status: ready
+lessons:
+  - 01-why-cache
+  - 02-sizing-the-cache
+  - 03-the-memory-budget
+  - 04-boss-cache-docks

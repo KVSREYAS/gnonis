@@ -1,0 +1,44 @@
+---
+title: Model-size maths
+summary: Parameters times bytes. The fastest estimate in inference engineering.
+xp: 40
+keyIdeas:
+  - Weight memory = parameters x bytes per parameter.
+  - A 70B model needs 140 GB in bf16, so it will not fit on one 80 GB GPU.
+  - In int4 the same model is about 35 GB, plus some overhead for scales.
+exercises:
+  size-70b:
+    type: predict
+    devices: [phone, desktop]
+    prompt: How many GB of weights does a 70B-parameter model need in bf16?
+    answer: 140
+    tolerance: { mode: relative, value: 0.02 }
+    unit: GB
+    explanation: 70e9 x 2 bytes = 140 GB, which needs at least two 80 GB GPUs.
+  size-order:
+    type: ordering
+    devices: [phone, desktop]
+    prompt: Order these by weight memory, smallest first.
+    items:
+      - 8B in int4
+      - 8B in bf16
+      - 70B in int4
+      - 70B in bf16
+    explanation: 4 GB, 16 GB, 35 GB and 140 GB.
+---
+
+## The one-liner
+
+$$\text{weight bytes} = \text{parameters} \times \text{bytes per parameter}$$
+
+An 8B model is 16 GB in bf16, 8 GB in int8 and 4 GB in int4. Quantized formats add a little for
+scale factors, often a few percent.
+
+<Exercise id="size-70b" />
+
+## Size them up
+
+With this one formula you can tell at a glance whether a model fits on a GPU, before you open a
+single config file.
+
+<Exercise id="size-order" />
