@@ -9,6 +9,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Default depth is 1 and only the workflow ref, so origin/main is missing and the
+          # content baseline diff cannot run. Full history of every branch includes that ref.
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -17,7 +21,10 @@ jobs:
         with:
           python-version: "3.12"
       - run: npm ci
-      - run: git fetch origin main --depth=1
+      - name: Fetch origin/main for the content baseline
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git rev-parse --verify --quiet "origin/main^{commit}"
       - run: npm run validate:content
       - run: npm run lint
       - run: npm run typecheck

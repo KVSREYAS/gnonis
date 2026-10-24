@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { exerciseContentHash } from "@/lib/content/hash";
-import { diffVanished, emptyIds, type IdSet } from "@/lib/content/ids";
+import { diffRetiredRenames, diffVanished, emptyIds, type IdSet } from "@/lib/content/ids";
 import { EMPTY_RETIRED } from "@/lib/content/renames";
 import { convertCourses } from "../../scripts/convert-legacy-content";
 import { applyRenames, EMPTY_RENAMES } from "@/lib/progress/rename-map";
@@ -45,6 +45,27 @@ describe("diffVanished", () => {
       { ...EMPTY_RENAMES, lessons: { "a/m/l": "a/m/next" } },
     );
     expect(renamed).toEqual([]);
+  });
+});
+
+describe("diffRetiredRenames", () => {
+  const current = ids({ courses: ["a"], lessons: ["a/m/l"], exercises: ["a/m/l#x"] });
+
+  it("flags a retired id that is still live and a rename whose target is missing", () => {
+    const messages = diffRetiredRenames(
+      current,
+      { ...EMPTY_RETIRED, lessons: ["a/m/l", "gone"] },
+      { ...EMPTY_RENAMES, courses: { a: "b" }, lessons: { "a/m/l": "a/m/l" } },
+    );
+    expect(messages).toContain("lessons id a/m/l is listed as retired but still in content");
+    expect(messages).toContain("courses rename target b is not in content");
+    expect(messages).toContain("lessons rename a/m/l does not change the id");
+    expect(messages.some((m) => m.includes("not an id on main"))).toBe(false);
+    expect(messages.some((m) => m.includes("vanished"))).toBe(false);
+  });
+
+  it("is quiet for an empty retirement list", () => {
+    expect(diffRetiredRenames(current, EMPTY_RETIRED, EMPTY_RENAMES)).toEqual([]);
   });
 });
 
