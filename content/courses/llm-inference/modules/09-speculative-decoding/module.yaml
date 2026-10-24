@@ -1,7 +1,0 @@
-title: Speculative decoding
-district: Draft Row
-summary: >-
-  Let a small draft model guess several tokens, verify them in one big-model pass, and keep the output distribution exactly the same.
-tip: "TIP: Speculation trades spare compute for fewer memory-bound steps."
-art: desert
-status: stub

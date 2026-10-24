@@ -1,7 +1,0 @@
-title: Parallelism
-district: Shard City
-summary: >-
-  Tensor, pipeline, data and expert parallelism: splitting a model that does not fit, and the interconnect bills each strategy runs up.
-tip: "TIP: Tensor parallelism needs an all-reduce in every layer."
-art: bridge
-status: stub

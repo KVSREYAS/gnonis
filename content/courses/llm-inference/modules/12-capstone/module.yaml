@@ -1,7 +1,0 @@
-title: "Capstone: build a tiny server"
-district: Capstone Peak
-summary: >-
-  Put it together: a minimal inference server with a KV cache, continuous batching and a benchmark harness, then profile it against the roofline.
-tip: "TIP: Profile first. Guessing bottlenecks is how weekends disappear."
-art: tower
-status: stub

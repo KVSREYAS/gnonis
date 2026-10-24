@@ -8,6 +8,7 @@ import {
   liveStreak,
   migrate,
   nextLessonKey,
+  noteExerciseHash,
   recordExercise,
   respect,
   touchStreak,
@@ -62,6 +63,44 @@ describe("exercise records", () => {
     s = recordExercise(s, "l#b", false);
     s = recordExercise(s, "l#b", true);
     expect(s.exercises["l#b"]).toEqual({ attempts: 2, correct: true, firstTry: false });
+  });
+
+  it("keeps a solved exercise when the answer changes, until the new version is solved", () => {
+    let s = recordExercise(emptyProgress(), "l#a", true, "h1");
+    expect(s.exercises["l#a"]).toEqual({ attempts: 1, correct: true, firstTry: true, contentHash: "h1" });
+    s = recordExercise(s, "l#a", false, "h1");
+    expect(s.exercises["l#a"].attempts).toBe(1);
+    s = recordExercise(s, "l#a", false, "h2");
+    expect(s.exercises["l#a"]).toMatchObject({ attempts: 2, correct: true, contentHash: "h1" });
+    s = recordExercise(s, "l#a", true, "h2");
+    expect(s.exercises["l#a"]).toMatchObject({ attempts: 3, correct: true, firstTry: true, contentHash: "h2" });
+  });
+
+  it("stamps a legacy record with the current hash and does not overwrite a mismatch", () => {
+    let s = recordExercise(emptyProgress(), "l#a", true);
+    s = noteExerciseHash(s, "l#a", "h1");
+    expect(s.exercises["l#a"].contentHash).toBe("h1");
+    s = noteExerciseHash(s, "l#a", "h2");
+    expect(s.exercises["l#a"].contentHash).toBe("h1");
+    const empty = emptyProgress();
+    expect(noteExerciseHash(empty, "missing", "h")).toBe(empty);
+  });
+});
+
+describe("migrate renames", () => {
+  it("rewrites lesson keys, exercise keys, and pending desktop ids", () => {
+    const raw = {
+      xp: 10,
+      lessons: { "old/m/l": { completedAt: "t", xpEarned: 10, pendingDesktop: ["old/m/l#e"] } },
+      exercises: { "old/m/l#e": { attempts: 1, correct: true, firstTry: true } },
+      streak: { current: 1, best: 1, lastDay: "2026-01-01" },
+      updatedAt: null,
+      epoch: 0,
+    };
+    const next = migrate(raw, { courses: { old: "new" }, lessons: {}, exercises: {} });
+    expect(next.lessons["new/m/l"].pendingDesktop).toEqual(["new/m/l#e"]);
+    expect(next.exercises["new/m/l#e"].correct).toBe(true);
+    expect(next.lessons["old/m/l"]).toBeUndefined();
   });
 });
 

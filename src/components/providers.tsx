@@ -8,13 +8,15 @@ import {
   dayKey,
   emptyProgress,
   liveStreak,
+  noteExerciseHash as noteExerciseHashPure,
   recordExercise as recordExercisePure,
   resetProgress,
   type CompletionInput,
   type CompletionResult,
   type ProgressState,
 } from "@/lib/progress/logic";
-import { LocalProgressStore, type ProgressStore } from "@/lib/progress/store";
+import type { RenameMap } from "@/lib/progress/rename-map";
+import { LocalProgressStore, PROGRESS_KEY, type ProgressStore } from "@/lib/progress/store";
 import { SupabaseProgressStore, supabaseRemote, type SyncStatus } from "@/lib/progress/supabase-store";
 import { applySettingsToDocument, DEFAULT_SETTINGS, parseSettings, PHONE_QUERY, SETTINGS_KEY, type Settings } from "@/lib/settings";
 import { createClient } from "@/lib/supabase/client";
@@ -161,7 +163,8 @@ type ProgressCtx = {
   /** True when progress is saved to the signed-in account rather than this device only. */
   cloud: boolean;
   syncStatus: SyncStatus;
-  recordExercise: (key: string, correct: boolean) => void;
+  recordExercise: (key: string, correct: boolean, contentHash?: string) => void;
+  noteExerciseHash: (key: string, contentHash: string) => void;
   completeLesson: (input: Omit<CompletionInput, "now">) => CompletionResult;
   reset: () => void;
   /** Pushes pending changes to the account, e.g. before signing out. */
@@ -170,7 +173,7 @@ type ProgressCtx = {
 
 const ProgressContext = createContext<ProgressCtx | null>(null);
 
-function ProgressProvider({ children }: { children: React.ReactNode }) {
+function ProgressProvider({ children, renames }: { children: React.ReactNode; renames: RenameMap }) {
   const { ready, user } = useAuth();
   const userId = user?.id ?? null;
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
@@ -179,12 +182,17 @@ function ProgressProvider({ children }: { children: React.ReactNode }) {
   const store = useMemo<ProgressStore | null>(() => {
     if (!ready) return null;
     const client = userId ? createClient() : null;
-    if (!client || !userId) return new LocalProgressStore();
-    return new SupabaseProgressStore({ remote: supabaseRemote(client, userId), userId, onStatus: setSyncStatus });
-  }, [ready, userId]);
+    if (!client || !userId) return new LocalProgressStore(undefined, PROGRESS_KEY, renames);
+    return new SupabaseProgressStore({
+      remote: supabaseRemote(client, userId, renames),
+      userId,
+      renames,
+      onStatus: setSyncStatus,
+    });
+  }, [ready, userId, renames]);
 
   // Until auth is known, anything saved lands in guest storage, which a signed-in store then claims.
-  const storeRef = useRef<ProgressStore>(new LocalProgressStore());
+  const storeRef = useRef<ProgressStore>(new LocalProgressStore(undefined, PROGRESS_KEY, renames));
   const [state, setState] = useState<ProgressState>(emptyProgress);
   const [loaded, setLoaded] = useState(false);
   const stateRef = useRef(state);
@@ -217,7 +225,15 @@ function ProgressProvider({ children }: { children: React.ReactNode }) {
   }, [store]);
 
   const recordExercise = useCallback(
-    (key: string, correct: boolean) => commit(recordExercisePure(stateRef.current, key, correct)),
+    (key: string, correct: boolean, contentHash?: string) => commit(recordExercisePure(stateRef.current, key, correct, contentHash)),
+    [commit],
+  );
+
+  const noteExerciseHash = useCallback(
+    (key: string, contentHash: string) => {
+      const next = noteExerciseHashPure(stateRef.current, key, contentHash);
+      if (next !== stateRef.current) commit(next);
+    },
     [commit],
   );
 
@@ -245,8 +261,8 @@ function ProgressProvider({ children }: { children: React.ReactNode }) {
   const status: SyncStatus = cloud ? syncStatus : "idle";
 
   const value = useMemo(
-    () => ({ state, loaded, streakDays, cloud, syncStatus: status, recordExercise, completeLesson, reset, flush }),
-    [state, loaded, streakDays, cloud, status, recordExercise, completeLesson, reset, flush],
+    () => ({ state, loaded, streakDays, cloud, syncStatus: status, recordExercise, noteExerciseHash, completeLesson, reset, flush }),
+    [state, loaded, streakDays, cloud, status, recordExercise, noteExerciseHash, completeLesson, reset, flush],
   );
   return <ProgressContext.Provider value={value}>{children}</ProgressContext.Provider>;
 }
@@ -257,11 +273,11 @@ export function useProgress() {
   return ctx;
 }
 
-export function Providers({ children }: { children: React.ReactNode }) {
+export function Providers({ children, renames }: { children: React.ReactNode; renames: RenameMap }) {
   return (
     <SettingsProvider>
       <AuthProvider>
-        <ProgressProvider>{children}</ProgressProvider>
+        <ProgressProvider renames={renames}>{children}</ProgressProvider>
       </AuthProvider>
     </SettingsProvider>
   );

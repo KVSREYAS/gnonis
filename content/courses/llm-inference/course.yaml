@@ -1,21 +1,175 @@
+id: llm-inference
 title: LLM Inference
-tagline: From one token to a serving fleet.
-description: >-
-  Learn what actually happens when a large language model answers a prompt, and why serving it fast is
-  a memory problem first. Tokens, attention, the KV cache, GPU memory and the roofline, then batching,
-  paging, quantization and the systems that tie it together.
+description: Learn what actually happens when a large language model answers a
+  prompt, and why serving it fast is a memory problem first. Tokens, attention,
+  the KV cache, GPU memory and the roofline, then batching, paging, quantization
+  and the systems that tie it together.
 order: 1
+cover: skyline
+prerequisites: []
+tagline: From one token to a serving fleet.
 level: intermediate
-modules:
-  - 01-tokens-forward-pass
-  - 02-attention
-  - 03-kv-cache
-  - 04-gpu-memory-roofline
-  - 05-batching
-  - 06-paged-attention
-  - 07-quantization
-  - 08-flash-attention
-  - 09-speculative-decoding
-  - 10-parallelism
-  - 11-serving-systems
-  - 12-capstone
+lessons:
+  - what-is-a-token
+  - the-forward-pass
+  - logits-to-tokens
+  - prefill-and-decode
+  - boss-the-forward-pass
+  - queries-keys-values
+  - causal-masking
+  - heads-mha-gqa
+  - the-quadratic-bill
+  - boss-attention
+  - why-cache
+  - sizing-the-cache
+  - the-memory-budget
+  - boss-cache-docks
+  - memory-hierarchy
+  - arithmetic-intensity
+  - the-roofline
+  - decode-speed-limit
+  - boss-roofline-ridge
+  - continuous-batching
+  - kv-as-virtual-memory
+  - fewer-bytes-faster-tokens
+  - draft-and-verify
+  - ttft-tpot-and-prefix-caching
+districts:
+  - id: 01-tokens-forward-pass
+    title: Tokens and the forward pass
+    district: Token Flats
+    summary: Text becomes token ids, ids flow through a stack of transformer blocks,
+      and out comes a probability for every word piece in the vocabulary. Then
+      we pick one, and do it all again.
+    tip: "TIP: One forward pass costs roughly 2 FLOPs per parameter per token."
+    art: skyline
+    status: ready
+    lessons:
+      - what-is-a-token
+      - the-forward-pass
+      - logits-to-tokens
+      - prefill-and-decode
+      - boss-the-forward-pass
+  - id: 02-attention
+    title: Attention
+    district: Attention Heights
+    summary: Every token asks a question (query), every earlier token offers a label
+      (key) and a payload (value). Softmax decides who gets heard. Masks, heads
+      and the quadratic bill that comes with it.
+    tip: "TIP: Scores are scaled by 1/sqrt(d_k) so softmax does not saturate."
+    art: tower
+    status: ready
+    lessons:
+      - queries-keys-values
+      - causal-masking
+      - heads-mha-gqa
+      - the-quadratic-bill
+      - boss-attention
+  - id: 03-kv-cache
+    title: The KV cache
+    district: Cache Docks
+    summary: Decoding one token at a time would redo the same work over and over.
+      Caching keys and values fixes that, and quietly becomes the biggest
+      consumer of GPU memory in a serving system.
+    tip: "TIP: KV bytes per token = 2 x layers x kv_heads x head_dim x bytes per
+      element."
+    art: docks
+    status: ready
+    lessons:
+      - why-cache
+      - sizing-the-cache
+      - the-memory-budget
+      - boss-cache-docks
+  - id: 04-gpu-memory-roofline
+    title: GPU memory and the roofline
+    district: Roofline Ridge
+    summary: A GPU can do far more math than it can feed with data. Arithmetic
+      intensity and the roofline model tell you which wall you are hitting, and
+      why batch-1 decoding is a bandwidth race.
+    tip: "TIP: Ridge point = peak FLOP/s divided by memory bandwidth."
+    art: hills
+    status: ready
+    lessons:
+      - memory-hierarchy
+      - arithmetic-intensity
+      - the-roofline
+      - decode-speed-limit
+      - boss-roofline-ridge
+  - id: 05-batching
+    title: Batching
+    district: Batch Boulevard
+    summary: "Static, dynamic and continuous batching: how servers keep the GPU busy
+      by decoding many requests at once without making anyone wait for the
+      slowest."
+    tip: "TIP: Continuous batching admits new requests at every decode step."
+    art: grid
+    status: ready
+    lessons:
+      - continuous-batching
+  - id: 06-paged-attention
+    title: Paged attention
+    district: Paged Pier
+    summary: "Treat the KV cache like virtual memory: fixed-size blocks, a block
+      table per sequence, near-zero fragmentation and cheap prefix sharing."
+    tip: "TIP: Fragmentation, not capacity, used to waste most KV memory."
+    art: pier
+    status: ready
+    lessons:
+      - kv-as-virtual-memory
+  - id: 07-quantization
+    title: Quantization
+    district: Quant Quarter
+    summary: "int8, fp8 and int4 weights and KV caches: what precision you lose,
+      what bandwidth you win, and methods like GPTQ, AWQ and SmoothQuant."
+    tip: "TIP: Halving bytes per weight roughly doubles batch-1 decode speed."
+    art: grid
+    status: ready
+    lessons:
+      - fewer-bytes-faster-tokens
+  - id: 08-flash-attention
+    title: FlashAttention
+    district: Flash Gardens
+    summary: "Tile attention so the n-by-n score matrix never touches HBM: online
+      softmax, SRAM tiling, and why an IO-aware kernel beats a FLOP-optimal
+      one."
+    tip: "TIP: FlashAttention does the same math with far fewer HBM reads and
+      writes."
+    art: hills
+    status: stub
+  - id: 09-speculative-decoding
+    title: Speculative decoding
+    district: Draft Row
+    summary: Let a small draft model guess several tokens, verify them in one
+      big-model pass, and keep the output distribution exactly the same.
+    tip: "TIP: Speculation trades spare compute for fewer memory-bound steps."
+    art: desert
+    status: ready
+    lessons:
+      - draft-and-verify
+  - id: 10-parallelism
+    title: Parallelism
+    district: Shard City
+    summary: "Tensor, pipeline, data and expert parallelism: splitting a model that
+      does not fit, and the interconnect bills each strategy runs up."
+    tip: "TIP: Tensor parallelism needs an all-reduce in every layer."
+    art: bridge
+    status: stub
+  - id: 11-serving-systems
+    title: Serving systems
+    district: Server Strip
+    summary: "vLLM, SGLang, TensorRT-LLM and friends: schedulers, prefix caching,
+      chunked prefill, and the latency/throughput SLOs they balance."
+    tip: "TIP: Measure TTFT and inter-token latency, not just tokens per second."
+    art: skyline
+    status: ready
+    lessons:
+      - ttft-tpot-and-prefix-caching
+  - id: 12-capstone
+    title: "Capstone: build a tiny server"
+    district: Capstone Peak
+    summary: "Put it together: a minimal inference server with a KV cache,
+      continuous batching and a benchmark harness, then profile it against the
+      roofline."
+    tip: "TIP: Profile first. Guessing bottlenecks is how weekends disappear."
+    art: tower
+    status: stub

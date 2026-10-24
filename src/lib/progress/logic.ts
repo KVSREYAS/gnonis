@@ -1,3 +1,5 @@
+import { applyRenames, EMPTY_RENAMES, type RenameMap } from "./rename-map";
+
 export const PROGRESS_VERSION = 1;
 
 export type LessonRecord = {
@@ -11,6 +13,8 @@ export type ExerciseRecord = {
   attempts: number;
   correct: boolean;
   firstTry: boolean;
+  /** Hash of the answer-bearing fields at the time this record was written. Absent on older saves. */
+  contentHash?: string;
 };
 
 export type ProgressState = {
@@ -74,14 +78,37 @@ export function wantedStars(streakDays: number): number {
 
 export const EXERCISE_BONUS_XP = 10;
 
-export function recordExercise(state: ProgressState, key: string, correct: boolean): ProgressState {
+export function recordExercise(state: ProgressState, key: string, correct: boolean, contentHash?: string): ProgressState {
   const prev = state.exercises[key];
-  if (prev?.correct) return state;
+  const hashChanged = !!contentHash && !!prev?.contentHash && prev.contentHash !== contentHash;
+  if (prev?.correct && !hashChanged) {
+    if (contentHash && !prev.contentHash)
+      return { ...state, exercises: { ...state.exercises, [key]: { ...prev, contentHash } } };
+    return state;
+  }
+  if (prev && hashChanged && !correct) {
+    return { ...state, exercises: { ...state.exercises, [key]: { ...prev, attempts: prev.attempts + 1, correct: true } } };
+  }
+  if (prev && hashChanged && correct) {
+    return {
+      ...state,
+      exercises: {
+        ...state.exercises,
+        [key]: { attempts: prev.attempts + 1, correct: true, firstTry: prev.firstTry, contentHash },
+      },
+    };
+  }
   const attempts = (prev?.attempts ?? 0) + 1;
-  return {
-    ...state,
-    exercises: { ...state.exercises, [key]: { attempts, correct, firstTry: correct && attempts === 1 } },
-  };
+  const next: ExerciseRecord = { attempts, correct, firstTry: correct && attempts === 1 };
+  if (contentHash) next.contentHash = contentHash;
+  return { ...state, exercises: { ...state.exercises, [key]: next } };
+}
+
+/** Stamps the current hash onto a legacy record that has none. A mismatch is left alone so the exercise stays "updated". */
+export function noteExerciseHash(state: ProgressState, key: string, contentHash: string): ProgressState {
+  const prev = state.exercises[key];
+  if (!prev || prev.contentHash) return state;
+  return { ...state, exercises: { ...state.exercises, [key]: { ...prev, contentHash } } };
 }
 
 export type CompletionInput = {
@@ -183,18 +210,21 @@ export function nextLessonKey(state: ProgressState, orderedKeys: string[]): stri
   return orderedKeys.find((k) => !state.lessons[k]);
 }
 
-/** Tolerates old or partial saves instead of throwing them away. */
-export function migrate(raw: unknown): ProgressState {
+/** Tolerates old or partial saves instead of throwing them away, then rewrites any renamed ids. */
+export function migrate(raw: unknown, renames: RenameMap = EMPTY_RENAMES): ProgressState {
   const base = emptyProgress();
-  if (!raw || typeof raw !== "object") return base;
+  if (!raw || typeof raw !== "object") return applyRenames(base, renames);
   const r = raw as Partial<ProgressState>;
-  return {
-    version: PROGRESS_VERSION,
-    xp: typeof r.xp === "number" && r.xp >= 0 ? r.xp : 0,
-    lessons: r.lessons && typeof r.lessons === "object" ? r.lessons : {},
-    exercises: r.exercises && typeof r.exercises === "object" ? r.exercises : {},
-    streak: r.streak && typeof r.streak === "object" ? { ...base.streak, ...r.streak } : base.streak,
-    updatedAt: typeof r.updatedAt === "string" ? r.updatedAt : null,
-    epoch: typeof r.epoch === "number" && r.epoch >= 0 ? r.epoch : 0,
-  };
+  return applyRenames(
+    {
+      version: PROGRESS_VERSION,
+      xp: typeof r.xp === "number" && r.xp >= 0 ? r.xp : 0,
+      lessons: r.lessons && typeof r.lessons === "object" ? r.lessons : {},
+      exercises: r.exercises && typeof r.exercises === "object" ? r.exercises : {},
+      streak: r.streak && typeof r.streak === "object" ? { ...base.streak, ...r.streak } : base.streak,
+      updatedAt: typeof r.updatedAt === "string" ? r.updatedAt : null,
+      epoch: typeof r.epoch === "number" && r.epoch >= 0 ? r.epoch : 0,
+    },
+    renames,
+  );
 }

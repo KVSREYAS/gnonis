@@ -1,0 +1,31 @@
+---
+id: llm-inference/01-tokens-forward-pass/05-boss-the-forward-pass
+title: "Boss: The Forward Pass"
+estMinutes: 2
+xp: 150
+missionIntro: A timed run through everything in Token Flats. Lose all your
+  health or run out of time and you go again.
+kind: boss
+keyIdeas:
+  - Text becomes ids, then vectors, then N blocks, then logits for every
+    vocabulary entry.
+  - Samplers (temperature, top-k, top-p) turn logits into one chosen token.
+  - Prefill sets TTFT, and decode pays one forward pass per output token.
+---
+
+## Mission briefing
+
+The Token Flats heist is on. You know how a token travels and how the next one gets picked. Now prove it with the cops on your tail.
+
+Five questions. Every right answer hits the boss. Every wrong one costs a heart. Three hearts. Ah, here we go again.
+
+<Boss
+  id="heist"
+  devices={["phone","desktop"]}
+  title="The Forward Pass"
+  briefing={"Five questions stand between you and the next district. Correct answers hit the boss. Wrong answers cost you a heart. You have two and a half minutes."}
+  timeLimit={150}
+  playerHp={3}
+  parts={[{"type":"mcq","prompt":"What does the LM head produce at each position?","options":["One probability per layer","One logit per vocabulary entry","The next token id directly","An attention score per previous token"],"answer":1,"explanation":"The LM head projects the final hidden state to vocabulary size. Sampling picks the id."},{"type":"ordering","prompt":"Order the steps of one generated token at decode time.","items":["Embed the newest token","Run every transformer block","Compute logits with the LM head","Sample the next token"],"explanation":"One decode step equals one full forward pass for the newest token, then sampling."},{"type":"predict","prompt":"Roughly how many GFLOPs does an 8-billion-parameter model need per token in a forward pass?","answer":16,"tolerance":{"mode":"relative","value":0.15},"unit":"GFLOPs","explanation":"About 2 FLOPs per parameter per token, so 2 x 8B = 16 GFLOPs."},{"type":"fill","text":"Setting top-k to {{0}} or temperature close to {{1}} gives greedy decoding.","chips":["1","0","2","100"],"answers":["1","0"],"explanation":"Both leave the single most likely token with all the probability."},{"type":"mcq","prompt":"Your chatbot feels slow to *start* answering, but streams quickly once it begins. Which number is bad?","options":["TPOT","TTFT","Vocabulary size","Temperature"],"answer":1,"explanation":"Time to first token covers queueing plus prefill. Long prompts and busy queues inflate it."}]}
+  explanation="Token Flats is cleared. Next, the mechanism that lets tokens talk to each other."
+/>
