@@ -1,9 +1,0 @@
-title: Quantization
-district: Quant Quarter
-summary: >-
-  int8, fp8 and int4 weights and KV caches: what precision you lose, what bandwidth you win, and methods like GPTQ, AWQ and SmoothQuant.
-tip: "TIP: Halving bytes per weight roughly doubles batch-1 decode speed."
-art: grid
-status: ready
-lessons:
-  - 01-fewer-bytes-faster-tokens

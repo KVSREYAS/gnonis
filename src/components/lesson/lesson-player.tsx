@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useDevice, useProgress } from "@/components/providers";
 import { Radar } from "@/components/viz";
-import { ExerciseRenderer, WIDGETS } from "@/components/widgets/registry";
+import { ExerciseRenderer, exerciseLabel } from "@/exercises/renderer";
 import type { PrimaryAction } from "@/components/widgets/types";
 import { MissionPassed } from "@/components/lesson/mission-passed";
 import type { Exercise } from "@/lib/content/schema";
@@ -27,6 +27,8 @@ export type PlayerLesson = {
   moduleIndex: number;
   lessonIndex: number;
   lessonCount: number;
+  hashes: Record<string, string>;
+  preview?: boolean;
 };
 
 type Status = { grade: Grade | null; attempt: number; skipped?: boolean };
@@ -62,17 +64,19 @@ export function LessonPlayer({
   mapHref: string;
 }) {
   const device = useDevice();
-  const { recordExercise, completeLesson } = useProgress();
+  const { state, recordExercise, noteExerciseHash, completeLesson } = useProgress();
   const [index, setIndex] = useState(0);
   const [status, setStatus] = useState<Record<string, Status>>({});
   const [widgetAction, setWidgetAction] = useState<PrimaryAction | null>(null);
-  const [mission, setMission] = useState<null | { xpGained: number; firstCompletion: boolean; pending: number }>(null);
+  const [mission, setMission] = useState<null | { xpGained: number; firstCompletion: boolean; pending: number; preview?: boolean }>(null);
   const topRef = useRef<HTMLDivElement>(null);
 
   const step = steps[index];
   const exerciseIds = useMemo(() => steps.flatMap((s) => (s.kind === "exercise" ? [s.id] : [])), [steps]);
   const st = step.kind === "exercise" ? (status[step.id] ?? { grade: null, attempt: 0 }) : null;
   const blocked = step.kind === "exercise" && !supports(step.exercise, device);
+  const savedHash = step.kind === "exercise" ? state.exercises[exerciseKey(lesson.key, step.id)]?.contentHash : undefined;
+  const updated = step.kind === "exercise" && !!savedHash && !!lesson.hashes[step.id] && savedHash !== lesson.hashes[step.id];
 
   useEffect(() => {
     topRef.current?.scrollIntoView({ block: "start" });
@@ -82,6 +86,10 @@ export function LessonPlayer({
   const finish = useCallback(
     (latest: Record<string, Status>) => {
       const pendingDesktop = exerciseIds.filter((id) => latest[id]?.skipped).map((id) => exerciseKey(lesson.key, id));
+      if (lesson.preview) {
+        setMission({ xpGained: 0, firstCompletion: false, pending: pendingDesktop.length, preview: true });
+        return;
+      }
       const r = completeLesson({
         lessonKey: lesson.key,
         baseXp: lesson.xp,
@@ -90,7 +98,7 @@ export function LessonPlayer({
       });
       setMission({ xpGained: r.xpGained, firstCompletion: r.firstCompletion, pending: pendingDesktop.length });
     },
-    [completeLesson, exerciseIds, lesson.key, lesson.xp],
+    [completeLesson, exerciseIds, lesson.key, lesson.preview, lesson.xp],
   );
 
   const next = useCallback(
@@ -104,11 +112,17 @@ export function LessonPlayer({
   const onGrade = useCallback(
     (g: Grade) => {
       if (step.kind !== "exercise") return;
-      recordExercise(exerciseKey(lesson.key, step.id), g.correct);
+      if (!lesson.preview) recordExercise(exerciseKey(lesson.key, step.id), g.correct, lesson.hashes[step.id]);
       setStatus((s) => ({ ...s, [step.id]: { ...(s[step.id] ?? { attempt: 0 }), grade: g } }));
     },
-    [lesson.key, recordExercise, step],
+    [lesson.hashes, lesson.key, lesson.preview, recordExercise, step],
   );
+
+  useEffect(() => {
+    if (lesson.preview || step.kind !== "exercise") return;
+    const hash = lesson.hashes[step.id];
+    if (hash) noteExerciseHash(exerciseKey(lesson.key, step.id), hash);
+  }, [lesson.hashes, lesson.key, lesson.preview, noteExerciseHash, step]);
 
   const retry = () => {
     if (step.kind !== "exercise") return;
@@ -133,12 +147,20 @@ export function LessonPlayer({
   else if (st?.grade) {
     primary = { label: "Try again", onPress: retry };
     secondary = { label: isLast ? "Finish anyway" : "Move on", onPress: () => next() };
+  } else if (lesson.preview) {
+    primary = widgetAction;
+    secondary = { label: "Skip", onPress: () => next() };
   } else primary = widgetAction;
 
   const progress = index;
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-3 sm:px-6">
+      {lesson.preview && (
+        <p className="mt-3 rounded-lg border border-gold bg-ink px-3 py-2 text-center text-sm font-bold tracking-widest text-gold-ink uppercase" data-testid="preview-banner">
+          Preview · progress is not saved
+        </p>
+      )}
       <div ref={topRef} tabIndex={-1} className="flex scroll-mt-16 items-center gap-3 pt-4 pb-3 outline-none sm:pt-6">
         <Link href={mapHref} className="tap -ml-2 grid place-items-center rounded-lg text-muted-foreground hover:text-foreground" aria-label="Quit to map">
           <X className="size-6" />
@@ -180,8 +202,13 @@ export function LessonPlayer({
         ) : (
           <article className="rounded-xl border border-border bg-panel p-4 sm:p-7" data-testid="lesson-exercise" data-exercise-type={step.exercise.type}>
             <div className="mb-4 flex flex-wrap items-center gap-2">
-              <span className="font-display text-lg tracking-widest text-gold-ink">{WIDGETS[step.exercise.type].label.toUpperCase()}</span>
+              <span className="font-display text-lg tracking-widest text-gold-ink">{exerciseLabel(step.exercise.type).toUpperCase()}</span>
               <DeviceBadges ex={step.exercise} />
+              {updated && (
+                <Badge className="bg-gold text-ink" data-testid="exercise-updated">
+                  Updated
+                </Badge>
+              )}
             </div>
             {blocked ? (
               <div className="rounded-lg border-2 border-dashed border-gold/60 bg-ink p-5" data-testid="desktop-mission">
@@ -262,6 +289,7 @@ export function LessonPlayer({
           xpGained={mission.xpGained}
           firstCompletion={mission.firstCompletion}
           pendingDesktop={mission.pending}
+          preview={mission.preview}
           keyIdeas={lesson.keyIdeas}
           nextHref={nextHref}
           nextLabel={nextLabel}

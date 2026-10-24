@@ -1,0 +1,61 @@
+---
+id: llm-inference/04-gpu-memory-roofline/01-memory-hierarchy
+title: The GPU memory hierarchy
+estMinutes: 3
+xp: 60
+missionIntro: Big memory is slow and fast memory is tiny. Inference kernels live
+  and die by which one they touch.
+keyIdeas:
+  - HBM is large (80 GB on an H100) but around 3.35 TB/s, while on-chip SRAM is
+    tiny and far faster.
+  - Weights and the KV cache live in HBM, so every decode step streams them
+    through.
+  - Fast kernels reuse each byte many times while it sits in registers or shared
+    memory.
+---
+
+## Mission briefing
+
+Registers are your pocket, shared memory your glovebox, HBM the garage across town. Every trip costs time.
+
+**Mission:** Learn the stash spots: what fits in your pocket, your glovebox and the garage across town.
+
+## Two kinds of fast
+
+A GPU has an enormous amount of compute: an H100 SXM does about **989 TFLOP/s** of dense
+BF16 matrix maths. Feeding it is the hard part.
+
+Data lives in a hierarchy. **HBM** (high-bandwidth memory) is the big pool: 80 GB at about
+**3.35 TB/s**. Close to the compute sits on-chip **SRAM**: registers and shared memory in each of
+the 132 SMs, plus a 50 MB L2 cache. SRAM is roughly an order of magnitude faster than HBM, but
+measured in kilobytes per SM.
+
+![H100 memory pyramid: registers, shared memory, L2 cache, HBM3](/diagrams/llm-inference/04-gpu-memory-roofline/01-memory-hierarchy.png)
+
+<Ordering
+  id="hierarchy-order"
+  devices={["phone","desktop"]}
+  prompt="Order these from fastest (and smallest) to slowest (and largest), from a GPU kernel's point of view."
+  items={["Registers","Shared memory / L1 (on-chip SRAM)","L2 cache","HBM (GPU main memory)","CPU memory over PCIe"]}
+  explanation={"Each step down is bigger and slower. An H100 has about 256 KB of registers and 256 KB of L1/shared memory per SM, 50 MB of L2, 80 GB of HBM at about 3.35 TB/s, and PCIe at about 64 GB/s per direction."}
+/>
+
+## What lives where
+
+For inference, the big tenants are all in HBM:
+
+- **Weights**: 16 GB for an 8B model in fp16.
+- **KV cache**: gigabytes per batch.
+- **Activations**: small and short-lived.
+
+A kernel loads tiles from HBM into shared memory and registers, does as much maths on them as it
+can, and writes results back. The more work per byte loaded, the less it waits.
+
+<MCQ
+  id="where-weights"
+  devices={["phone","desktop"]}
+  prompt="Where do the weights of an 8B model live while it is being served on one GPU?"
+  options={["In L2 cache","In shared memory, split across SMs","In HBM, streamed through the chip for every forward pass","In CPU memory, copied in per token"]}
+  answer={2}
+  explanation={"16 GB will not fit in 50 MB of L2. The weights sit in HBM and are read for every forward pass, which is why HBM bandwidth caps decode speed."}
+/>

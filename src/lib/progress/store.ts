@@ -1,4 +1,5 @@
 import { emptyProgress, migrate, type ProgressState } from "./logic";
+import { EMPTY_RENAMES, type RenameMap } from "./rename-map";
 
 /**
  * Persistence boundary for progress. The app only talks to this interface: guests use
@@ -22,12 +23,13 @@ export class LocalProgressStore implements ProgressStore {
   constructor(
     private readonly storage: KV | undefined = typeof window !== "undefined" ? window.localStorage : undefined,
     private readonly key = PROGRESS_KEY,
+    private readonly renames: RenameMap = EMPTY_RENAMES,
   ) {}
 
   async load(): Promise<ProgressState> {
     try {
       const raw = this.storage?.getItem(this.key);
-      return raw ? migrate(JSON.parse(raw)) : emptyProgress();
+      return raw ? migrate(JSON.parse(raw), this.renames) : emptyProgress();
     } catch {
       return emptyProgress();
     }
@@ -50,7 +52,7 @@ export class LocalProgressStore implements ProgressStore {
     const handler = (e: StorageEvent) => {
       if (e.key !== this.key) return;
       try {
-        onChange(e.newValue ? migrate(JSON.parse(e.newValue)) : emptyProgress());
+        onChange(e.newValue ? migrate(JSON.parse(e.newValue), this.renames) : emptyProgress());
       } catch {
         /* ignore malformed writes */
       }

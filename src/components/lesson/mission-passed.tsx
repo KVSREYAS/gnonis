@@ -37,6 +37,7 @@ export type MissionPassedProps = {
   nextHref: string;
   nextLabel: string;
   mapHref: string;
+  preview?: boolean;
 };
 
 /**
@@ -100,7 +101,8 @@ export function MissionPassed(p: MissionPassedProps) {
         <p className="mt-1 text-base text-muted-foreground">{p.title}</p>
         <p className="mt-3 font-display text-3xl text-money-ink tabular-nums" data-testid="mission-xp">
           +{formatMoney(shown)}
-          {!p.firstCompletion && p.xpGained === 0 && <span className="ml-2 font-sans text-base text-muted-foreground">(already collected)</span>}
+          {p.preview && <span className="ml-2 font-sans text-base text-muted-foreground">(preview, not saved)</span>}
+          {!p.preview && !p.firstCompletion && p.xpGained === 0 && <span className="ml-2 font-sans text-base text-muted-foreground">(already collected)</span>}
         </p>
 
         <h2 className="mt-5 mb-2 text-sm font-bold tracking-widest text-muted-foreground uppercase">Three things to keep</h2>

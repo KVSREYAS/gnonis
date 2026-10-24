@@ -1,0 +1,90 @@
+---
+id: llm-inference/03-kv-cache/03-the-memory-budget
+title: The memory budget
+estMinutes: 4
+xp: 90
+missionIntro: Weights are a fixed cost. The KV cache decides how many users you
+  can serve at once.
+keyIdeas:
+  - Usable memory minus weights is your KV budget. It sets the maximum number of
+    concurrent sequences.
+  - Engines like vLLM reserve a fraction of GPU memory (0.9 by default) and hand
+    the rest to the cache.
+  - Smaller KV dtypes (fp8), GQA, shorter contexts or bigger GPUs all raise
+    concurrency.
+---
+
+## Mission briefing
+
+Weights pay rent once. The KV cache is the roommate who keeps inviting friends.
+
+**Mission:** You've got one 80 GB garage. Park the weights, then fit as many customers' caches as you can.
+
+## Weights first, cache second
+
+A serving GPU's memory splits into three parts:
+
+1. **Weights**: fixed. 8B parameters in fp16 take 16 GB.
+2. **Activations and workspace**: temporary buffers, usually small.
+3. **KV cache**: everything that is left.
+
+vLLM, for example, claims `gpu_memory_utilization = 0.9` of the GPU by default. After loading
+weights and profiling activations, the remainder becomes the pool of KV blocks.
+
+![Stacked bars of 16 GB weights plus KV cache for 1, 16 and 48 sequences against an 80 GB limit](/diagrams/llm-inference/03-kv-cache/03-the-memory-budget.png)
+
+<Predict
+  id="max-seqs"
+  devices={["phone","desktop"]}
+  prompt={"Llama 3 8B in fp16 (16 GB of weights) on an 80 GB GPU, using 90% of memory. Each 8k-token sequence needs 1.074 GB of KV. How many full 8k sequences fit at once?"}
+  answer={52}
+  tolerance={{"mode":"absolute","value":1}}
+  unit="sequences"
+  hint="(80 x 0.9 − 16) / 1.074, rounded down"
+  explanation="(72 − 16) / 1.074 ≈ 52.1, so 52 sequences. Activations and fragmentation cost a little more in practice."
+/>
+
+## Long contexts eat concurrency
+
+At 32k tokens, one Llama 3 8B sequence needs 4.3 GB of fp16 cache. Long-context products hit the
+wall fast. The levers are fewer bytes per element, fewer KV heads, shorter contexts, or more
+memory.
+
+<Simulator
+  id="fit-sixteen"
+  devices={["phone","desktop"]}
+  sim="kv-cache"
+  prompt={"Product wants 16 simultaneous 32k-token conversations on Llama 3 8B. As configured, it does not fit. Change the KV dtype or the GPU until at least 16 sequences fit."}
+  params={{"layers":32,"kvHeads":8,"headDim":128,"kvBytes":2,"seqLen":32768,"batch":16,"paramsB":8,"gpuGB":80}}
+  locked={["layers","kvHeads","headDim","seqLen","paramsB"]}
+  goal={{"output":"maxBatch","op":"gte","value":16,"description":"get \"Max sequences that fit\" to 16 or more."}}
+  explanation={"An fp8 KV cache halves 4.3 GB per sequence to 2.15 GB, so 26 fit on 80 GB. Alternatively, a 141 GB GPU fits 25 even in fp16. Real systems often do both."}
+/>
+
+## Read the config right
+
+Most estimators read a Hugging Face `config.json`. The field names matter: `num_attention_heads`
+counts query heads, while `num_key_value_heads` counts KV heads.
+
+<Debug
+  id="wrong-heads"
+  devices={["phone","desktop"]}
+  mode="line"
+  language="python"
+  prompt="This estimator reads a Hugging Face config, but it overestimates Llama 3's cache by 4x. Tap the buggy line."
+  code={"def kv_bytes_per_token(cfg, bytes_per_elem=2):\n    layers = cfg[\"num_hidden_layers\"]\n    heads = cfg[\"num_attention_heads\"]\n    head_dim = cfg[\"hidden_size\"] // cfg[\"num_attention_heads\"]\n    return 2 * layers * heads * head_dim * bytes_per_elem\n"}
+  bugLine={3}
+  explanation={"The cache stores KV heads, so line 3 should read cfg[\"num_key_value_heads\"]. head_dim is still hidden_size / query heads."}
+/>
+
+<Code
+  id="capacity-code"
+  devices={["desktop"]}
+  language="python"
+  prompt={"Write max_sequences(gpu_gb, params_b, layers, kv_heads, head_dim, seq_len, kv_bytes=2, util=0.9). It returns how many full sequences fit, using fp16 weights (2 bytes per parameter) and decimal GB. It must never return a negative number."}
+  starter={"def max_sequences(gpu_gb, params_b, layers, kv_heads, head_dim, seq_len, kv_bytes=2, util=0.9):\n    \"\"\"How many full sequences of seq_len tokens fit in the KV budget?\"\"\"\n    # budget = gpu memory * util - weights\n    # per_seq = kv bytes per token * seq_len\n    return 0\n"}
+  tests={"def test_llama3_8b_on_80gb():\n    \"\"\"Llama 3 8B, 8k context, 80 GB -> 52\"\"\"\n    assert max_sequences(80, 8, 32, 8, 128, 8192) == 52, max_sequences(80, 8, 32, 8, 128, 8192)\n\ndef test_small_gpu():\n    \"\"\"Llama 3 8B, 8k context, 24 GB -> 5\"\"\"\n    assert max_sequences(24, 8, 32, 8, 128, 8192) == 5, max_sequences(24, 8, 32, 8, 128, 8192)\n\ndef test_fp8_cache():\n    \"\"\"fp8 cache at 32k on 80 GB -> 26\"\"\"\n    assert max_sequences(80, 8, 32, 8, 128, 32768, kv_bytes=1) == 26\n\ndef test_does_not_fit():\n    \"\"\"weights larger than budget -> 0, never negative\"\"\"\n    assert max_sequences(80, 70, 80, 8, 128, 8192) == 0\n\ndef test_returns_int():\n    \"\"\"returns an int\"\"\"\n    assert isinstance(max_sequences(80, 8, 32, 8, 128, 8192), int)\n"}
+  solution={"def max_sequences(gpu_gb, params_b, layers, kv_heads, head_dim, seq_len, kv_bytes=2, util=0.9):\n    budget = gpu_gb * 1e9 * util - params_b * 1e9 * 2\n    per_seq = 2 * layers * kv_heads * head_dim * kv_bytes * seq_len\n    return max(0, int(budget // per_seq))\n"}
+  hints={["Work in bytes. 1 GB = 1e9 bytes here.","Use max(0, ...) for models that do not fit at all."]}
+  explanation="This is roughly the calculation vLLM runs at startup when it profiles memory and sizes its KV block pool."
+/>

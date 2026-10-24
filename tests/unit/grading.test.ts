@@ -4,11 +4,20 @@ import {
   bossAnswer,
   bossTimeout,
   goalMet,
+  blankAccepted,
+  gradeCodeBlanks,
   gradeDebugLine,
+  gradeDragSort,
+  gradeEnvelope,
   gradeFill,
   gradeMcq,
   gradeOrdering,
+  gradeParsons,
   gradePredict,
+  gradeSliderDiagram,
+  gradeSpotBug,
+  gradeTrace,
+  interpolateCurve,
   gradeSim,
   gradeTests,
   initialBoss,
@@ -149,6 +158,32 @@ describe("boss fight state machine", () => {
     s = bossAnswer(s, false, 3);
     expect(s).toMatchObject({ status: "lost", reason: "hp" });
     expect(bossTimeout(initialBoss(3, 3))).toMatchObject({ status: "lost", reason: "time" });
+  });
+});
+
+describe("phase 2 graders", () => {
+  it("grades envelope, trace, ordering, parsons, spot-the-bug, blanks, and the slider curve", () => {
+    expect(gradeEnvelope({ answer: 128, tolerance: { mode: "absolute", value: 1 }, explanation: "e" }, "128").correct).toBe(true);
+    expect(gradeTrace({ answer: "6", explanation: "e" }, " 6 ").correct).toBe(true);
+    expect(gradeTrace({ answer: "6", explanation: "e" }, "7").correct).toBe(false);
+    expect(gradeDragSort({ items: ["a", "b", "c"], explanation: "e" }, ["a", "b", "c"]).correct).toBe(true);
+    expect(gradeParsons({ lines: ["a", "b", "c"], explanation: "e" }, ["b", "a", "c"]).correct).toBe(false);
+    expect(gradeSpotBug({ bugLine: 2, explanation: "e" }, 2).correct).toBe(true);
+    expect(blankAccepted({ answer: "2", pattern: "^2$" }, "2")).toBe(true);
+    expect(gradeCodeBlanks({ blanks: [{ answer: "2", pattern: "^2$" }], explanation: "e" }, ["3"]).correct).toBe(false);
+    expect(interpolateCurve([{ x: 0, y: 0 }, { x: 10, y: 100 }], 5)).toBe(50);
+    expect(
+      gradeSliderDiagram(
+        { points: [{ x: 1, y: 800 }, { x: 8, y: 3000 }], goal: { op: "gte", value: 3000, description: "d" }, explanation: "e" },
+        8,
+      ).correct,
+    ).toBe(true);
+    expect(
+      gradeSliderDiagram(
+        { points: [{ x: 1, y: 800 }, { x: 8, y: 3000 }], goal: { op: "gte", value: 3000, description: "d" }, explanation: "e" },
+        1,
+      ).correct,
+    ).toBe(false);
   });
 });
 

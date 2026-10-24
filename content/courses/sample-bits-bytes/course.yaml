@@ -1,9 +1,26 @@
+id: sample-bits-bytes
 title: Bits & Bytes Warm-up
-tagline: A two-lesson sample pack. Drop a folder in, and a course appears.
-description: >-
-  A tiny warm-up on number formats and model-size maths. It also exists to prove the plug-in course
-  system: this whole course is just YAML and MDX files, with no code changes.
+description: "A tiny warm-up on number formats and model-size maths. It also
+  exists to prove the plug-in course system: this whole course is just YAML and
+  MDX files, with no code changes."
 order: 2
+cover: pier
+prerequisites: []
+tagline: A short sample pack. Drop a folder in, and a course appears.
 level: intro
-modules:
-  - 01-number-formats
+lessons:
+  - bytes-per-number
+  - model-size-maths
+  - field-kit
+districts:
+  - id: 01-number-formats
+    title: Number formats
+    district: Byte Bay
+    summary: How many bytes is a number? Enough to size any model in your head.
+    tip: "TIP: Parameters x bytes per parameter = weight memory."
+    art: pier
+    status: ready
+    lessons:
+      - bytes-per-number
+      - model-size-maths
+      - field-kit

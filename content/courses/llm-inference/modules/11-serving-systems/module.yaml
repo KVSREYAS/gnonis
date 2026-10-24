@@ -1,9 +1,0 @@
-title: Serving systems
-district: Server Strip
-summary: >-
-  vLLM, SGLang, TensorRT-LLM and friends: schedulers, prefix caching, chunked prefill, and the latency/throughput SLOs they balance.
-tip: "TIP: Measure TTFT and inter-token latency, not just tokens per second."
-art: skyline
-status: ready
-lessons:
-  - 01-ttft-tpot-and-prefix-caching
