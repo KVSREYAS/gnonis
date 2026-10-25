@@ -7,15 +7,9 @@ import { Markdown } from "@/components/markdown";
 import { clientDefaultModel } from "@/lib/chat/model-server";
 import { getLessonBySlug } from "@/lib/content/loader";
 import { courseHref, nextAfter } from "@/lib/content/navigation";
-import type { Exercise } from "@/lib/content/schema";
+import { forClient } from "@/lib/content/for-client";
 
 export const dynamic = "force-dynamic";
-
-function forClient(ex: Exercise): Exercise {
-  if (ex.type === "code") return { ...ex, solution: "" };
-  if (ex.type === "debug") return { ...ex, solution: undefined };
-  return ex;
-}
 
 export async function generateMetadata({ params }: PageProps<"/preview/[course]/[lesson]">): Promise<Metadata> {
   const { course, lesson } = await params;

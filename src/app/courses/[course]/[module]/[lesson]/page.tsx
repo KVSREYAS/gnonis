@@ -7,7 +7,7 @@ import { Markdown } from "@/components/markdown";
 import { clientDefaultModel } from "@/lib/chat/model-server";
 import { getCourse, getCourses } from "@/lib/content/loader";
 import { courseHref, nextAfter } from "@/lib/content/navigation";
-import type { Exercise } from "@/lib/content/schema";
+import { forClient } from "@/lib/content/for-client";
 
 export const dynamicParams = false;
 
@@ -20,13 +20,6 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: PageProps<"/courses/[course]/[module]/[lesson]">): Promise<Metadata> {
   const { course, module, lesson } = await params;
   return { title: getCourse(course)?.modules.find((m) => m.slug === module)?.lessons.find((l) => l.slug === lesson)?.title ?? "Lesson" };
-}
-
-/** Reference solutions stay on the server: they exist only so CI can prove the hidden tests are passable. */
-function forClient(ex: Exercise): Exercise {
-  if (ex.type === "code") return { ...ex, solution: "" };
-  if (ex.type === "debug") return { ...ex, solution: undefined };
-  return ex;
 }
 
 export default async function LessonPage({ params }: PageProps<"/courses/[course]/[module]/[lesson]">) {

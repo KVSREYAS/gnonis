@@ -108,11 +108,13 @@ export function gradeDebugLine(ex: Pick<ExerciseOf<"debug">, "bugLine" | "explan
 
 export type TestResult = { name: string; passed: boolean; message?: string };
 export function gradeTests(tests: TestResult[], error: string | null): Grade {
-  if (error) return no(`Your code crashed before the tests ran:\n${error}`);
+  if (error) return no(error.startsWith("Compile error:") ? error : `Your code crashed before the tests ran:\n${error}`);
   if (tests.length === 0) return no("No tests ran.");
-  const failed = tests.filter((t) => !t.passed);
-  if (failed.length === 0) return ok(`All ${tests.length} hidden tests passed.`);
-  return no(`${failed.length} of ${tests.length} hidden tests failed. First failure: ${failed[0].name}${failed[0].message ? `: ${failed[0].message}` : ""}`);
+  const passed = tests.filter((t) => t.passed).length;
+  const score = `${passed}/${tests.length} passed`;
+  if (passed === tests.length) return ok(`${score}.`);
+  const first = tests.find((t) => !t.passed)!;
+  return no(`${score}. First failure: ${first.name}${first.message ? `: ${first.message}` : ""}`);
 }
 
 /* ---------- Boss fight ---------- */

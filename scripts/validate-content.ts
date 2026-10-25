@@ -1,9 +1,12 @@
 /**
- * Validates every course pack under content/courses. With python3 on PATH it also proves that each
- * code exercise's reference solution passes its own hidden tests (and that the starter code does not).
+ * Validates every course pack under content/courses. With python3 on PATH it proves that each
+ * Python code exercise's reference solution passes its hidden tests (and that the starter does not).
+ * With g++ on PATH it does the same for C++ exercises. Either check is skipped, with a warning,
+ * when that compiler is missing.
  *
  *   npm run validate-content            # schema + references + solutions + id diff
  *   npm run validate-content -- --no-python
+ *   npm run validate-content -- --no-cpp
  *
  * Progress ids are diffed against CONTENT_BASELINE_REF (default origin/main). That diff is skipped
  * with a warning when the ref is missing or when VERCEL is set (Vercel’s shallow checkout has no
@@ -20,47 +23,75 @@ import { collectIdsFromRoot, diffRetiredRenames, diffVanished, idsFromCourses } 
 import { loadAllCourses, DEFAULT_CONTENT_ROOT, type ContentIssue } from "../src/lib/content/loader";
 import { EMPTY_RETIRED, getRenameMap, getRetiredIds } from "../src/lib/content/renames";
 import { EMPTY_RENAMES } from "../src/lib/progress/rename-map";
+import { executeCppPlan, findGpp } from "../src/lib/runner/cpp-local";
+import { planCpp } from "../src/lib/runner/cpp-harness";
 import { buildPythonHarness, parseHarnessOutput } from "../src/lib/runner/python-harness";
+import type { TestResult } from "../src/lib/grading";
 
 const args = process.argv.slice(2);
 const root = args.find((a) => !a.startsWith("--")) ?? DEFAULT_CONTENT_ROOT;
 const skipPython = args.includes("--no-python");
+const skipCpp = args.includes("--no-cpp");
 
 const { courses, issues } = loadAllCourses(path.resolve(root));
 const pyIssues: ContentIssue[] = [];
+let codeChecks = 0;
 
 const python = skipPython ? null : ["python3", "python"].find((bin) => spawnSync(bin, ["--version"]).status === 0);
+const gpp = skipCpp ? null : findGpp();
+if (!skipCpp && !gpp) console.warn("\n⚠ g++ not found, C++ reference solutions were not executed\n");
 
 function runPython(code: string, tests: string) {
   const r = spawnSync(python!, ["-"], { input: buildPythonHarness(code, tests), encoding: "utf8", timeout: 20_000 });
   return parseHarnessOutput(r.stdout ?? "");
 }
 
-let codeChecks = 0;
-if (python) {
-  for (const c of courses)
-    for (const m of c.modules)
-      for (const l of m.lessons)
-        for (const [id, ex] of Object.entries(l.exercises)) {
-          const file = `${c.slug}/${m.slug}/${l.slug}#${id}`;
-          let solution: string | undefined;
-          let tests: string | undefined;
-          let starter: string | undefined;
-          if (ex.type === "code") [solution, tests, starter] = [ex.solution, ex.tests, ex.starter];
-          if (ex.type === "debug" && ex.mode === "code") [solution, tests, starter] = [ex.solution, ex.tests, ex.code];
-          if (!solution || !tests) continue;
-          codeChecks++;
-          const good = runPython(solution, tests);
-          if (good.error || good.tests.length === 0 || good.tests.some((t) => !t.passed))
-            pyIssues.push({
-              file,
-              message: `reference solution fails hidden tests: ${good.error ?? JSON.stringify(good.tests.filter((t) => !t.passed))}`,
-            });
-          const bad = runPython(starter!, tests);
-          if (!bad.error && bad.tests.length > 0 && bad.tests.every((t) => t.passed))
-            pyIssues.push({ file, message: "starter/buggy code already passes every hidden test" });
-        }
+function checkPair(
+  file: string,
+  language: "python" | "cpp",
+  solution: string,
+  tests: string,
+  starter: string,
+  visible?: string,
+) {
+  const run = (code: string, spec: string) => {
+    if (language === "python") return runPython(code, spec);
+    const plan = planCpp({ code, tests: spec, mode: "tests" });
+    if (!plan.ok) return { error: plan.message, stdout: "", stderr: "", tests: [] as TestResult[] };
+    return executeCppPlan(plan.plan);
+  };
+  codeChecks++;
+  const good = run(solution, tests);
+  if (good.error || good.tests.length === 0 || good.tests.some((t) => !t.passed))
+    pyIssues.push({
+      file,
+      message: `reference solution fails hidden tests: ${good.error ?? JSON.stringify(good.tests.filter((t) => !t.passed))}`,
+    });
+  const bad = run(starter, tests);
+  if (!bad.error && bad.tests.length > 0 && bad.tests.every((t) => t.passed))
+    pyIssues.push({ file, message: "starter/buggy code already passes every hidden test" });
+  if (!visible) return;
+  const samples = run(solution, visible);
+  if (samples.error || samples.tests.length === 0 || samples.tests.some((t) => !t.passed))
+    pyIssues.push({
+      file,
+      message: `reference solution fails visible tests: ${samples.error ?? JSON.stringify(samples.tests.filter((t) => !t.passed))}`,
+    });
 }
+
+for (const c of courses)
+  for (const m of c.modules)
+    for (const l of m.lessons)
+      for (const [id, ex] of Object.entries(l.exercises)) {
+        const file = `${c.slug}/${m.slug}/${l.slug}#${id}`;
+        if (ex.type === "code" && ex.language === "cpp") {
+          if (gpp) checkPair(file, "cpp", ex.solution, ex.tests, ex.starter, ex.visibleTests);
+          continue;
+        }
+        if (!python) continue;
+        if (ex.type === "code") checkPair(file, "python", ex.solution, ex.tests, ex.starter, ex.visibleTests);
+        if (ex.type === "debug" && ex.mode === "code" && ex.solution && ex.tests) checkPair(file, "python", ex.solution, ex.tests, ex.code);
+      }
 
 const idIssues: ContentIssue[] = [];
 const retired = readIdFile("content/retired-ids.yaml", getRetiredIds, idIssues, EMPTY_RETIRED);
@@ -92,7 +123,7 @@ if (all.length) {
 }
 console.log(
   `✓ ${courses.length} course(s), ${lessons} lessons, ${exercises} exercises valid` +
-    (python ? `, ${codeChecks} code exercise(s) verified with ${python}` : " (python checks skipped)") +
+    (python || gpp ? `, ${codeChecks} code exercise(s) verified` + (python ? ` with ${python}` : "") + (gpp ? ` and ${gpp}` : "") : " (code execution checks skipped)") +
     baseline.summary,
 );
 

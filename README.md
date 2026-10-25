@@ -259,6 +259,34 @@ Apply `supabase/migrations/20261024140000_chat_usage.sql` once (SQL editor, or `
 
 The **Calc** tab evaluates expressions locally (no `eval`): `2*7e9*2/1e9`, powers, parentheses, `sqrt` / `log` / `ln`, and `KB` `MB` `GB` `TB` (decimal) plus `KiB` `MiB` `GiB` `TiB`.
 
+## C++ exercises
+
+Python still runs in the browser with Pyodide. C++ compiles on a [Vercel Sandbox](https://vercel.com/docs/sandbox) with x86-64 `g++ -std=c++20 -O2`. The target is x86-64 on purpose: two exercises use SSE2 (`<emmintrin.h>`), which a clang-to-WASM browser toolchain would not run reliably on iPhone Safari (the same reason Pyodide stays on classic workers, pinned 0.29.5). Each run is a fresh sandbox with the network closed while the learner's binary runs. The learner's file and the test file compile as one translation unit. Tests bring their own `main` and call `CHECK` from the harness header `check.h`. `CHECK` prints `file:line` and the expression, then exits 1. Exit 0 is a pass. Run samples uses `visibleTests`. Submit uses hidden `tests`. Wall time, CPU (`ulimit -t`), address space (`ulimit -v`), and output size are capped in the job script. A compiler that is not x86-64 refuses the run with a clear message.
+
+`POST /api/code/cpp` requires a signed-in Supabase user. It looks up the exercise on the server, so hidden tests and the reference solution stay off the client. Run (sample tests or custom stdin) and Submit (hidden tests) each count as one run. The route calls `increment_cpp_run_usage` before it starts a sandbox.
+
+Apply `supabase/migrations/20261025120000_cpp_run_usage.sql` once, the same way as the chat migration (SQL editor, or `supabase db push`). The app does not apply it. The table is `public.cpp_run_usage(user_id, day, count)` with own-row select RLS. Clients cannot insert or update it. The increment is `private.increment_cpp_run_usage`, exposed as `public.increment_cpp_run_usage(p_limit)`. Until that function exists, a signed-in Run returns 503 and names the migration file.
+
+On Vercel, enable [OIDC](https://vercel.com/docs/oidc) for the project so deployments receive a token the Sandbox SDK can use. Locally, `npx vercel link` and `npx vercel env pull`, then restart `next dev`. The other local option is `VERCEL_TOKEN`, `VERCEL_TEAM_ID`, and `VERCEL_PROJECT_ID` together. With none of those, and when `VERCEL` is unset, the route returns 503 and the exercise explains that the compiler is unavailable. The route refuses to call `Sandbox.create` in that case, so a missing token cannot hang the dev server on a device-login prompt.
+
+The default sandbox image does not include `g++`. Build a snapshot once, from a machine that can create sandboxes:
+
+```bash
+npx tsx scripts/cpp-sandbox-snapshot.ts
+```
+
+Set the printed id as `CPP_SANDBOX_SNAPSHOT_ID` on the Vercel project (Production and Preview). `CPP_SANDBOX_INSTALL=1` installs `gcc-c++` on every run instead. That path is slower and can hit the function time limit, so the snapshot is the one to use.
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `CPP_DAILY_LIMIT` | `40` | Sandbox runs per signed-in user per UTC day. Run and Submit both count |
+| `CPP_SANDBOX_SNAPSHOT_ID` | unset | Snapshot that already has `g++`. Strongly recommended |
+| `CPP_SANDBOX_INSTALL` | unset | Set to `1` to `dnf`/`apt` install `g++` when the image lacks it |
+
+Prices below are the public `iad1` rates from the [Sandbox pricing](https://vercel.com/docs/sandbox/pricing) page (October 2026). Active CPU is $0.128/hour and is billed only while the CPU runs. Provisioned memory is $0.0212/GB-hour for the whole sandbox lifetime, in 1-minute minimum increments, and 1 vCPU includes 2 GB. Creations are $0.60 per million. Snapshot storage is $0.08/GB-month.
+
+A compile that finishes in a few seconds still pays the one-minute memory minimum: about $0.0007 of memory plus a fraction of a cent of CPU, so **about $0.001 per run**. Forty runs, the default daily cap, are about **$0.04 per user per day**. Hobby includes 5 active CPU-hours, 420 GB-hours, 5,000 creations, and 10 concurrent sandboxes a month. Creations run out first if every click starts a sandbox (5,000 runs). Past the Hobby quota, sandbox creation pauses until the next cycle. Pro bills these rates against the plan credit.
+
 ## Deploying to Vercel
 
 The app is a standard Next.js App Router project, and every course page is prerendered at build time.
@@ -271,7 +299,10 @@ The app is a standard Next.js App Router project, and every course page is prere
 4. Optionally add `OPENROUTER_API_KEY` and, if you want, `OPENROUTER_MODEL`, `CHAT_DAILY_LIMIT`, and
    `CHAT_DAILY_WEB_LIMIT` ([Dive deeper](#dive-deeper-optional)). Apply the chat usage migration in Supabase first.
    Without the key the dive-deeper panel stays hidden.
-5. Deploy.
+5. For C++ exercises, enable OIDC, apply `supabase/migrations/20261025120000_cpp_run_usage.sql`, and set
+   `CPP_SANDBOX_SNAPSHOT_ID` ([C++ exercises](#c-exercises)). Optionally set `CPP_DAILY_LIMIT`.
+   Without OIDC or the migration, Python lessons still work and the C++ exercise shows why Run is unavailable.
+6. Deploy.
 
 The CLI works too: `npx vercel` for a preview, `npx vercel --prod` for production. Adding or editing a course is a
 content commit, which redeploys.

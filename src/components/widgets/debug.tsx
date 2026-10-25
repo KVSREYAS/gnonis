@@ -5,7 +5,7 @@ import { Bug } from "lucide-react";
 import type { ExerciseOf } from "@/lib/content/schema";
 import { gradeDebugLine, gradeTests } from "@/lib/grading";
 import { cn } from "@/lib/utils";
-import { CodeEditor, PythonRunFeedback, pythonActionLabel, useCodeRun } from "./code";
+import { CodeEditor, PythonRunFeedback, TestReport, pythonActionLabel, usePythonSession } from "./code";
 import { Prompt } from "./inline-text";
 import type { WidgetProps } from "./types";
 import { usePrimaryAction } from "./useAction";
@@ -50,7 +50,7 @@ function LineMode({ id, exercise, setAction, onGrade, locked }: WidgetProps<Exer
 
 function CodeMode({ exercise, setAction, onGrade, locked }: WidgetProps<ExerciseOf<"debug">>) {
   const [code, setCode] = useState(exercise.code);
-  const { status, result, loadDetail, run, retry, warmed } = useCodeRun(exercise.tests ?? "");
+  const { status, result, loadDetail, run, retry, warmed } = usePythonSession();
   const busy = status === "loading" || status === "running";
 
   usePrimaryAction(
@@ -66,18 +66,23 @@ function CodeMode({ exercise, setAction, onGrade, locked }: WidgetProps<Exercise
               await retry();
               return;
             }
-            const r = await run(code);
-            if (r.failure === "load") return;
-            const g = gradeTests(r.tests, r.error);
-            if (g.correct) onGrade({ correct: true, message: `${g.message} ${exercise.explanation}` });
+            const response = await run(code, exercise.tests ?? "");
+            if (response.failure === "load") return;
+            const grade = gradeTests(response.tests, response.error);
+            if (grade.correct) onGrade({ correct: true, message: `${grade.message} ${exercise.explanation}` });
           },
         },
   );
 
   return (
     <>
-      <CodeEditor value={code} onChange={setCode} disabled={locked} label="Buggy code, edit to fix" />
-      <PythonRunFeedback status={status} result={result} loadDetail={loadDetail} warmed={warmed} onRetry={() => void retry()} />
+      <CodeEditor value={code} onChange={setCode} disabled={locked} label="Buggy code, edit to fix" language="python" />
+      <PythonRunFeedback status={status} loadDetail={loadDetail} warmed={warmed} onRetry={() => void retry()} />
+      {status !== "load-error" && result && result.failure !== "load" && (
+        <div className="mt-3" data-testid="test-report">
+          <TestReport result={result} />
+        </div>
+      )}
     </>
   );
 }

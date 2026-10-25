@@ -92,6 +92,99 @@ Put one example in `content/courses/sample-bits-bytes/lessons/03-field-kit.mdx` 
 
 Shipped tags: `MCQ`, `Fill`, `Ordering`, `Predict`, `Simulator`, `Stepper`, `Code`, `Debug`, `Boss`, `PredictReveal`, `Envelope`, `Trace`, `DragSort`, `SpotBug`, `Parsons`, `CodeBlanks`, `SliderDiagram`.
 
+## Code exercises
+
+`Code` takes `language="python"` or `language="cpp"`. Both languages share the same fields:
+
+| Field | Role |
+| --- | --- |
+| `starter` | What the editor opens with. It must fail at least one hidden test. |
+| `tests` | Hidden tests. Submit grades these. The field name stays `tests` so existing Python exercises keep their content hash. |
+| `visibleTests` | Optional sample tests, same format as `tests`. Run shows them. Leave the prop off when there are no samples. |
+| `solution` | Reference solution. `validate:content` runs it. The browser never receives it. |
+| `hints` | Shown one at a time. |
+| `explanation` | Shown after every hidden test passes. |
+
+The progress key is still `<lesson id>#<exercise id>`. A new `language` or a new `visibleTests` prop does not rename that key. Keep the exercise id when you add samples to an existing Python puzzle.
+
+**Run** and **Submit** are separate.
+
+- **Run samples** executes `visibleTests` and saves nothing.
+- **Run input** executes the program with the custom stdin box and saves nothing. Python skips `test_*` functions in this mode. C++ compiles the program once and feeds that stdin.
+- **Submit** runs the hidden `tests`. The lesson records completion only when every hidden test passes. A preview lesson still saves nothing.
+
+`Debug` stays Python-only and keeps a single Submit that grades its hidden tests.
+
+### Python
+
+Hidden and visible tests are Python source. Define `test_*` functions with `assert`. The harness runs the learner's code, then those functions, in Pyodide in the browser (and in CPython during `validate:content`). The docstring is the test name.
+
+```jsx
+<Code
+  id="add-py"
+  language="python"
+  prompt="Write add(a, b)."
+  starter={"def add(a, b):\n    return 0\n"}
+  visibleTests={"def test_sample():\n    \"\"\"two plus three\"\"\"\n    assert add(2, 3) == 5\n"}
+  tests={"def test_neg():\n    \"\"\"negatives\"\"\"\n    assert add(-4, 10) == 6\n"}
+  solution={"def add(a, b):\n    return a + b\n"}
+  explanation="Addition."
+/>
+```
+
+Python hidden tests still ship to the browser, because grading happens there. Write them as checks, and keep the explanation for the idea.
+
+### C++
+
+The component and prop names are the same ones Python uses: `language="cpp"`, `starter`, `visibleTests`, `tests`, `solution`, `hints`, plus `prompt`, `explanation`, `id`, and `devices`.
+
+```jsx
+<Code
+  id="add-two"
+  language="cpp"
+  prompt="Write add(a, b) for two 64-bit integers."
+  starter={"long long add(long long a, long long b) {\n    return 0;\n}\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() {\n    CHECK(add(2, 3) == 5);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\nint main() {\n    CHECK(add(-4, 10) == 6);\n    CHECK(add(2000000000LL, 2000000000LL) == 4000000000LL);\n    return 0;\n}\n"}
+  solution={"long long add(long long a, long long b) {\n    return a + b;\n}\n"}
+  hints={["The tests already define main and CHECK. You only write add."]}
+  explanation="One translation unit. The last check needs a 64-bit sum."
+/>
+```
+
+**Run samples** compiles `starter` (whatever is in the editor) and `visibleTests` together. **Submit** compiles the editor and hidden `tests` together. Neither run is saved until Submit and every hidden check passes. **Run input** compiles the editor by itself and feeds the custom stdin box. It saves nothing. Use it when the learner's file has its own `main`.
+
+The compiler is x86-64 `g++ -std=c++20 -O2` (diagnostics also pass `-fdiagnostics-color=never`). x86-64 is required: exercises may `#include <emmintrin.h>` and use SSE2, which is baseline on that architecture. A compiler whose `-dumpmachine` is not `x86_64*` refuses the run and says so. Vercel Sandbox in `iad1` is x86-64. Build the g++ snapshot on an x86-64 machine.
+
+The learner's code and the test file are one translation unit, in that order, so the tests call the learner's functions directly. The learner does not define `main`. The test file does. The runner writes a harness header, `check.h`, and includes it before the learner's code. Tests may also `#include "check.h"`. Include guards make the second include a no-op.
+
+```cpp
+#ifndef GNOSIS_CHECK_H
+#define GNOSIS_CHECK_H
+#include <cstdio>
+#include <cstdlib>
+#define CHECK(cond) \
+  do { \
+    if (!(cond)) { \
+      std::fprintf(stderr, "%s:%d: CHECK failed: %s\n", __FILE__, __LINE__, #cond); \
+      std::exit(1); \
+    } \
+  } while (0)
+#endif
+```
+
+`CHECK` prints `file:line` and the expression, then exits 1. The first failing check stops the program. Exit code 0 means every check passed, and the report is `1/1 passed`. Any other exit is `0/1`, with that line in the message. `#line` directives name the learner file `solution.cpp` and the test file `tests.cpp`, so the numbers match the sources you wrote.
+
+The browser never receives hidden `tests` or `solution`. Submit looks them up by lesson id and exercise id.
+
+Limits, on each run: source 24 KB, tests 48 KB, custom stdin 8 KB, stdout 8 KB, stderr 4 KB, compile wall 10 s, run wall 3 s, CPU 2 s (`ulimit -t`), address space 512 MiB (`ulimit -v`). A timeout or a crash fails the run.
+
+The worked exercise is `add-two` in `content/courses/sample-bits-bytes/lessons/03-field-kit.mdx`. Its starter returns 0, so the hidden checks fail. The solution returns `a + b` as `long long`.
+
+`npm run validate:content` compiles each C++ reference solution and starter with the system `g++` when it is on `PATH` and targets x86-64. The solution must exit 0 on the hidden tests and on any visible tests. The starter must fail at least one hidden check. If `g++` is missing, the check prints a warning and continues. `--no-cpp` skips it. CI on `ubuntu-latest` is x86-64 and has `g++`, so the reference run happens there. The Vercel Sandbox is what learners hit in production.
+
+A local dev server with no Vercel OIDC token shows a clear message on the exercise and leaves Run and Submit disabled until sign-in and the sandbox are available. See the README for the migration, the snapshot, and the daily cap.
+
 ## Ids, renames, and answer changes
 
 `npm run validate:content` fails if a course, lesson, or exercise id that exists on `origin/main` disappears. List a deliberate removal in `content/retired-ids.yaml`. List a rename in `content/renames.yaml` (`courses`, `lessons`, `exercises`, old id to new id). On read, progress keys are rewritten through that map, including a course-prefix rewrite.

@@ -151,7 +151,8 @@ export class PyodideRunner implements CodeRunner {
 
   async run(req: RunRequest): Promise<RunResult> {
     const started = performance.now();
-    const finish = (partial: Omit<RunResult, "durationMs">): RunResult => ({
+    const finish = (partial: Omit<RunResult, "durationMs" | "stderr"> & { stderr?: string }): RunResult => ({
+      stderr: "",
       ...partial,
       durationMs: Math.round(performance.now() - started),
     });
@@ -166,8 +167,13 @@ export class PyodideRunner implements CodeRunner {
       });
     }
     const timeoutMs = req.timeoutMs ?? 8000;
+    const script = req.stdin !== undefined;
     const reply = await this.call(
-      { type: "run", code: buildPythonHarness(req.code, req.tests), packages: req.packages ?? [] },
+      {
+        type: "run",
+        code: buildPythonHarness(req.code, script ? "" : req.tests, script ? { stdin: req.stdin } : undefined),
+        packages: req.packages ?? [],
+      },
       timeoutMs,
       `Timed out after ${Math.round(timeoutMs / 1000)}s. Infinite loop?`,
       this.epoch,

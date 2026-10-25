@@ -7,10 +7,12 @@ export const RESULT_MARKER = "__IA_RESULTS__";
  * defined by the hidden tests, and prints a single JSON line prefixed with RESULT_MARKER. The same
  * script works in Pyodide, in CPython (CI) and on a remote sandbox.
  */
-export function buildPythonHarness(code: string, tests: string): string {
+export function buildPythonHarness(code: string, tests: string, options?: { stdin?: string }): string {
   // JSON string literals are valid Python string literals.
   const src = JSON.stringify(code);
   const tst = JSON.stringify(tests);
+  const script = options?.stdin !== undefined;
+  const stdin = JSON.stringify(options?.stdin ?? "");
   return `
 import sys as _ia_sys, io as _ia_io, json as _ia_json, traceback as _ia_tb
 _ia_ns = {"__name__": "__main__"}
@@ -20,6 +22,8 @@ _ia_real_out = _ia_sys.stdout
 _ia_real_err = _ia_sys.stderr
 _ia_sys.stdout = _ia_buf
 _ia_sys.stderr = _ia_errbuf
+_ia_sys.stdin = _ia_io.StringIO(${stdin})
+_ia_script = ${script ? "True" : "False"}
 _ia_err = None
 _ia_results = []
 
@@ -36,7 +40,7 @@ try:
         exec(compile(${src}, "solution.py", "exec"), _ia_ns)
     except BaseException as _e:
         _ia_err = _ia_pretty(_e)
-    if _ia_err is None:
+    if _ia_err is None and not _ia_script:
         _ia_before = set(_ia_ns)
         try:
             exec(compile(${tst}, "hidden_tests.py", "exec"), _ia_ns)
@@ -60,9 +64,9 @@ print("${RESULT_MARKER}" + _ia_json.dumps({"error": _ia_err, "stdout": _ia_buf.g
 `;
 }
 
-export function parseHarnessOutput(stdout: string): { error: string | null; stdout: string; tests: TestResult[] } {
+export function parseHarnessOutput(stdout: string): { error: string | null; stdout: string; stderr: string; tests: TestResult[] } {
   const line = stdout.split("\n").reverse().find((l) => l.startsWith(RESULT_MARKER));
-  if (!line) return { error: "The runner produced no results (did the code exit early?)", stdout, tests: [] };
+  if (!line) return { error: "The runner produced no results (did the code exit early?)", stdout, stderr: "", tests: [] };
   try {
     const parsed = JSON.parse(line.slice(RESULT_MARKER.length)) as {
       error?: string | null;
@@ -70,11 +74,8 @@ export function parseHarnessOutput(stdout: string): { error: string | null; stdo
       stderr?: string;
       tests?: TestResult[];
     };
-    const printed = parsed.stdout ?? "";
-    const stderr = parsed.stderr ?? "";
-    const combined = stderr ? (printed ? `${printed.endsWith("\n") ? printed : `${printed}\n`}${stderr}` : stderr) : printed;
-    return { error: parsed.error ?? null, stdout: combined, tests: parsed.tests ?? [] };
+    return { error: parsed.error ?? null, stdout: parsed.stdout ?? "", stderr: parsed.stderr ?? "", tests: parsed.tests ?? [] };
   } catch {
-    return { error: "Could not read test results", stdout, tests: [] };
+    return { error: "Could not read test results", stdout, stderr: "", tests: [] };
   }
 }

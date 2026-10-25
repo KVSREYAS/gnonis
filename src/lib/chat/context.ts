@@ -55,6 +55,7 @@ export function exerciseBrief(exercise: Exercise): string {
         exercise.prompt,
         "Starter code:",
         exercise.starter,
+        exercise.visibleTests ? `Sample tests on screen:\n${exercise.visibleTests.slice(0, 2000)}` : "",
         exercise.hints.length ? `Hints already offered: ${exercise.hints.join(" / ")}` : "",
         "Hidden tests and the reference solution are not included here.",
       ]);

@@ -14,6 +14,7 @@ import { DIVE_PANEL_STORAGE_KEY, resolveDivePanelOpen, parseDivePanelChoice } fr
 import { PHONE_QUERY } from "@/lib/settings";
 import { studyLinks } from "@/lib/chat/prompt";
 import { Radar } from "@/components/viz";
+import { LessonIdProvider } from "@/components/lesson/lesson-context";
 import { ExerciseRenderer, exerciseLabel } from "@/exercises/renderer";
 import type { PrimaryAction } from "@/components/widgets/types";
 import { MissionPassed } from "@/components/lesson/mission-passed";
@@ -281,6 +282,7 @@ export function LessonPlayer({
   );
 
   return (
+    <LessonIdProvider id={lesson.key}>
     <div
       className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-3 sm:px-6"
       data-lesson-player
@@ -483,5 +485,6 @@ export function LessonPlayer({
         />
       )}
     </div>
+    </LessonIdProvider>
   );
 }

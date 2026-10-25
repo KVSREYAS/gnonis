@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { exerciseContentHash } from "@/lib/content/hash";
 import { loadAllCourses } from "@/lib/content/loader";
 import { parseLessonSource } from "@/lib/content/mdx";
 import { CourseSchema, DistrictSchema, ExerciseSchema, LessonFrontmatterSchema } from "@/lib/content/schema";
@@ -42,6 +43,41 @@ describe("ExerciseSchema", () => {
   it("defaults predict tolerance to 5% relative", () => {
     const r = ExerciseSchema.parse({ type: "predict", devices: ["desktop"], prompt: "n?", answer: 10, explanation: "e" });
     expect(r.type === "predict" && r.tolerance).toEqual({ mode: "relative", value: 0.05 });
+  });
+
+  it("keeps a Python code exercise hash stable when visible tests are omitted", () => {
+    const raw = {
+      type: "code" as const,
+      devices: ["phone" as const],
+      language: "python" as const,
+      prompt: "p",
+      starter: "def add(a, b):\n    return 0\n",
+      tests: "def test_add():\n    assert add(1, 2) == 3\n",
+      solution: "def add(a, b):\n    return a + b\n",
+      explanation: "e",
+    };
+    const parsed = ExerciseSchema.parse(raw);
+    expect(parsed.type === "code" && parsed.language).toBe("python");
+    expect(parsed).not.toHaveProperty("visibleTests");
+    expect(exerciseContentHash(parsed)).toBe(
+      exerciseContentHash({
+        ...raw,
+        starter: raw.starter.trim(),
+        tests: raw.tests.trim(),
+        solution: raw.solution.trim(),
+        hints: [],
+      }),
+    );
+    const withVisible = ExerciseSchema.parse({ ...raw, visibleTests: "def test_sample():\n    assert add(2, 3) == 5\n" });
+    expect(exerciseContentHash(parsed)).not.toBe(exerciseContentHash(withVisible));
+    expect(
+      ExerciseSchema.safeParse({
+        ...raw,
+        language: "cpp",
+        visibleTests: '#include "check.h"\nint main() {\n    CHECK(add(2, 3) == 5);\n    return 0;\n}\n',
+      }).success,
+    ).toBe(true);
+    expect(ExerciseSchema.safeParse({ ...raw, language: "rust" }).success).toBe(false);
   });
 
   it("requires tests + solution for code-mode debug and a bugLine for line mode", () => {
@@ -183,6 +219,7 @@ describe("loader", () => {
     const kit = sample.modules[0].lessons.find((l) => l.contentSlug === "field-kit");
     expect(kit?.id).toBe("sample-bits-bytes/01-number-formats/03-field-kit");
     expect(Object.values(kit!.exercises).map((e) => e.type).sort()).toEqual([
+      "code",
       "code-blanks",
       "drag-sort",
       "envelope",
