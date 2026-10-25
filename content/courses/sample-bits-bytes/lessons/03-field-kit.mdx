@@ -1,13 +1,14 @@
 ---
 id: sample-bits-bytes/01-number-formats/03-field-kit
 title: Field kit
-estMinutes: 8
+estMinutes: 10
 xp: 40
-missionIntro: Eight new mission types, each small enough to finish on a phone.
+missionIntro: A field kit of small missions, including a C++ program you compile on the server.
 keyIdeas:
   - Guess first, then let the chart show the real bar.
   - A back-of-the-envelope sum is just the facts, multiplied once.
   - Reorder, tap the bad line, or fill the blank. Same respect either way.
+  - Run tries a sample or your own input. Submit is what counts.
 ---
 
 ## Mission briefing
@@ -137,4 +138,21 @@ Slide the batch until decode throughput clears 3,000 tokens a second.
   points={[{"x":1,"y":800},{"x":8,"y":3000},{"x":16,"y":4200},{"x":32,"y":4500}]}
   goal={{"op":"gte","value":3000,"description":"Reach at least 3,000 tok/s."}}
   explanation="Past a batch of 8 the curve is over the line. Bigger batches buy less after that."
+/>
+
+## Add two numbers
+
+The server compiles your function and the tests as one program. Run uses the sample checks. Submit uses the hidden ones, and that is the run that counts.
+
+<Code
+  id="add-two"
+  devices={["phone","desktop"]}
+  language="cpp"
+  prompt="Write add(a, b) for two 64-bit integers."
+  starter={"long long add(long long a, long long b) {\n    return 0;\n}\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() {\n    CHECK(add(2, 3) == 5);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\nint main() {\n    CHECK(add(-4, 10) == 6);\n    CHECK(add(0, 0) == 0);\n    CHECK(add(2000000000LL, 2000000000LL) == 4000000000LL);\n    return 0;\n}\n"}
+  solution={"long long add(long long a, long long b) {\n    return a + b;\n}\n"}
+  hints={["The tests already define main and CHECK. You only write add.","Use long long. 2e9 + 2e9 does not fit in a 32-bit int."]}
+  explanation="The tests and your function compile as one translation unit. CHECK stops at the first miss and prints that line. The last check needs a 64-bit sum."
 />

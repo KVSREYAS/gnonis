@@ -196,7 +196,7 @@ describe("code runner harness", () => {
 
   it("parses harness output and tolerates noise", () => {
     const out = `hello\n__IA_RESULTS__{"error":null,"stdout":"hi","tests":[{"name":"t","passed":true}]}`;
-    expect(parseHarnessOutput(out)).toEqual({ error: null, stdout: "hi", tests: [{ name: "t", passed: true }] });
+    expect(parseHarnessOutput(out)).toEqual({ error: null, stdout: "hi", stderr: "", tests: [{ name: "t", passed: true }] });
     expect(parseHarnessOutput("nothing").error).toMatch(/no results/);
   });
 
@@ -221,6 +221,7 @@ describe("code runner harness", () => {
     expect(crashed.error).toMatch(/ZeroDivisionError/);
     const noisy = run("import sys\nsys.stderr.write('warn-token\\n')\ndef add(a, b):\n    return a + b\ns = 'it\\'s \"quoted\" \\\\ ok'\n", tests);
     expect(noisy.error).toBeNull();
-    expect(noisy.stdout).toContain("warn-token");
+    expect(noisy.stderr).toContain("warn-token");
+    expect(noisy.stdout).not.toContain("warn-token");
   });
 });

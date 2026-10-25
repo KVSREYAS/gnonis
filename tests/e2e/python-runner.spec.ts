@@ -23,22 +23,28 @@ test.describe("python exercises", () => {
     await page.goto("/preview/llm-inference/03-logits-to-tokens");
 
     const action = page.getByTestId("primary-action");
-    for (let step = 0; step < 12; step += 1) {
-      if (await page.getByTestId("code-editor").isVisible().catch(() => false)) break;
-      const skip = page.getByRole("button", { name: "Skip", exact: true });
+    for (let step = 0; step < 20; step += 1) {
+      if (await page.getByText("PYTHON · RUNS IN YOUR BROWSER").isVisible().catch(() => false)) break;
+      const skip = page.getByTestId("action-bar").getByRole("button", { name: "Skip", exact: true });
       if (await skip.isVisible().catch(() => false)) {
         await skip.click();
         continue;
       }
       await action.click();
     }
+    await expect(page.getByText("PYTHON · RUNS IN YOUR BROWSER")).toBeVisible();
     await expect(page.getByTestId("code-editor")).toBeVisible();
     await expect(page.getByTestId("python-load-error")).toContainText("Python failed to load — Retry", { timeout: 20_000 });
     await expect(page.getByTestId("run-timing")).toHaveCount(0);
 
     await page.unroute(/cdn\.jsdelivr\.net|unpkg\.com/);
     await page.getByTestId("python-retry").click();
-    await expect(action).toHaveText(/Run hidden tests/i, { timeout: 90_000 });
+    await expect(action).toHaveText(/^Submit$/, { timeout: 90_000 });
+
+    await page.getByTestId("custom-stdin").fill("1 2\n");
+    await page.getByTestId("run-code").click();
+    await expect(page.getByTestId("run-report")).toContainText("nothing is saved", { timeout: 30_000 });
+    await expect(page.getByTestId("feedback")).toHaveCount(0);
 
     await action.click();
     await expect(page.getByTestId("test-report")).toContainText(/probabilities sum to 1|assertion failed|sum was/, { timeout: 30_000 });

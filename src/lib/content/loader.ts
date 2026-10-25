@@ -357,6 +357,18 @@ export function getLesson(courseSlug: string, moduleSlug: string, lessonSlug: st
   return getModule(courseSlug, moduleSlug)?.lessons.find((l) => l.slug === lessonSlug);
 }
 
+/** Hidden C++ tests are loaded here on Submit. The browser only sends the exercise id. */
+export function findCodeExercise(lessonId: string, exerciseId: string) {
+  for (const course of getCourses())
+    for (const mod of course.modules)
+      for (const lesson of mod.lessons) {
+        if (lesson.id !== lessonId) continue;
+        const exercise = lesson.exercises[exerciseId];
+        return exercise?.type === "code" ? exercise : null;
+      }
+  return null;
+}
+
 /** Preview routes address a lesson by its authoring slug or its URL slug. */
 export function getLessonBySlug(courseSlug: string, lessonSlug: string) {
   const course = getCourse(courseSlug);

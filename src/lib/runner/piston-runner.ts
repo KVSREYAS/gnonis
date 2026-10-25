@@ -3,8 +3,7 @@ import type { CodeRunner, RunLanguage, RunRequest, RunResult } from "./types";
 
 /**
  * Remote runner for a self-hosted Piston instance (https://github.com/engineer-man/piston).
- * Not wired into the MVP: C++ exercises would register this runner for "cpp" and supply a C++
- * harness that prints the same RESULT_MARKER JSON line.
+ * Not wired into the app. C++ exercises compile in a Vercel Sandbox instead.
  */
 export class PistonRunner implements CodeRunner {
   readonly id = "piston";
@@ -17,7 +16,7 @@ export class PistonRunner implements CodeRunner {
 
   async run(req: RunRequest): Promise<RunResult> {
     if (req.language !== "python") {
-      return { error: `PistonRunner: no ${req.language} harness yet`, stdout: "", tests: [], durationMs: 0 };
+      return { error: `PistonRunner: no ${req.language} harness yet`, stdout: "", stderr: "", tests: [], durationMs: 0 };
     }
     const started = Date.now();
     const res = await fetch(`${this.baseUrl.replace(/\/$/, "")}/api/v2/execute`, {
@@ -26,11 +25,11 @@ export class PistonRunner implements CodeRunner {
       body: JSON.stringify({
         language: req.language,
         version: this.versions[req.language] ?? "*",
-        files: [{ name: "main.py", content: buildPythonHarness(req.code, req.tests) }],
+        files: [{ name: "main.py", content: buildPythonHarness(req.code, req.tests, req.stdin !== undefined ? { stdin: req.stdin } : undefined) }],
         run_timeout: req.timeoutMs ?? 8000,
       }),
     });
-    if (!res.ok) return { error: `Runner HTTP ${res.status}`, stdout: "", tests: [], durationMs: Date.now() - started };
+    if (!res.ok) return { error: `Runner HTTP ${res.status}`, stdout: "", stderr: "", tests: [], durationMs: Date.now() - started };
     const body = (await res.json()) as { run?: { stdout?: string; stderr?: string } };
     const parsed = parseHarnessOutput(body.run?.stdout ?? "");
     return { ...parsed, error: parsed.error ?? (body.run?.stderr || null), durationMs: Date.now() - started };

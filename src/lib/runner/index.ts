@@ -8,7 +8,7 @@ const factories: Partial<Record<RunLanguage, () => CodeRunner>> = {
 };
 const instances = new Map<RunLanguage, CodeRunner>();
 
-/** Swap in another runner for a language, e.g. registerRunner("cpp", () => new PistonRunner(url)). */
+/** Swap in another runner for a language. C++ is not registered here: it runs on the server. */
 export function registerRunner(language: RunLanguage, factory: () => CodeRunner) {
   factories[language] = factory;
   instances.get(language)?.dispose?.();
