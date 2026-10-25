@@ -65,9 +65,13 @@ const theme = EditorView.theme({
   "&": { backgroundColor: "transparent", color: "var(--text)", fontSize: "16px" },
   "&.cm-focused": { outline: "none" },
   ".cm-scroller": { fontFamily: "var(--font-code), ui-monospace, monospace", lineHeight: "1.5", overflow: "auto" },
-  ".cm-content": { padding: "12px 0", minHeight: "12rem", caretColor: "var(--gold)" },
+  ".cm-content": { padding: "12px 0", minHeight: "12rem", caretColor: "var(--caret)" },
+  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--caret)", borderLeftWidth: "2px", marginLeft: "-1px" },
   ".cm-gutters": { backgroundColor: "transparent", color: "var(--text-muted)", borderRight: "1px solid var(--line)" },
-  ".cm-activeLine, .cm-activeLineGutter": { backgroundColor: "rgb(255 255 255 / 0.04)" },
+  ".cm-activeLine, .cm-activeLineGutter": { backgroundColor: "var(--editor-active-line)" },
+  ".cm-selectionBackground, &.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
+    backgroundColor: "var(--editor-selection)",
+  },
   ".cm-tooltip": {
     zIndex: "40",
     border: "1px solid var(--line)",
@@ -118,6 +122,8 @@ export function mountCodeMirror(options: {
 }): { destroy: () => void; setValue: (value: string) => void; setReadOnly: (readOnly: boolean) => void } {
   let applying = false;
   const readOnly = new Compartment();
+  const appearance = new Compartment();
+  const darkNow = () => document.documentElement.dataset.theme !== "light";
   const view = new EditorView({
     parent: options.parent,
     state: EditorState.create({
@@ -140,6 +146,7 @@ export function mountCodeMirror(options: {
         syntaxHighlighting(highlight),
         EditorView.lineWrapping,
         theme,
+        appearance.of(EditorView.darkTheme.of(darkNow())),
         EditorView.contentAttributes.of({
           "aria-label": options.label,
           "data-testid": "code-editor",
@@ -157,8 +164,16 @@ export function mountCodeMirror(options: {
     }),
   });
 
+  const appearanceObserver = new MutationObserver(() => {
+    view.dispatch({ effects: appearance.reconfigure(EditorView.darkTheme.of(darkNow())) });
+  });
+  appearanceObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
   return {
-    destroy: () => view.destroy(),
+    destroy: () => {
+      appearanceObserver.disconnect();
+      view.destroy();
+    },
     setValue: (value) => {
       const current = view.state.doc.toString();
       if (current === value) return;

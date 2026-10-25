@@ -39,7 +39,7 @@ export function Renderer({ id, exercise, setAction, onGrade, locked }: WidgetPro
               value={values[n] ?? ""}
               disabled={locked}
               onChange={(e) => setValues((prev) => prev.map((v, j) => (j === n ? e.target.value : v)))}
-              className={`mx-1 inline-block h-11 min-w-24 rounded border-2 bg-panel px-2 align-middle text-foreground focus:border-gold focus:outline-none ${
+              className={`code-input mx-1 inline-block h-11 min-w-24 rounded border-2 bg-panel px-2 align-middle text-foreground focus:border-gold focus:outline-none ${
                 locked ? (wrong ? "border-danger" : "border-money") : "border-gold/70"
               }`}
               autoComplete="off"

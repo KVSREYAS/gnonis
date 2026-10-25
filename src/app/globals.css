@@ -60,6 +60,11 @@
   --money-ink: #5bc468;
   --danger: #e5484d;
   --line: rgb(255 255 255 / 0.12);
+  /* White bar. The editor surface stays near #141414, so a 1px gold or black caret disappears. */
+  --caret: #fff;
+  /* A step above the page, still dark enough that a white caret and light text stay >= 7:1. */
+  --editor-active-line: rgb(255 255 255 / 0.06);
+  --editor-selection: #2e2e2e;
 
   --background: var(--ink);
   --foreground: var(--text);
@@ -99,6 +104,9 @@
   --line: rgb(0 0 0 / 0.14);
   --input: rgb(0 0 0 / 0.22);
   --ring: #6b4e00;
+  --caret: #141414;
+  --editor-active-line: rgb(20 20 20 / 0.05);
+  --editor-selection: rgb(20 20 20 / 0.12);
   color-scheme: light;
 }
 
@@ -375,6 +383,36 @@
 }
 [data-reader="on"] .blip-next {
   animation: none;
+}
+
+/* Typing caret. CodeMirror paints .cm-cursor / .cm-dropCursor and forces the native
+   caret transparent, so the bar color, width, and .cm-content caret-color are set here. */
+.cm-editor .cm-cursor,
+.cm-editor .cm-dropCursor {
+  border-left-width: 2px !important;
+  border-left-style: solid !important;
+  border-left-color: var(--caret) !important;
+  margin-left: -1px !important;
+}
+.cm-editor .cm-content,
+.code-input,
+.font-mono:is(textarea, input),
+.font-mono :is(textarea, input) {
+  caret-color: var(--caret) !important;
+}
+.cm-editor .cm-activeLine,
+.cm-editor .cm-activeLineGutter {
+  background-color: var(--editor-active-line) !important;
+}
+.cm-editor.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground,
+.cm-editor .cm-selectionBackground {
+  background-color: var(--editor-selection) !important;
+}
+.code-input::selection,
+.font-mono:is(textarea, input)::selection,
+.font-mono :is(textarea, input)::selection {
+  background-color: var(--editor-selection);
+  color: var(--text);
 }
 
 /* Reserve drawer space before React hydrates so opening Dive deeper does not shift the action bar. */
