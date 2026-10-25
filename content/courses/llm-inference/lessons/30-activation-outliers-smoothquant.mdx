@@ -1,0 +1,60 @@
+---
+id: llm-inference/07-quantization/03-activation-outliers-smoothquant
+title: Outliers and SmoothQuant
+estMinutes: 3
+xp: 100
+missionIntro: Weights are easy to quantize. Activations have a few monster
+  channels. SmoothQuant moves the difficulty into the weights.
+keyIdeas:
+  - LLM.int8() found large outlier features in a few hidden channels once models
+    reach about 6.7B parameters.
+  - SmoothQuant rescales channel j by s_j = max|X_j|^α / max|W_j|^(1−α) (α = 0.5
+    by default), dividing X and multiplying W.
+  - That lets W8A8 int8 GEMMs work, with up to 1.56x speedup and 2x memory
+    reduction reported.
+---
+
+## Mission briefing
+
+Most of the crew are regular guys. Three of them are 20 times bigger than everyone else and won't fit in any crate.
+
+**Mission:** shrink the giants and beef up their partners so everyone fits the same crate.
+
+## Monster channels
+
+Dettmers et al. (LLM.int8()) showed that above about 6.7B parameters, a handful of hidden dimensions carry huge activation values. Naive int8 activation quantization destroys accuracy. Their fix keeps those channels in fp16, which is accurate but slower.
+
+<MCQ
+  id="why-hard"
+  devices={["phone","desktop"]}
+  prompt="Why are activations harder to quantize than weights in big LLMs?"
+  options={["Activations are stored in fp32","A few channels carry values far larger than the rest, consistently across tokens","Activations are always negative","There are more weights than activations"]}
+  answer={1}
+  explanation={"Per-tensor activation scales get dominated by those channels, and per-channel activation scales don't map onto fast int8 GEMMs."}
+/>
+
+## Smooth it over
+
+SmoothQuant divides each activation channel by s_j and multiplies the matching weight row by s_j. With α = 0.5 the difficulty is split evenly. Both sides then quantize well to int8.
+
+Sources: [LLM.int8()](https://arxiv.org/abs/2208.07339), [SmoothQuant](https://arxiv.org/abs/2211.10438)
+
+![Per-channel activation max before smoothing (a few huge spikes) and after (flat), with weights growing to match](/diagrams/llm-inference/07-quantization/03-activation-outliers-smoothquant.png)
+
+<Predict
+  id="smooth-s"
+  devices={["phone","desktop"]}
+  prompt="Channel j has max|X_j| = 64 and max|W_j| = 0.25. With α = 0.5, what is the smoothing factor s_j?"
+  answer={16}
+  tolerance={{"mode":"relative","value":0.01}}
+  explanation="s = √64 / √0.25 = 8 / 0.5 = 16. After smoothing, max|X| = 4 and max|W| = 4. Balanced."
+/>
+
+<MCQ
+  id="equivalence"
+  devices={["phone","desktop"]}
+  prompt="Why doesn't SmoothQuant change the model's output (before rounding)?"
+  options={["It retrains the model","(X / s) · (s · W) = X · W, so the scaling cancels in the matmul","It only touches the KV cache","It drops outlier channels"]}
+  answer={1}
+  explanation="It's a mathematically equivalent transform, and s can be folded into the preceding LayerNorm."
+/>

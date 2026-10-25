@@ -1,0 +1,61 @@
+---
+id: llm-inference/09-speculative-decoding/03-medusa-eagle-and-lookup
+title: Medusa, EAGLE and Prompt Lookup
+estMinutes: 3
+xp: 100
+missionIntro: "No separate draft model needed: extra heads, feature-level
+  drafting, or plain copy-paste from the prompt."
+keyIdeas:
+  - "Medusa adds extra decoding heads and verifies a tree of candidates: over
+    2.2x (Medusa-1) and 2.3–3.6x (Medusa-2)."
+  - EAGLE drafts at the feature level with a light head, reporting 2.7–3.5x on
+    LLaMA2-Chat 70B.
+  - Prompt lookup decoding drafts by matching n-grams from the prompt, with zero
+    training and great results on edits and summaries.
+---
+
+## Mission briefing
+
+No scout available? Grow extra heads like a hydra, read the boss's body language, or just copy what he said last time.
+
+**Mission:** pick the right trick for the job.
+
+## Extra heads and trees
+
+Medusa bolts k extra heads onto the target to predict tokens t+2, t+3 and so on. It builds a tree of top candidates and verifies them all at once. EAGLE drafts the next hidden feature instead of the next token, and EAGLE-2 and 3 adapt the tree dynamically.
+
+![A candidate token tree: 3 first-token options each with 2 children, verified in one pass](/diagrams/llm-inference/09-speculative-decoding/03-medusa-eagle-and-lookup.png)
+
+<Predict
+  id="tree-nodes"
+  devices={["phone","desktop"]}
+  prompt={"A Medusa-style tree has 3 candidates for the next token and 2 children under each. How many candidate tokens does one verification pass check?"}
+  answer={9}
+  tolerance={{"mode":"absolute","value":0}}
+  unit="tokens"
+  explanation="3 + 3 × 2 = 9 tokens, checked in one forward pass with a tree-shaped attention mask."
+/>
+
+<MCQ
+  id="tree-why"
+  devices={["phone","desktop"]}
+  prompt="What does tree attention let Medusa do?"
+  options={["Train faster","Verify several alternative continuations in one forward pass","Shrink the KV cache","Skip the softmax"]}
+  answer={1}
+  explanation="Each branch only attends to its own ancestors, set by a custom mask."
+/>
+
+## Copy-paste drafting
+
+Prompt lookup decoding (and n-gram speculation in vLLM) proposes tokens that followed the same n-gram earlier in the context. It's useless for poetry and brilliant for code edits.
+
+Sources: [Medusa](https://arxiv.org/abs/2401.10774), [EAGLE](https://arxiv.org/abs/2401.15077), [Prompt lookup](https://github.com/apoorvumang/prompt-lookup-decoding)
+
+<MCQ
+  id="no-training"
+  devices={["phone","desktop"]}
+  prompt="Which method needs no extra model and no training at all?"
+  options={["Medusa","EAGLE","Prompt lookup decoding","Distilled draft model"]}
+  answer={2}
+  explanation="It just searches the prompt for the current n-gram and proposes whatever followed it."
+/>

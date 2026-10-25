@@ -1,0 +1,77 @@
+---
+id: llm-inference/10-parallelism/03-moe-and-expert-parallelism
+title: MoE Inference and Expert Parallelism
+estMinutes: 4
+xp: 110
+missionIntro: Mixture-of-experts models store many experts but run only a few
+  per token. Memory follows the total and bandwidth follows the active.
+keyIdeas:
+  - "Mixtral 8x7B: 46.7B total, 12.9B active per token (8 experts, top-2).
+    DeepSeek-V3: 671B total, 37B active."
+  - Memory must hold every expert, but batch-1 decode reads only the active ones.
+  - Expert parallelism (EP) places experts on different GPUs and routes tokens
+    with all-to-all dispatch and combine.
+---
+
+## Mission briefing
+
+Shard City's gang has 256 specialists, but each job only calls in 8. Payroll (memory) is huge, the job itself is cheap.
+
+**Mission:** figure out who to keep on speed dial.
+
+## Total vs active
+
+A router picks the top-k experts per token. Mixtral uses 8 experts with top-2. DeepSeek-V3 uses 256 routed experts plus 1 shared, with 8 active. You need memory for the total and bandwidth for the active.
+
+![Router sending a token to the top-2 of 8 experts, with total versus active parameter bars](/diagrams/llm-inference/10-parallelism/03-moe-and-expert-parallelism.png)
+
+<Predict
+  id="mixtral-mem"
+  devices={["phone","desktop"]}
+  prompt="Mixtral 8x7B has 46.7B parameters. Weight memory in fp16, in GB?"
+  answer={93.4}
+  tolerance={{"mode":"relative","value":0.01}}
+  unit="GB"
+  explanation="46.7e9 × 2 B = 93.4 GB, more than one 80 GB GPU."
+/>
+
+<MCQ
+  id="moe-saves"
+  devices={["phone","desktop"]}
+  prompt="What does MoE save compared with a dense model of the same total size?"
+  options={["Memory for weights","FLOPs and bytes read per token","KV cache size","Tokenizer size"]}
+  answer={1}
+  explanation="You still store everything. You just touch less of it per token, at least at small batch."
+/>
+
+## Batches touch more experts
+
+At batch 1 only k experts are read. At larger batches, different tokens pick different experts, and soon nearly all are read every step.
+
+<Code
+  id="touched-code"
+  devices={["desktop"]}
+  language="python"
+  prompt={"Write expected_experts_touched(E, k, B): with E experts, top-k routing and B tokens routed independently and uniformly, return the expected number of distinct experts used: E × (1 − (1 − k/E)^B)."}
+  starter={"def expected_experts_touched(E, k, B):\n    return 0.0\n"}
+  tests={"def test_mixtral_b1():\n    assert abs(expected_experts_touched(8, 2, 1) - 2.0) < 1e-9\n\ndef test_mixtral_b4():\n    assert abs(expected_experts_touched(8, 2, 4) - 5.46875) < 1e-9\n\ndef test_deepseek_b64():\n    assert abs(expected_experts_touched(256, 8, 64) - 222.44) < 0.01\n"}
+  solution={"def expected_experts_touched(E, k, B):\n    return E * (1 - (1 - k / E) ** B)\n"}
+  hints={["Probability an expert is missed by one token = 1 − k/E."]}
+  explanation="By batch 64, DeepSeek-V3 touches about 222 of 256 experts per layer, so the bandwidth advantage fades at scale."
+/>
+
+<Predict
+  id="mixtral-speed"
+  devices={["phone","desktop"]}
+  prompt={"Batch-1 decode on H100s with total bandwidth 3.35 TB/s per GPU (assume the read is spread perfectly over 2 GPUs: 6.7 TB/s). Mixtral reads its 12.9B active params in fp16. Ceiling in tokens/s?"}
+  answer={260}
+  tolerance={{"mode":"relative","value":0.03}}
+  unit="tokens/s"
+  explanation="25.8 GB per token / 6.7 TB/s ≈ 3.85 ms, about 260 tokens/s. A dense 46.7B model would get about 72."
+/>
+
+## Expert parallelism
+
+EP spreads experts across GPUs. Tokens are dispatched all-to-all to their experts and combined afterwards. Load balance becomes the headache.
+
+Sources: [Mixtral](https://arxiv.org/abs/2401.04088), [DeepSeek-V3](https://arxiv.org/abs/2412.19437)

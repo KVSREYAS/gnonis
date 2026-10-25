@@ -1,0 +1,73 @@
+---
+id: llm-inference/07-quantization/02-scales-and-groups
+title: "Scales and Groups: Packing the Crates"
+estMinutes: 4
+xp: 90
+missionIntro: Quantization maps floats to a small integer grid with a scale.
+  Pick the scale per tensor, per channel or per group.
+keyIdeas:
+  - "Symmetric int8: scale = max|w| / 127, q = round(w / scale), and w ≈ q ×
+    scale."
+  - A single outlier stretches the scale and crushes everything else, so smaller
+    groups give smaller errors.
+  - "Group size g with an fp16 scale adds 16/g bits per weight: int4 with g =
+    128 costs 4.125 bits."
+---
+
+## Mission briefing
+
+The smuggling crates hold 256 slots (int8) or 16 slots (int4). Your cargo comes in every size imaginable.
+
+**Mission:** choose a ruler (the scale) so nothing important gets crushed.
+
+## The scale
+
+Symmetric quantization stretches the integer grid over [−max|w|, +max|w|]. One step is the scale. Each weight rounds to the nearest step, so the error is at most half a step.
+
+![Weight histogram with a coarse per-tensor int4 grid versus a fine per-group grid](/diagrams/llm-inference/07-quantization/02-scales-and-groups.png)
+
+<Predict
+  id="q-value"
+  devices={["phone","desktop"]}
+  prompt="Symmetric int8 with max|w| = 0.508, so scale = 0.004. What integer does w = 0.3 quantize to?"
+  answer={75}
+  tolerance={{"mode":"absolute","value":0}}
+  explanation="0.3 / 0.004 = 75."
+/>
+
+<Code
+  id="quant-code"
+  devices={["desktop"]}
+  language="python"
+  prompt={"Write quantize_int8(ws), which returns (q, scale) for symmetric per-tensor int8: scale = max|w| / 127, q = round(w / scale) clamped to [-127, 127]. Use scale = 1.0 if all weights are zero. Also write dequantize(q, scale)."}
+  starter={"def quantize_int8(ws):\n    return [], 1.0\n\ndef dequantize(q, scale):\n    return []\n"}
+  tests={"def test_scale():\n    q, s = quantize_int8([0.508, -0.25, 0.3])\n    assert abs(s - 0.004) < 1e-9\n    assert q == [127, -62, 75]\n\ndef test_roundtrip():\n    ws = [0.1, -0.2, 0.05]\n    q, s = quantize_int8(ws)\n    assert all(abs(a - b) <= s / 2 + 1e-12 for a, b in zip(ws, dequantize(q, s)))\n\ndef test_zeros():\n    assert quantize_int8([0.0, 0.0]) == ([0, 0], 1.0)\n"}
+  solution={"def quantize_int8(ws):\n    m = max((abs(w) for w in ws), default=0.0)\n    scale = m / 127 if m > 0 else 1.0\n    q = [max(-127, min(127, round(w / scale))) for w in ws]\n    return q, scale\n\ndef dequantize(q, scale):\n    return [x * scale for x in q]\n"}
+  hints={["max(abs(w)) sets the range.","The error is at most half a step."]}
+  explanation="Every weight-only scheme (GPTQ, AWQ, GGUF) builds on this, just with smarter choices of scale and rounding."
+/>
+
+## Groups
+
+With one scale per tensor, a single big outlier makes every step huge. Per-channel or per-group scales (GPTQ and AWQ commonly use 128) keep steps small. You pay with extra scale bytes.
+
+Sources: [GPTQ](https://arxiv.org/abs/2210.17323), [AWQ](https://arxiv.org/abs/2306.00978)
+
+<MCQ
+  id="why-groups"
+  devices={["phone","desktop"]}
+  prompt="Why do GPTQ and AWQ checkpoints typically use group size 128 instead of one scale per tensor?"
+  options={["It makes the file smaller","Outliers in one region no longer blow up the scale for the whole tensor","GPUs need groups of 128","It removes the need to dequantize"]}
+  answer={1}
+  explanation="Local scales track local ranges. The cost is a few extra bits for the scales."
+/>
+
+<Predict
+  id="group-bits"
+  devices={["phone","desktop"]}
+  prompt="int4 weights with one fp16 scale per group of 128 weights. Effective bits per weight?"
+  answer={4.125}
+  tolerance={{"mode":"absolute","value":0.01}}
+  unit="bits"
+  explanation="4 + 16/128 = 4.125 bits."
+/>

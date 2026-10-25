@@ -1,0 +1,63 @@
+---
+id: llm-inference/12-capstone/03-benchmark-and-profile
+title: Benchmark and Profile
+estMinutes: 3
+xp: 110
+missionIntro: Measure TTFT and TPOT at rising load, report percentiles, and
+  compare decode speed to the bandwidth roofline.
+keyIdeas:
+  - Sweep the request rate and plot p50/p99 TTFT and TPOT. Latency stays flat,
+    then rises sharply at saturation.
+  - "Report p99, not just the mean: users remember the worst stream."
+  - Model bandwidth utilisation (MBU) = achieved bytes/s ÷ peak bandwidth. Good
+    decode kernels hit 60–80%.
+---
+
+## Mission briefing
+
+The club's open. Now find out how many people it holds before the queue spills into the street.
+
+**Mission:** load-test it like a stress-testing maniac.
+
+## Sweep the load
+
+Fire requests at increasing rates (Poisson arrivals) and record per-request TTFT and TPOT. Plot p50 and p99 against the rate. The knee is your capacity.
+
+![p50 and p99 latency against request rate, flat then shooting up at the saturation knee](/diagrams/llm-inference/12-capstone/03-benchmark-and-profile.png)
+
+<MCQ
+  id="why-p99"
+  devices={["phone","desktop"]}
+  prompt="Why report p99 latency?"
+  options={["It's always lower than the mean","Tail requests dominate user experience and SLOs","It's required by Python","It ignores outliers"]}
+  answer={1}
+  explanation={"An SLO like \"p99 TTFT < 500 ms\" is what production is held to."}
+/>
+
+<Code
+  id="pct-code"
+  devices={["desktop"]}
+  language="python"
+  prompt={"Write percentile(xs, p), the nearest-rank percentile: sort xs, then take the element at rank ceil(p/100 × n) (1-indexed, minimum rank 1)."}
+  starter={"import math\n\ndef percentile(xs, p):\n    return 0\n"}
+  tests={"def test_p50():\n    assert percentile([5, 1, 4, 2, 3], 50) == 3\n\ndef test_p99():\n    assert percentile(list(range(1, 101)), 99) == 99\n\ndef test_p100():\n    assert percentile([7, 9, 8], 100) == 9\n\ndef test_p0():\n    assert percentile([7, 9, 8], 0) == 7\n"}
+  solution={"import math\n\ndef percentile(xs, p):\n    s = sorted(xs)\n    r = max(1, math.ceil(p / 100 * len(s)))\n    return s[r - 1]\n"}
+  hints={["Ranks are 1-indexed, lists are 0-indexed."]}
+  explanation="Use it on per-request TTFT and TPOT lists from your load generator."
+/>
+
+## Check the roofline
+
+At batch 1, compare tokens/s × bytes read per token to peak bandwidth. Far below 60% means overhead: Python, kernel launches, sampling.
+
+Sources: [Databricks: LLM inference performance (MBU)](https://www.databricks.com/blog/llm-inference-performance-engineering-best-practices), [vLLM benchmarks](https://github.com/vllm-project/vllm/tree/main/benchmarks)
+
+<Predict
+  id="mbu"
+  devices={["phone","desktop"]}
+  prompt="8B fp16 model (16 GB) at batch 1 decodes 150 tokens/s on an H100 (3.35 TB/s). MBU as a percentage?"
+  answer={71.6}
+  tolerance={{"mode":"absolute","value":1}}
+  unit="%"
+  explanation="16 GB × 150 = 2.4 TB/s. 2.4 / 3.35 = 71.6%."
+/>

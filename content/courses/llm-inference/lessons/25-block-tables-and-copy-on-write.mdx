@@ -1,0 +1,66 @@
+---
+id: llm-inference/06-paged-attention/02-block-tables-and-copy-on-write
+title: "Copy-on-Write: Sharing the Getaway Car"
+estMinutes: 3
+xp: 90
+missionIntro: Parallel samples and beams share prompt blocks via reference
+  counts, and only copy a block when they write into it.
+keyIdeas:
+  - Physical KV blocks carry a reference count, so several sequences can map the
+    same block.
+  - Copy-on-write copies a block only when a sequence appends into a block it
+    shares.
+  - vLLM measured 6.1–9.8% memory savings for parallel sampling and 37.6–55.2%
+    for beam search (OPT-13B, Alpaca).
+---
+
+## Mission briefing
+
+Four crew members want to rob the same bank, and each insists on their own copy of the floor plan. Ridiculous.
+
+**Mission:** let them share one copy, and photocopy a page only when someone scribbles on it.
+
+## Reference counts
+
+Each physical block records how many sequences point at it. Parallel sampling (n > 1) maps every sample's logical prompt blocks to the same physical blocks. When a sample finishes, it decrements the counts, and blocks at zero return to the free pool.
+
+![Four samples mapping shared prompt blocks (ref count 4) plus private copied blocks](/diagrams/llm-inference/06-paged-attention/02-block-tables-and-copy-on-write.png)
+
+<MCQ
+  id="cow-when"
+  devices={["phone","desktop"]}
+  prompt="When does vLLM copy a KV block?"
+  options={["Every time a token is generated","When a sequence appends to a block whose reference count is above 1","When the GPU runs out of memory","Never; blocks are immutable"]}
+  answer={1}
+  explanation="Like fork() in an OS: share until somebody writes."
+/>
+
+## Copy on write
+
+The last prompt block is usually half full. When sample 2 writes its first new token there, vLLM copies just that one block and bumps the counts. Everything else stays shared.
+
+<Predict
+  id="cow-blocks"
+  devices={["phone","desktop"]}
+  prompt={"A 1,000-token prompt with block size 16. You draw 4 parallel samples, each generating 200 tokens. Full prompt blocks are shared, and the partial last prompt block is copied per sample. How many physical blocks in total?"}
+  answer={114}
+  tolerance={{"mode":"absolute","value":0}}
+  unit="blocks"
+  hint="shared full blocks + 4 × private blocks"
+  explanation={"Full shared prompt blocks: floor(1000/16) = 62 (992 tokens). Each sample then holds 1,200 − 992 = 208 private tokens = 13 blocks. 62 + 4 × 13 = 114, versus 4 × 75 = 300 without sharing."}
+/>
+
+## Beams share more
+
+Beam candidates share generated text as well. The vLLM paper measured 37.6–55.2% savings for beam search versus 6.1–9.8% for parallel sampling.
+
+Source: [Kwon et al., §4.4 and §6.3](https://arxiv.org/abs/2309.06180)
+
+<MCQ
+  id="beam-why"
+  devices={["phone","desktop"]}
+  prompt="Why does beam search save more memory with sharing than parallel sampling does?"
+  options={["Beams are shorter","Beams share generated blocks too, not just the prompt","Beam search uses fp8","Beam search disables the KV cache"]}
+  answer={1}
+  explanation="Beams branch from common prefixes of generated text, so many blocks are shared at any time."
+/>

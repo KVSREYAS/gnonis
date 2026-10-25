@@ -1,0 +1,71 @@
+---
+id: llm-inference/11-serving-systems/02-engines-tour
+title: "The Engine Dealership: vLLM, SGLang, TensorRT-LLM, llama.cpp"
+estMinutes: 4
+xp: 90
+missionIntro: Four engines, four personalities. Pick the right ride for the job.
+keyIdeas:
+  - "vLLM: PagedAttention and continuous batching, broad hardware and model
+    support, an OpenAI-compatible server."
+  - "SGLang: RadixAttention prefix caching and a fast structured-output runtime.
+    TensorRT-LLM: NVIDIA's compiled engines with in-flight batching and FP8/FP4
+    kernels."
+  - "llama.cpp: C/C++ inference on CPUs, Apple Metal and GPUs with GGUF
+    quantized files (Q4_0 = 4.5 bits per weight)."
+---
+
+## Mission briefing
+
+Welcome to the Server Strip dealership. Four rides on the lot: a reliable sedan, a tuned street racer, a factory-built supercar, and a scooter that runs on anything.
+
+**Mission:** match each customer to a ride.
+
+## Datacenter engines
+
+**vLLM** is the default open-source server. **SGLang** adds RadixAttention and a structured-generation frontend, and shines on prefix-heavy and agent workloads. **TensorRT-LLM** compiles models into optimised NVIDIA engines with in-flight batching and FP8/FP4.
+
+![Four engines placed on a map: datacenter vs local, flexibility vs peak NVIDIA performance](/diagrams/llm-inference/11-serving-systems/02-engines-tour.png)
+
+<MCQ
+  id="pick-engine"
+  devices={["phone","desktop"]}
+  prompt={"An agent framework sends thousands of requests that share long system prompts and few-shot examples. Which engine feature matters most?"}
+  options={["GGUF quantization","Radix-tree prefix caching (SGLang)","Pipeline parallelism","fp32 inference"]}
+  answer={1}
+  explanation="RadixAttention reuses the KV cache of shared prefixes automatically across requests."
+/>
+
+## Local engine
+
+**llama.cpp** is pure C/C++ with GGUF files and runs everywhere from a Raspberry Pi to a Mac Studio. Ollama and LM Studio wrap it.
+
+Sources: [vLLM](https://github.com/vllm-project/vllm), [SGLang](https://github.com/sgl-project/sglang), [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM), [llama.cpp](https://github.com/ggml-org/llama.cpp)
+
+<MCQ
+  id="laptop"
+  devices={["phone","desktop"]}
+  prompt="You want to run a model offline on a MacBook. The most natural pick is…"
+  options={["TensorRT-LLM","llama.cpp (or Ollama on top of it)","A Kubernetes vLLM cluster","SGLang on 8 H100s"]}
+  answer={1}
+  explanation="llama.cpp targets local hardware, including Apple Metal."
+/>
+
+<Predict
+  id="q4-bits"
+  devices={["phone","desktop"]}
+  prompt="GGUF Q4_0 stores blocks of 32 weights as 4-bit values plus one fp16 scale. Bits per weight?"
+  answer={4.5}
+  tolerance={{"mode":"absolute","value":0.01}}
+  unit="bits"
+  explanation="(32 × 4 + 16) / 32 = 4.5 bits."
+/>
+
+<Predict
+  id="q4-size"
+  devices={["phone","desktop"]}
+  prompt="An 8B model in Q4_0 (4.5 bits per weight). File size in GB?"
+  answer={4.5}
+  tolerance={{"mode":"relative","value":0.02}}
+  unit="GB"
+  explanation="8e9 × 4.5 / 8 = 4.5 GB, which fits a laptop."
+/>

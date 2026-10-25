@@ -30,10 +30,38 @@ lessons:
   - decode-speed-limit
   - boss-roofline-ridge
   - continuous-batching
+  - batch-size-vs-latency
+  - chunked-prefill
+  - boss-batch-boulevard
   - kv-as-virtual-memory
+  - block-tables-and-copy-on-write
+  - preemption-and-swapping
+  - boss-paged-pier
   - fewer-bytes-faster-tokens
+  - scales-and-groups
+  - activation-outliers-smoothquant
+  - kv-cache-quantization
+  - boss-quant-quarter
+  - the-hbm-bottleneck
+  - online-softmax
+  - tiling-in-sram
+  - boss-flash-gardens
   - draft-and-verify
+  - acceptance-and-speedup
+  - medusa-eagle-and-lookup
+  - boss-draft-row
+  - tensor-parallelism
+  - pipeline-parallelism
+  - moe-and-expert-parallelism
+  - boss-shard-city
   - ttft-tpot-and-prefix-caching
+  - engines-tour
+  - disaggregated-prefill-decode
+  - boss-server-strip
+  - server-architecture
+  - build-the-scheduler
+  - benchmark-and-profile
+  - boss-capstone-peak
 districts:
   - id: 01-tokens-forward-pass
     title: Tokens and the forward pass
@@ -106,6 +134,9 @@ districts:
     status: ready
     lessons:
       - continuous-batching
+      - batch-size-vs-latency
+      - chunked-prefill
+      - boss-batch-boulevard
   - id: 06-paged-attention
     title: Paged attention
     district: Paged Pier
@@ -116,6 +147,9 @@ districts:
     status: ready
     lessons:
       - kv-as-virtual-memory
+      - block-tables-and-copy-on-write
+      - preemption-and-swapping
+      - boss-paged-pier
   - id: 07-quantization
     title: Quantization
     district: Quant Quarter
@@ -126,6 +160,10 @@ districts:
     status: ready
     lessons:
       - fewer-bytes-faster-tokens
+      - scales-and-groups
+      - activation-outliers-smoothquant
+      - kv-cache-quantization
+      - boss-quant-quarter
   - id: 08-flash-attention
     title: FlashAttention
     district: Flash Gardens
@@ -135,7 +173,12 @@ districts:
     tip: "TIP: FlashAttention does the same math with far fewer HBM reads and
       writes."
     art: hills
-    status: stub
+    status: ready
+    lessons:
+      - the-hbm-bottleneck
+      - online-softmax
+      - tiling-in-sram
+      - boss-flash-gardens
   - id: 09-speculative-decoding
     title: Speculative decoding
     district: Draft Row
@@ -146,6 +189,9 @@ districts:
     status: ready
     lessons:
       - draft-and-verify
+      - acceptance-and-speedup
+      - medusa-eagle-and-lookup
+      - boss-draft-row
   - id: 10-parallelism
     title: Parallelism
     district: Shard City
@@ -153,7 +199,12 @@ districts:
       does not fit, and the interconnect bills each strategy runs up."
     tip: "TIP: Tensor parallelism needs an all-reduce in every layer."
     art: bridge
-    status: stub
+    status: ready
+    lessons:
+      - tensor-parallelism
+      - pipeline-parallelism
+      - moe-and-expert-parallelism
+      - boss-shard-city
   - id: 11-serving-systems
     title: Serving systems
     district: Server Strip
@@ -164,6 +215,9 @@ districts:
     status: ready
     lessons:
       - ttft-tpot-and-prefix-caching
+      - engines-tour
+      - disaggregated-prefill-decode
+      - boss-server-strip
   - id: 12-capstone
     title: "Capstone: build a tiny server"
     district: Capstone Peak
@@ -172,4 +226,9 @@ districts:
       roofline."
     tip: "TIP: Profile first. Guessing bottlenecks is how weekends disappear."
     art: tower
-    status: stub
+    status: ready
+    lessons:
+      - server-architecture
+      - build-the-scheduler
+      - benchmark-and-profile
+      - boss-capstone-peak

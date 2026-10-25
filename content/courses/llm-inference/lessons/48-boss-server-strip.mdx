@@ -1,0 +1,44 @@
+---
+id: llm-inference/11-serving-systems/04-boss-server-strip
+title: "Boss: Server Strip"
+estMinutes: 2
+xp: 200
+missionIntro: Metrics, caches, engines and pools. Run the strip without a single
+  angry customer.
+kind: boss
+keyIdeas:
+  - TTFT = queue + prefill. TPOT = time per later token. E2E ≈ TTFT + TPOT × (N
+    − 1).
+  - Prefix caching skips prefill for shared prefixes, and chunked prefill and
+    disaggregation tame interference.
+  - "Pick the engine for the job: vLLM, SGLang, TensorRT-LLM or llama.cpp."
+---
+
+## Mission briefing
+
+Friday night on the Server Strip. Every customer has a stopwatch.
+
+Six orders, then the getaway: write the latency meter.
+
+<Boss
+  id="strip"
+  devices={["phone","desktop"]}
+  title="Server Strip"
+  briefing="Six customers, three hearts, three minutes. Service with a smile."
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type":"predict","prompt":"TTFT 300 ms, TPOT 25 ms, 201 output tokens. End-to-end seconds?","answer":5.3,"tolerance":{"mode":"absolute","value":0.02},"unit":"s","explanation":"0.3 + 0.025 × 200 = 5.3 s."},{"type":"mcq","prompt":"Users complain that streams stutter mid-answer whenever a big document is uploaded. Best fix?","options":["Bigger vocabulary","Chunked prefill or disaggregation","Higher temperature","fp32 weights"],"answer":1,"explanation":"Huge prefills are stalling decode steps."},{"type":"predict","prompt":"Shared prefix 3,000 tokens, unique suffix 1,000. Percentage of prefill skipped with a warm prefix cache?","answer":75,"tolerance":{"mode":"absolute","value":0.5},"unit":"%","explanation":"3,000 / 4,000."},{"type":"fill","text":"Goodput counts requests that meet both the {{0}} and the {{1}} SLO.","chips":["TTFT","TPOT","FLOPs","VRAM"],"answers":["TTFT","TPOT"],"explanation":"From DistServe."},{"type":"mcq","prompt":"Which engine is built around GGUF files?","options":["vLLM","SGLang","TensorRT-LLM","llama.cpp"],"answer":3,"explanation":"GGUF is llama.cpp's format."},{"type":"predict","prompt":"Q8_0 stores 32 int8 weights plus one fp16 scale per block. Bits per weight?","answer":8.5,"tolerance":{"mode":"absolute","value":0.01},"unit":"bits","explanation":"(32 × 8 + 16) / 32."}]}
+  explanation="Server Strip is cleared. Five stars on Yelp."
+/>
+
+<Code
+  id="getaway-metrics"
+  devices={["desktop"]}
+  language="python"
+  prompt={"The getaway: write latency_metrics(t_request, token_times). It returns (ttft, tpot) in the same units: ttft = first token time − request time, tpot = mean gap between consecutive tokens after the first (0.0 if there's only one token)."}
+  starter={"def latency_metrics(t_request, token_times):\n    return 0.0, 0.0\n"}
+  tests={"def test_basic():\n    ttft, tpot = latency_metrics(0.0, [0.2, 0.22, 0.24, 0.26])\n    assert abs(ttft - 0.2) < 1e-9 and abs(tpot - 0.02) < 1e-9\n\ndef test_one_token():\n    assert latency_metrics(1.0, [1.5]) == (0.5, 0.0)\n\ndef test_uneven():\n    ttft, tpot = latency_metrics(10.0, [10.5, 10.6, 10.9])\n    assert abs(ttft - 0.5) < 1e-9 and abs(tpot - 0.2) < 1e-9\n"}
+  solution={"def latency_metrics(t_request, token_times):\n    ttft = token_times[0] - t_request\n    n = len(token_times)\n    tpot = (token_times[-1] - token_times[0]) / (n - 1) if n > 1 else 0.0\n    return ttft, tpot\n"}
+  hints={["The mean gap = (last − first) / (n − 1)."]}
+  explanation="Benchmarks like vLLM's benchmark_serving compute exactly these per request, then report p50 and p99."
+/>

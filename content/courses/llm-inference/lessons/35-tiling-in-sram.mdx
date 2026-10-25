@@ -1,0 +1,61 @@
+---
+id: llm-inference/08-flash-attention/03-tiling-in-sram
+title: Tiling in SRAM, and FlashAttention 2 and 3
+estMinutes: 3
+xp: 100
+missionIntro: Load Q, K and V tiles into on-chip SRAM, do the whole attention
+  for that tile, and never write N×N to HBM.
+keyIdeas:
+  - Tiles of Q, K and V sized to fit shared memory (up to 228 KB per SM on H100)
+    are processed fully on-chip.
+  - The result is exact attention with O(N) extra memory, not an approximation.
+  - FlashAttention-2 roughly doubles FA1, and FA3 hits 740 TFLOP/s fp16 (75% of
+    H100) and about 1.2 PFLOP/s in fp8.
+---
+
+## Mission briefing
+
+The glovebox (SRAM) is tiny but right next to you. The garage (HBM) is huge and miles away.
+
+**Mission:** plan the job so each tool comes out of the garage once, and the big crate never goes back.
+
+## Tiles
+
+Split Q into row blocks and K/V into column blocks. For each Q block, stream K/V blocks through SRAM, compute the scores, update the online softmax stats and accumulate O. Only O (N × d) goes back to HBM.
+
+![Attention matrix divided into tiles; one Q row-block and one K/V block highlighted inside SRAM](/diagrams/llm-inference/08-flash-attention/03-tiling-in-sram.png)
+
+<Predict
+  id="tile-bytes"
+  devices={["phone","desktop"]}
+  prompt="Q, K and V tiles of 128 × 128 fp16 each, loaded together. How many KiB of SRAM?"
+  answer={96}
+  tolerance={{"mode":"absolute","value":0.5}}
+  unit="KiB"
+  explanation="3 × 128 × 128 × 2 B = 98,304 B = 96 KiB, which fits inside an H100 SM's 228 KB."
+/>
+
+<MCQ
+  id="exact-mcq"
+  devices={["phone","desktop"]}
+  prompt="Compared with standard attention, FlashAttention's output is…"
+  options={["an approximation with bounded error","exactly the same maths (up to floating-point rounding)","sparser","lower rank"]}
+  answer={1}
+  explanation="It reorders the computation and changes nothing else. Approximate methods like Linformer are different."
+/>
+
+## Versions
+
+FA2 (2023) parallelises over the sequence and cuts non-matmul FLOPs, about 2x faster than FA1. FA3 (2024) uses Hopper's TMA and warp specialisation plus FP8.
+
+Sources: [FA2](https://arxiv.org/abs/2307.08691), [FA3](https://arxiv.org/abs/2407.08608)
+
+<Predict
+  id="fa3-util"
+  devices={["phone","desktop"]}
+  prompt="FA3 reaches 740 TFLOP/s fp16 on an H100 with a 989 TFLOP/s dense peak. What percentage utilisation is that?"
+  answer={75}
+  tolerance={{"mode":"absolute","value":1}}
+  unit="%"
+  explanation="740 / 989 = 74.8%. FA2 managed about 35% on H100."
+/>

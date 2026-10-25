@@ -1,0 +1,61 @@
+---
+id: llm-inference/08-flash-attention/02-online-softmax
+title: "Online Softmax: Counting Cash on the Run"
+estMinutes: 3
+xp: 100
+missionIntro: Softmax needs the max and the sum over a whole row. Online softmax
+  keeps running values and rescales as new tiles arrive.
+keyIdeas:
+  - Keep a running max m and running sum l = Σ exp(x − m).
+  - When a new block raises the max, rescale the old sum by exp(m_old − m_new).
+  - "Subtracting the max avoids overflow: exp(1000) is inf in fp32, but exp(0)
+    is fine."
+---
+
+## Mission briefing
+
+You're counting stolen cash as the bags come in, but the exchange rate (the max) keeps changing.
+
+**Mission:** keep a running total you can fix up without recounting old bags.
+
+## Running max, running sum
+
+Milakov and Gimelshein (2018) showed softmax can be computed in one pass. Keep m (the max so far) and l (the sum of exp(x − m)). When a bigger value arrives, multiply l by exp(m_old − m_new) and carry on.
+
+![Two score tiles with their own max and sum, merged by rescaling into a single running max and sum](/diagrams/llm-inference/08-flash-attention/02-online-softmax.png)
+
+<MCQ
+  id="why-max"
+  devices={["phone","desktop"]}
+  prompt="Why subtract the max before exponentiating?"
+  options={["It's faster","To avoid overflow: exp of large scores is inf in fp16/fp32","To make the result sum to 2","It changes the result"]}
+  answer={1}
+  explanation="Softmax is shift-invariant, so subtracting the max changes nothing mathematically and keeps exp() in range."
+/>
+
+<Predict
+  id="online-l"
+  devices={["phone","desktop"]}
+  prompt={"Scores arrive in two blocks: [1, 2] then [3]. After both, the running max is m = 3. What is the running sum l = Σ exp(x − m)?"}
+  answer={1.503}
+  tolerance={{"mode":"absolute","value":0.005}}
+  explanation="e^(−2) + e^(−1) + e^0 = 0.1353 + 0.3679 + 1 = 1.503."
+/>
+
+## Merge two tiles
+
+The same rule merges any two partial results, which is what lets FlashAttention process K/V tiles one at a time.
+
+Sources: [Online softmax](https://arxiv.org/abs/1805.02867), [FlashAttention §3.1](https://arxiv.org/abs/2205.14135)
+
+<Code
+  id="combine-code"
+  devices={["desktop"]}
+  language="python"
+  prompt={"Write combine(m_a, l_a, m_b, l_b), which merges two partial softmax statistics (max and sum of exp(x − max)) into (m, l) for the union."}
+  starter={"import math\n\ndef combine(m_a, l_a, m_b, l_b):\n    return m_a, l_a\n"}
+  tests={"import math\n\ndef test_blocks():\n    m1, l1 = 2.0, math.exp(-1) + 1\n    m2, l2 = 3.0, 1.0\n    m, l = combine(m1, l1, m2, l2)\n    assert m == 3.0 and abs(l - 1.50321) < 1e-4\n\ndef test_symmetric():\n    a = combine(1.0, 1.0, 5.0, 2.0)\n    b = combine(5.0, 2.0, 1.0, 1.0)\n    assert a[0] == b[0] and abs(a[1] - b[1]) < 1e-12\n\ndef test_big():\n    m, l = combine(1000.0, 1.0, 1000.0, 1.0)\n    assert m == 1000.0 and abs(l - 2.0) < 1e-12\n"}
+  solution={"import math\n\ndef combine(m_a, l_a, m_b, l_b):\n    m = max(m_a, m_b)\n    return m, l_a * math.exp(m_a - m) + l_b * math.exp(m_b - m)\n"}
+  hints={["The new max is max(m_a, m_b).","Rescale each sum by exp(old_max − new_max)."]}
+  explanation="FlashAttention does exactly this per tile, and also rescales the partial output O."
+/>

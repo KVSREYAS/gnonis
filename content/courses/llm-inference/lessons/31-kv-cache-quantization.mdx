@@ -1,0 +1,64 @@
+---
+id: llm-inference/07-quantization/04-kv-cache-quantization
+title: Quantizing the KV Cache
+estMinutes: 3
+xp: 90
+missionIntro: Weights are a fixed cost. The KV cache grows with users, so
+  shrinking it buys concurrency directly.
+keyIdeas:
+  - An fp8 KV cache halves bytes per token, so about twice as many sequences fit
+    in the same pool.
+  - vLLM and TensorRT-LLM support fp8 KV caches, and research methods like KIVI
+    go to 2 bits.
+  - KIVI quantizes keys per-channel and values per-token, because key outliers
+    sit in fixed channels.
+---
+
+## Mission briefing
+
+The warehouse is the KV cache, and it's bursting with customers' bags.
+
+**Mission:** vacuum-pack every bag so twice as many customers fit inside.
+
+## Why the cache
+
+At long contexts and high concurrency the KV cache dwarfs the weights. Halving its bytes doubles how many sequences fit and halves the KV bytes read per decode step.
+
+![Sequences that fit in a 40 GB KV pool at fp16, fp8 and int4 for Llama 3 8B at 8k context](/diagrams/llm-inference/07-quantization/04-kv-cache-quantization.png)
+
+<Predict
+  id="fp8-seqs"
+  devices={["phone","desktop"]}
+  prompt={"Llama 3 8B: 128 KiB per token in fp16. You have 40 GB (decimal) for KV and want 8,192-token sequences. How many fit with an fp8 cache?"}
+  answer={74}
+  tolerance={{"mode":"absolute","value":0}}
+  unit="sequences"
+  explanation="fp8 = 64 KiB per token, so 8,192 × 65,536 B ≈ 0.537 GB per sequence. 40 / 0.537 = 74.5, so 74 (fp16 fits 37)."
+/>
+
+<Code
+  id="kv-code"
+  devices={["desktop"]}
+  language="python"
+  prompt={"Write kv_gb(layers, kv_heads, head_dim, tokens, bits), which returns the KV cache size in decimal GB for that many tokens at the given bits per element."}
+  starter={"def kv_gb(layers, kv_heads, head_dim, tokens, bits):\n    return 0.0\n"}
+  tests={"def test_fp16():\n    assert abs(kv_gb(32, 8, 128, 8192, 16) - 1.0737) < 1e-3\n\ndef test_fp8():\n    assert abs(kv_gb(32, 8, 128, 8192, 8) - 0.5369) < 1e-3\n\ndef test_int2():\n    assert abs(kv_gb(80, 8, 128, 100000, 2) - 4.096) < 1e-3\n"}
+  solution={"def kv_gb(layers, kv_heads, head_dim, tokens, bits):\n    return 2 * layers * kv_heads * head_dim * tokens * bits / 8 / 1e9\n"}
+  hints={["The 2 is for K and V.","bits / 8 gives bytes per element."]}
+  explanation="Ignoring the scales, int2 KV for a 70B model at 100k tokens is about 4 GB instead of about 33 GB in fp16."
+/>
+
+## Going lower
+
+FP8 (E4M3) KV is production-ready in vLLM and TensorRT-LLM. KIVI shows 2-bit KV with per-channel keys and per-token values, keeping recent tokens in full precision.
+
+Sources: [vLLM quantized KV cache](https://docs.vllm.ai/en/latest/features/quantization/quantized_kvcache.html), [KIVI](https://arxiv.org/abs/2402.02750)
+
+<MCQ
+  id="kivi-mcq"
+  devices={["phone","desktop"]}
+  prompt="KIVI quantizes keys per-channel but values per-token. Why?"
+  options={["Keys are smaller","Key outliers concentrate in fixed channels, while value errors matter per token in the weighted sum","Values are not cached","It's arbitrary"]}
+  answer={1}
+  explanation="Group along the axis where the values vary least."
+/>

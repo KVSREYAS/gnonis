@@ -1,0 +1,62 @@
+---
+id: llm-inference/12-capstone/02-build-the-scheduler
+title: Build the Scheduler
+estMinutes: 3
+xp: 120
+missionIntro: "Write the brain: each step, decode everyone running, then admit
+  waiting requests while budget and blocks last."
+keyIdeas:
+  - "Each step: every running sequence decodes one token, using 1 token of
+    budget."
+  - Then admit waiting requests in FIFO order while their prompt fits the
+    remaining token budget and free blocks.
+  - Without preemption, FIFO admission can stall behind one huge prompt
+    (head-of-line blocking).
+---
+
+## Mission briefing
+
+The bouncer at the club door is your scheduler. Too strict and the club is empty, too loose and the fire marshal shuts you down.
+
+**Mission:** write the bouncer.
+
+## Decodes first
+
+Running users are mid-conversation, so they always get their token. Their cost comes out of the step budget first, and new prompts get whatever is left.
+
+![Scheduler step: running decodes consume budget, waiting queue admitted FIFO until the budget line](/diagrams/llm-inference/12-capstone/02-build-the-scheduler.png)
+
+<Predict
+  id="admit-count"
+  devices={["phone","desktop"]}
+  prompt={"Token budget 512 and 100 running decodes. The waiting prompts are 200, 150, 100 and 50 tokens long, with plenty of blocks. FIFO admission with no chunking: how many prompts join this step?"}
+  answer={2}
+  tolerance={{"mode":"absolute","value":0}}
+  unit="prompts"
+  explanation="Budget left = 412. 200 fits (212 left), 150 fits (62 left), and 100 doesn't fit, so FIFO stops there."
+/>
+
+<MCQ
+  id="hol"
+  devices={["phone","desktop"]}
+  prompt="In strict FIFO admission, one 10,000-token prompt at the head of the queue exceeds the budget. What happens?"
+  options={["It's skipped automatically","Everything behind it waits too (head-of-line blocking), unless you chunk it","The GPU crashes","It runs at batch 1"]}
+  answer={1}
+  explanation="Chunked prefill or skip-ahead policies fix it."
+/>
+
+## Code it
+
+Implement one scheduler step with a token budget and a block pool.
+
+<Code
+  id="sched-code"
+  devices={["desktop"]}
+  language="python"
+  prompt={"Write schedule_step(running, waiting, budget, free_blocks, block_size=16). running holds the current lengths of running sequences, and each decodes 1 token (costs 1 budget). Then admit from the front of waiting (prompt lengths) while prompt <= remaining budget and ceil(prompt/block_size) <= remaining free blocks. Stop at the first that doesn't fit. Return (admitted_list, budget_left, blocks_left). Assume decodes need no new blocks."}
+  starter={"import math\n\ndef schedule_step(running, waiting, budget, free_blocks, block_size=16):\n    admitted = []\n    return admitted, budget, free_blocks\n"}
+  tests={"def test_example():\n    assert schedule_step([1] * 100, [200, 150, 100, 50], 512, 1000) == ([200, 150], 62, 1000 - 13 - 10)\n\ndef test_blocks_limit():\n    assert schedule_step([], [64, 64], 1000, 5) == ([64], 936, 1)\n\ndef test_fifo_stops():\n    assert schedule_step([], [5000, 10], 4096, 1000) == ([], 4096, 1000)\n"}
+  solution={"import math\n\ndef schedule_step(running, waiting, budget, free_blocks, block_size=16):\n    budget -= len(running)\n    admitted = []\n    for p in waiting:\n        need = math.ceil(p / block_size)\n        if p > budget or need > free_blocks:\n            break\n        admitted.append(p)\n        budget -= p\n        free_blocks -= need\n    return admitted, budget, free_blocks\n"}
+  hints={["Decodes first: budget -= len(running).","Break, don't continue, to keep FIFO."]}
+  explanation="Add chunking and preemption and you have the skeleton of the vLLM v1 scheduler."
+/>

@@ -1,0 +1,61 @@
+---
+id: llm-inference/11-serving-systems/03-disaggregated-prefill-decode
+title: Disaggregated Prefill and Decode
+estMinutes: 3
+xp: 100
+missionIntro: Prefill is compute-bound and decode is memory-bound. Run them on
+  separate GPU pools and ship the KV cache between them.
+keyIdeas:
+  - "Colocated prefill and decode interfere: prefills stall decodes, and both
+    share one parallelism plan."
+  - Disaggregation (DistServe, Splitwise, Mooncake) runs separate prefill and
+    decode pools and transfers the KV cache.
+  - DistServe reports up to 7.4x more requests or 12.6x tighter SLOs within
+    latency targets.
+---
+
+## Mission briefing
+
+The kitchen at Cluckin' Bell has one grill for big orders and one fryer for drip-feeding fries, and they keep fighting over it.
+
+**Mission:** build two kitchens and a conveyor between them.
+
+## Interference
+
+In one engine, a long prefill delays every decode step (worse TPOT), and decodes eat into prefill time (worse TTFT). Chunked prefill softens this. Disaggregation removes it.
+
+<MCQ
+  id="why-disagg"
+  devices={["phone","desktop"]}
+  prompt="What's the main reason to disaggregate?"
+  options={["Fewer GPUs overall, always","Removing prefill-decode interference and tuning each phase's resources separately","Avoiding the KV cache","Simplifying deployment"]}
+  answer={1}
+  explanation="Each pool optimises for its own SLO: TTFT for prefill, TPOT for decode."
+/>
+
+## Two pools and a conveyor
+
+The prefill pool computes the KV and ships it over NVLink or RDMA to the decode pool. Each pool picks its own GPU count and parallelism.
+
+Sources: [DistServe](https://arxiv.org/abs/2401.09670), [Splitwise](https://arxiv.org/abs/2311.18677), [Mooncake](https://arxiv.org/abs/2407.00079)
+
+![Prefill GPU pool computing KV, sending it over the interconnect to a decode GPU pool](/diagrams/llm-inference/11-serving-systems/03-disaggregated-prefill-decode.png)
+
+<Predict
+  id="transfer-ms"
+  devices={["phone","desktop"]}
+  prompt={"Llama 3 8B prompt of 4,096 tokens (128 KiB/token of KV). Shipping its KV from the prefill GPU to the decode GPU at 50 GB/s takes how many ms?"}
+  answer={10.7}
+  tolerance={{"mode":"relative","value":0.03}}
+  unit="ms"
+  explanation="4,096 × 131,072 B = 0.537 GB. 0.537 / 50 GB/s ≈ 10.7 ms, small compared with a multi-second answer."
+/>
+
+<MCQ
+  id="goodput"
+  devices={["phone","desktop"]}
+  prompt={"DistServe optimises \"goodput\". What is it?"}
+  options={["Total tokens per second","Requests per second that meet both TTFT and TPOT SLOs","GPU utilisation","Bytes per second over the network"]}
+  answer={1}
+  explanation="Throughput that misses SLOs doesn't count."
+/>
