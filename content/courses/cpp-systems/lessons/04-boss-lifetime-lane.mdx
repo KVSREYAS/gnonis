@@ -27,3 +27,20 @@ Then the getaway: write a move-only handle that closes its resource exactly once
   explanation="Lifetime Lane is cleared. Your resources clean up after themselves."
   devices={["phone", "desktop"]}
 />
+
+## Getaway: a move-only handle
+
+Write it like `std::unique_ptr`, but for an integer handle.
+
+<Code
+  id="unique-handle"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Implement `UniqueHandle`. It owns an `int` handle (-1 = empty) and calls the global `close_handle(int)` in its destructor if non-empty. It's move-only, moves leave the source at -1, and `release()` returns the handle and empties the object. `reset(int h = -1)` closes the current handle and takes h."
+  starter={"#include <utility>\nvoid close_handle(int h);\nclass UniqueHandle {\npublic:\n    explicit UniqueHandle(int h = -1) : h_(h) {}\n    int get() const { return h_; }\n    // TODO\nprivate:\n    int h_;\n};\n"}
+  visibleTests={"#include \"check.h\"\n\nint closes = 0, last = 0;\nvoid close_handle(int h) { ++closes; last = h; }\nint main() {\n    { UniqueHandle a(5); }\n    CHECK(closes == 1 && last == 5);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\n#include <type_traits>\nint closes = 0, last = 0;\nvoid close_handle(int h) { ++closes; last = h; }\nint main() {\n    { UniqueHandle a(5); }\n    CHECK(closes == 1 && last == 5);\n    { UniqueHandle a(6); UniqueHandle b = std::move(a); CHECK(a.get() == -1 && b.get() == 6); }\n    CHECK(closes == 2 && last == 6);\n    { UniqueHandle a(7); int h = a.release(); CHECK(h == 7 && a.get() == -1); }\n    CHECK(closes == 2);\n    { UniqueHandle a(8), b(9); a = std::move(b); CHECK(closes == 3 && last == 8 && a.get() == 9); }\n    CHECK(closes == 4 && last == 9);\n    { UniqueHandle a(10); a.reset(11); CHECK(closes == 5 && last == 10); }\n    CHECK(closes == 6 && last == 11);\n    static_assert(!std::is_copy_constructible_v<UniqueHandle>);\n    static_assert(std::is_nothrow_move_assignable_v<UniqueHandle>);\n    return 0;\n}\n"}
+  solution={"#include <utility>\nvoid close_handle(int h);\nclass UniqueHandle {\npublic:\n    explicit UniqueHandle(int h = -1) : h_(h) {}\n    ~UniqueHandle() { if (h_ != -1) close_handle(h_); }\n    UniqueHandle(const UniqueHandle&) = delete;\n    UniqueHandle& operator=(const UniqueHandle&) = delete;\n    UniqueHandle(UniqueHandle&& o) noexcept : h_(std::exchange(o.h_, -1)) {}\n    UniqueHandle& operator=(UniqueHandle&& o) noexcept { if (this != &o) reset(o.release()); return *this; }\n    int get() const { return h_; }\n    int release() noexcept { return std::exchange(h_, -1); }\n    void reset(int h = -1) noexcept { int old = std::exchange(h_, h); if (old != -1) close_handle(old); }\nprivate:\n    int h_;\n};\n"}
+  hints={["Implement release() and reset() first, then build the moves from them."]}
+  explanation="That's the same shape as std::unique_ptr, std::jthread and file descriptors in every serious codebase."
+/>

@@ -47,3 +47,20 @@ The discarded branch is never instantiated.
   explanation="consteval = immediate function."
   devices={["phone", "desktop"]}
 />
+
+## Bake a lookup table
+
+Sources: [cppreference: constexpr](https://en.cppreference.com/w/cpp/language/constexpr), [if constexpr](https://en.cppreference.com/w/cpp/language/if)
+
+<Code
+  id="constexpr-table"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `template<std::size_t N> constexpr std::array<std::uint32_t, N> popcount_table()`, where entry i is the number of set bits in i, computed without std::popcount (loop over the bits)."
+  starter={"#include <array>\n#include <cstdint>\n#include <cstddef>\ntemplate <std::size_t N>\nconstexpr std::array<std::uint32_t, N> popcount_table() { return {}; }\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() {\n    constexpr auto t = popcount_table<16>();\n    static_assert(t[15] == 4);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\n#include <bit>\nint main() {\n    constexpr auto t = popcount_table<256>();\n    static_assert(t[0] == 0 && t[1] == 1 && t[255] == 8 && t[0b1011] == 3);\n    for (unsigned i = 0; i < 256; ++i) CHECK(t[i] == (unsigned)std::popcount(i));\n    return 0;\n}\n"}
+  solution={"#include <array>\n#include <cstdint>\n#include <cstddef>\ntemplate <std::size_t N>\nconstexpr std::array<std::uint32_t, N> popcount_table() {\n    std::array<std::uint32_t, N> t{};\n    for (std::size_t i = 0; i < N; ++i) { std::size_t x = i; std::uint32_t c = 0; while (x) { c += x & 1; x >>= 1; } t[i] = c; }\n    return t;\n}\n"}
+  hints={["Loops and mutation are fine inside constexpr since C++14."]}
+  explanation="The static_assert proves the table was built by the compiler, not at runtime."
+/>

@@ -27,3 +27,20 @@ Six questions, then the getaway: a two-layer forward pass from embedding to next
   explanation="The Inference Heist is done. Respect +100."
   devices={["phone", "desktop"]}
 />
+
+## Getaway: tiny forward pass
+
+Look up an embedding, run a ReLU layer, project to logits, and return the winning token.
+
+<Code
+  id="mlp-forward"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `std::size_t next_token(std::span<const float> emb, std::size_t V, std::size_t D, std::size_t token, std::span<const float> W1, std::span<const float> W2)`. Look up h = emb[token] (emb is V×D), compute u = relu(h·W1) with W1 of shape D×D, then logits = u·W2 with W2 of shape D×V. Return argmax(logits), ties to the lowest index. Check every span size and throw std::invalid_argument on a mismatch."
+  starter={"#include <span>\n#include <vector>\n#include <stdexcept>\n#include <cstddef>\nstd::size_t next_token(std::span<const float> emb, std::size_t V, std::size_t D, std::size_t token, std::span<const float> W1, std::span<const float> W2) { return 0; }\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() {\n    std::vector<float> emb{1, 0, 0, 1}, W1{1, 0, 0, 1}, W2{0, 1, 1, 0};\n    CHECK(next_token(emb, 2, 2, 0, W1, W2) == 1);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\nint main() {\n    std::vector<float> emb{1, 0, 0, 1}, W1{1, 0, 0, 1}, W2{0, 1, 1, 0};\n    CHECK(next_token(emb, 2, 2, 0, W1, W2) == 1 && next_token(emb, 2, 2, 1, W1, W2) == 0);\n    std::vector<float> W1n{-1, 0, 0, -1}; CHECK(next_token(emb, 2, 2, 0, W1n, W2) == 0);\n    const std::size_t V = 5, D = 3;\n    std::vector<float> E(V * D), A(D * D), B(D * V);\n    for (std::size_t i = 0; i < E.size(); ++i) E[i] = float(i % 4) - 1;\n    for (std::size_t i = 0; i < A.size(); ++i) A[i] = (i % 2) ? 1.f : -0.5f;\n    for (std::size_t i = 0; i < B.size(); ++i) B[i] = float((i * 7) % 5) - 2;\n    std::size_t outs[V]; for (std::size_t t = 0; t < V; ++t) outs[t] = next_token(E, V, D, t, A, B);\n    CHECK(outs[0] == 0 && outs[1] == 2 && outs[2] == 2 && outs[3] == 2 && outs[4] == 0);\n    bool threw = false; try { next_token(E, V, D, 9, A, B); } catch (const std::invalid_argument&) { threw = true; } CHECK(threw);\n    threw = false; try { next_token(E, V, D, 0, std::span<const float>(A).first(4), B); } catch (const std::invalid_argument&) { threw = true; } CHECK(threw);\n    return 0;\n}\n"}
+  solution={"#include <span>\n#include <vector>\n#include <stdexcept>\n#include <cstddef>\n#include <algorithm>\nstd::size_t next_token(std::span<const float> emb, std::size_t V, std::size_t D, std::size_t token, std::span<const float> W1, std::span<const float> W2) {\n    if (emb.size() != V * D || W1.size() != D * D || W2.size() != D * V || token >= V) throw std::invalid_argument(\"shape\");\n    auto h = emb.subspan(token * D, D);\n    std::vector<float> u(D, 0.f), logits(V, 0.f);\n    for (std::size_t k = 0; k < D; ++k) for (std::size_t j = 0; j < D; ++j) u[j] += h[k] * W1[k * D + j];\n    for (auto& x : u) x = std::max(x, 0.f);\n    for (std::size_t k = 0; k < D; ++k) for (std::size_t j = 0; j < V; ++j) logits[j] += u[k] * W2[k * V + j];\n    return std::max_element(logits.begin(), logits.end()) - logits.begin();\n}\n"}
+  hints={["The embedding lookup is a subspan: row `token`.", "Use i-k-j order in both matvecs."]}
+  explanation="Stack attention between the layers and repeat it N times, and that's a transformer. You just wrote the skeleton of llama.cpp."
+/>

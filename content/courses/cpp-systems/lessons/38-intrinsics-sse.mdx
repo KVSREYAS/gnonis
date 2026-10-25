@@ -41,3 +41,20 @@ You've earned your SIMD licence. Time to drive manual.
   explanation="1003 % 4."
   devices={["phone", "desktop"]}
 />
+
+## Write it
+
+Note: this exercise needs an x86-64 runner (SSE2 is baseline there, no flags needed). Sources: [Intel Intrinsics Guide](https://www.intel.com/content/www/us/en/docs/intrinsics-guide/), Agner Fog, [Optimizing software in C++](https://www.agner.org/optimize/optimizing_cpp.pdf)
+
+<Code
+  id="sse-dot"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Using SSE2 intrinsics (_mm_loadu_ps, _mm_mul_ps, _mm_add_ps, _mm_storeu_ps), write `float dot_sse(const float* a, const float* b, std::size_t n)`. Accumulate in one __m128, horizontally add the 4 lanes at the end, then add the scalar tail."
+  starter={"#include <immintrin.h>\n#include <cstddef>\nfloat dot_sse(const float* a, const float* b, std::size_t n) { return 0; }\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() { float a[5] = {1, 2, 3, 4, 5}; CHECK(dot_sse(a, a, 5) == 55); return 0; }\n"}
+  tests={"#include \"check.h\"\n\n#include <vector>\n#include <cmath>\nint main() {\n    float a[5] = {1, 2, 3, 4, 5}; CHECK(dot_sse(a, a, 5) == 55);\n    CHECK(dot_sse(a, a, 0) == 0 && dot_sse(a, a, 3) == 14);\n    std::vector<float> x(1003), y(1003); double ref = 0;\n    for (int i = 0; i < 1003; ++i) { x[i] = (i % 7) * 0.5f; y[i] = (i % 5) - 2.0f; ref += (double)x[i] * y[i]; }\n    CHECK(std::fabs(dot_sse(x.data() + 1, y.data() + 1, 1002) - (ref - x[0] * y[0])) < 1e-2);\n    return 0;\n}\n"}
+  solution={"#include <immintrin.h>\n#include <cstddef>\nfloat dot_sse(const float* a, const float* b, std::size_t n) {\n    __m128 acc = _mm_setzero_ps();\n    std::size_t i = 0;\n    for (; i + 4 <= n; i += 4) acc = _mm_add_ps(acc, _mm_mul_ps(_mm_loadu_ps(a + i), _mm_loadu_ps(b + i)));\n    float t[4]; _mm_storeu_ps(t, acc);\n    float s = (t[0] + t[1]) + (t[2] + t[3]);\n    for (; i < n; ++i) s += a[i] * b[i];\n    return s;\n}\n"}
+  hints={["Vector loop condition: i + 4 <= n.", "Store the accumulator to an array to sum the lanes."]}
+  explanation="The hidden test starts at an unaligned offset (+1), so you must use loadu."
+/>

@@ -40,3 +40,20 @@ One lane on the speedway with every car waiting for the one in front. Open more 
   explanation="Latency × throughput (Little's law)."
   devices={["phone", "desktop"]}
 />
+
+## Split it
+
+Sources: Agner Fog, [instruction tables](https://www.agner.org/optimize/instruction_tables.pdf), Travis Downs, [performance blog](https://travisdowns.github.io/)
+
+<Code
+  id="multi-acc"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `float sum4(const float* a, std::size_t n)` using 4 independent scalar accumulators (a[i], a[i+1], a[i+2], a[i+3] into s0..s3), combining them as (s0+s1)+(s2+s3) and then adding the tail. Also write `float max_reduce(const float* a, std::size_t n)` (n ≥ 1) the same way."
+  starter={"#include <cstddef>\nfloat sum4(const float* a, std::size_t n) { return 0; }\nfloat max_reduce(const float* a, std::size_t n) { return a[0]; }\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() { float a[6] = {1, 2, 3, 4, 5, 6}; CHECK(sum4(a, 6) == 21 && max_reduce(a, 6) == 6); return 0; }\n"}
+  tests={"#include \"check.h\"\n\n#include <vector>\nint main() {\n    float a[6] = {1, 2, 3, 4, 5, 6}; CHECK(sum4(a, 6) == 21 && max_reduce(a, 6) == 6);\n    CHECK(sum4(a, 0) == 0 && max_reduce(a, 1) == 1);\n    float b[7] = {-5, -1, -9, -2, -8, -3, -0.5f}; CHECK(max_reduce(b, 7) == -0.5f && max_reduce(b, 4) == -1);\n    std::vector<float> v(1001, 0.25f); CHECK(sum4(v.data(), v.size()) == 250.25f);\n    return 0;\n}\n"}
+  solution={"#include <cstddef>\n#include <algorithm>\nfloat sum4(const float* a, std::size_t n) {\n    float s0 = 0, s1 = 0, s2 = 0, s3 = 0; std::size_t i = 0;\n    for (; i + 4 <= n; i += 4) { s0 += a[i]; s1 += a[i + 1]; s2 += a[i + 2]; s3 += a[i + 3]; }\n    float s = (s0 + s1) + (s2 + s3);\n    for (; i < n; ++i) s += a[i];\n    return s;\n}\nfloat max_reduce(const float* a, std::size_t n) {\n    float m0 = a[0], m1 = a[0], m2 = a[0], m3 = a[0]; std::size_t i = 0;\n    for (; i + 4 <= n; i += 4) { m0 = std::max(m0, a[i]); m1 = std::max(m1, a[i + 1]); m2 = std::max(m2, a[i + 2]); m3 = std::max(m3, a[i + 3]); }\n    float m = std::max(std::max(m0, m1), std::max(m2, m3));\n    for (; i < n; ++i) m = std::max(m, a[i]);\n    return m;\n}\n"}
+  hints={["Each accumulator only depends on itself.", "Max needs a start value from the data (a[0]), not 0."]}
+  explanation="Softmax needs exactly these two reductions: max, then sum of exps."
+/>

@@ -27,3 +27,20 @@ Six questions, then the getaway: shapes that can't mismatch.
   explanation="Template Town is cleared. Your paperwork compiles."
   devices={["phone", "desktop"]}
 />
+
+## Getaway: shapes at compile time
+
+Mismatched matrix shapes should be a compile error, not a 3 AM crash.
+
+<Code
+  id="static-matrix"
+  devices={["desktop"]}
+  language="cpp"
+  prompt={"Implement `template<std::size_t R, std::size_t C> struct Mat` holding `std::array<float, R*C> d{}` with `constexpr float& at(size_t i, size_t j)` (and a const overload, row-major), plus `template<std::size_t R, std::size_t K, std::size_t C> constexpr Mat<R,C> matmul(const Mat<R,K>&, const Mat<K,C>&)`. Inner dimensions must match by type."}
+  starter={"#include <array>\n#include <cstddef>\ntemplate <std::size_t R, std::size_t C>\nstruct Mat {\n    std::array<float, R * C> d{};\n    // TODO: at()\n};\n// TODO: matmul\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() {\n    Mat<1, 2> a; a.at(0, 0) = 1; a.at(0, 1) = 2;\n    Mat<2, 1> b; b.at(0, 0) = 3; b.at(1, 0) = 4;\n    CHECK(matmul(a, b).at(0, 0) == 11);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\n#include <type_traits>\ntemplate <class A, class B> concept Multipliable = requires(A a, B b) { matmul(a, b); };\nconstexpr float trace_eye() { Mat<2, 2> e{}; e.at(0, 0) = 1; e.at(1, 1) = 1; Mat<2, 2> m{}; m.at(0, 0) = 3; m.at(1, 1) = 4; auto r = matmul(e, m); return r.at(0, 0) + r.at(1, 1); }\nint main() {\n    static_assert(trace_eye() == 7.0f);\n    static_assert(Multipliable<Mat<2, 3>, Mat<3, 4>>);\n    static_assert(!Multipliable<Mat<2, 3>, Mat<2, 3>>);\n    static_assert(std::is_same_v<decltype(matmul(Mat<2, 3>{}, Mat<3, 5>{})), Mat<2, 5>>);\n    Mat<2, 3> a; for (int i = 0; i < 6; ++i) a.d[i] = i + 1;\n    Mat<3, 2> b; for (int i = 0; i < 6; ++i) b.d[i] = 6 - i;\n    auto c = matmul(a, b);\n    CHECK(c.at(0, 0) == 20 && c.at(0, 1) == 14 && c.at(1, 0) == 56 && c.at(1, 1) == 41);\n    return 0;\n}\n"}
+  solution={"#include <array>\n#include <cstddef>\ntemplate <std::size_t R, std::size_t C>\nstruct Mat {\n    std::array<float, R * C> d{};\n    constexpr float& at(std::size_t i, std::size_t j) { return d[i * C + j]; }\n    constexpr const float& at(std::size_t i, std::size_t j) const { return d[i * C + j]; }\n};\ntemplate <std::size_t R, std::size_t K, std::size_t C>\nconstexpr Mat<R, C> matmul(const Mat<R, K>& a, const Mat<K, C>& b) {\n    Mat<R, C> out{};\n    for (std::size_t i = 0; i < R; ++i)\n        for (std::size_t k = 0; k < K; ++k)\n            for (std::size_t j = 0; j < C; ++j) out.at(i, j) += a.at(i, k) * b.at(k, j);\n    return out;\n}\n"}
+  hints={["Deduce R, K, C from both arguments: K appears in both, so a mismatch fails deduction."]}
+  explanation="Eigen's fixed-size matrices and many inference kernels' compile-time tile sizes use exactly this trick."
+/>

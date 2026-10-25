@@ -42,3 +42,20 @@ Below, `Loud` counts copies. Its move constructor is NOT noexcept.
   explanation="Reallocations copy 1 + 2 + 4 + … + 512 = 1,023 elements."
   devices={["phone", "desktop"]}
 />
+
+## Write noexcept moves
+
+Sources: [cppreference: std::move_if_noexcept](https://en.cppreference.com/w/cpp/utility/move_if_noexcept), Core Guidelines C.66
+
+<Code
+  id="noexcept-moves"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Make `Tensor` (an owning float buffer) cheap to move: add noexcept move constructor and move assignment that steal the pointer and leave the source empty. Keep the existing copy."
+  starter={"#include <cstddef>\n#include <algorithm>\n#include <utility>\nstruct Tensor {\n    float* p = nullptr; std::size_t n = 0;\n    explicit Tensor(std::size_t n_) : p(new float[n_]()), n(n_) {}\n    Tensor(const Tensor& o) : p(new float[o.n]), n(o.n) { std::copy(o.p, o.p + n, p); }\n    Tensor& operator=(const Tensor& o) { if (this != &o) { Tensor t(o); std::swap(p, t.p); std::swap(n, t.n); } return *this; }\n    ~Tensor() { delete[] p; }\n    // TODO: noexcept moves\n};\n"}
+  visibleTests={"#include \"check.h\"\n\n#include <type_traits>\nint main() {\n    static_assert(std::is_nothrow_move_constructible_v<Tensor>);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\n#include <type_traits>\n#include <vector>\nint main() {\n    static_assert(std::is_nothrow_move_constructible_v<Tensor>);\n    static_assert(std::is_nothrow_move_assignable_v<Tensor>);\n    Tensor a(4); a.p[0] = 3.f; float* raw = a.p;\n    Tensor b = std::move(a);\n    CHECK(b.p == raw && a.p == nullptr && a.n == 0 && b.n == 4);\n    Tensor c(2); c = std::move(b);\n    CHECK(c.p == raw && c.n == 4 && b.p == nullptr);\n    std::vector<Tensor> v; v.reserve(1); v.emplace_back(8); float* first = v[0].p;\n    v.emplace_back(8);\n    CHECK(v[0].p == first);\n    return 0;\n}\n"}
+  solution={"#include <cstddef>\n#include <algorithm>\n#include <utility>\nstruct Tensor {\n    float* p = nullptr; std::size_t n = 0;\n    explicit Tensor(std::size_t n_) : p(new float[n_]()), n(n_) {}\n    Tensor(const Tensor& o) : p(new float[o.n]), n(o.n) { std::copy(o.p, o.p + n, p); }\n    Tensor& operator=(const Tensor& o) { if (this != &o) { Tensor t(o); std::swap(p, t.p); std::swap(n, t.n); } return *this; }\n    Tensor(Tensor&& o) noexcept : p(std::exchange(o.p, nullptr)), n(std::exchange(o.n, 0)) {}\n    Tensor& operator=(Tensor&& o) noexcept { if (this != &o) { delete[] p; p = std::exchange(o.p, nullptr); n = std::exchange(o.n, 0); } return *this; }\n    ~Tensor() { delete[] p; }\n};\n"}
+  hints={["std::exchange(o.p, nullptr) steals and nulls in one go."]}
+  explanation="The last test proves vector moved rather than copied during growth: the buffer pointer survived."
+/>

@@ -39,3 +39,20 @@ A conveyor belt between two workers. No foreman (lock) needed, as long as each t
   explanation="Empty is head == tail, full is head − tail == N."
   devices={["phone", "desktop"]}
 />
+
+## Build it
+
+Sources: [Rigtorp, SPSCQueue](https://github.com/rigtorp/SPSCQueue), [1024cores: lock-free algorithms](https://www.1024cores.net/home/lock-free-algorithms/queues), Williams ch. 7
+
+<Code
+  id="spsc"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Implement `template<class T, std::size_t N> class Spsc` (N a power of two, static_assert it) with `bool try_push(const T&)` and `bool try_pop(T&)`. Use `alignas(64) std::atomic<std::size_t> head_, tail_` (monotonic counters) and a std::array<T, N>. Use acquire loads of the other side's index and release stores of your own."
+  starter={"#include <atomic>\n#include <array>\n#include <cstddef>\ntemplate<class T, std::size_t N> class Spsc {\npublic:\n    bool try_push(const T& v) { return false; }\n    bool try_pop(T& out) { return false; }\n};\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() { Spsc<int, 4> q; int x; CHECK(q.try_push(1) && q.try_pop(x) && x == 1 && !q.try_pop(x)); return 0; }\n"}
+  tests={"#include \"check.h\"\n\n#include <thread>\nint main() {\n    Spsc<int, 4> q; int x;\n    for (int i = 0; i < 4; ++i) CHECK(q.try_push(i));\n    CHECK(!q.try_push(9));\n    for (int i = 0; i < 4; ++i) CHECK(q.try_pop(x) && x == i);\n    CHECK(!q.try_pop(x));\n    Spsc<long, 64> r; long sum = 0; const long M = 200000;\n    {\n        std::jthread prod([&] { for (long i = 1; i <= M; ++i) while (!r.try_push(i)) {} });\n        long got = 0, prev = 0;\n        while (got < M) { long v; if (r.try_pop(v)) { CHECK(v == prev + 1); prev = v; sum += v; ++got; } }\n    }\n    CHECK(sum == M * (M + 1) / 2);\n    return 0;\n}\n"}
+  solution={"#include <atomic>\n#include <array>\n#include <cstddef>\ntemplate<class T, std::size_t N> class Spsc {\n    static_assert(N && (N & (N - 1)) == 0, \"N must be a power of two\");\n    std::array<T, N> buf_{};\n    alignas(64) std::atomic<std::size_t> head_{0};\n    alignas(64) std::atomic<std::size_t> tail_{0};\npublic:\n    bool try_push(const T& v) {\n        auto h = head_.load(std::memory_order_relaxed);\n        if (h - tail_.load(std::memory_order_acquire) == N) return false;\n        buf_[h & (N - 1)] = v; head_.store(h + 1, std::memory_order_release); return true;\n    }\n    bool try_pop(T& out) {\n        auto t = tail_.load(std::memory_order_relaxed);\n        if (t == head_.load(std::memory_order_acquire)) return false;\n        out = buf_[t & (N - 1)]; tail_.store(t + 1, std::memory_order_release); return true;\n    }\n};\n"}
+  hints={["Unsigned subtraction handles wraparound of the counters.", "Write the slot before the release-store of head."]}
+  explanation="The tests check FIFO order across threads, so any reordering bug shows up."
+/>

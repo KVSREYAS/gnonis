@@ -39,3 +39,20 @@ Builders' Yard. Instead of buying bricks one at a time, buy a truckload and hand
   explanation="Memory is released only when the resource is destroyed or release() is called."
   devices={["phone", "desktop"]}
 />
+
+## Build it
+
+Sources: [cppreference: monotonic_buffer_resource](https://en.cppreference.com/w/cpp/memory/monotonic_buffer_resource), Ryan Fleury, [Untangling Lifetimes: The Arena Allocator](https://www.rfleury.com/p/untangling-lifetimes-the-arena-allocator)
+
+<Code
+  id="arena"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Implement `class Arena` with ctor(std::size_t bytes) owning a std::unique_ptr<std::byte[]>, `void* alloc(std::size_t n, std::size_t align)` (nullptr when it doesn't fit), `template<class T> T* make_array(std::size_t n)` (value-initialises trivially-constructible T), `void reset()` and `std::size_t used() const`. Make it non-copyable."
+  starter={"#include <cstddef>\n#include <memory>\nclass Arena {\npublic:\n    explicit Arena(std::size_t bytes) {}\n    void* alloc(std::size_t n, std::size_t align) { return nullptr; }\n    template<class T> T* make_array(std::size_t n) { return nullptr; }\n    void reset() {}\n    std::size_t used() const { return 0; }\n};\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() { Arena a(256); CHECK(a.alloc(8, 8) != nullptr && a.used() >= 8); return 0; }\n"}
+  tests={"#include \"check.h\"\n\n#include <cstdint>\n#include <type_traits>\nint main() {\n    static_assert(!std::is_copy_constructible_v<Arena>);\n    Arena a(1024);\n    auto* f = a.make_array<float>(10); CHECK(f && f[9] == 0.f);\n    void* p = a.alloc(1, 64); CHECK(p && reinterpret_cast<std::uintptr_t>(p) % 64 == 0);\n    CHECK(a.alloc(4096, 8) == nullptr);\n    std::size_t u = a.used(); CHECK(u > 40);\n    a.reset(); CHECK(a.used() == 0);\n    auto* d = a.make_array<double>(128); CHECK(d && d[127] == 0.0);\n    CHECK(a.make_array<double>(1) == nullptr);\n    return 0;\n}\n"}
+  solution={"#include <cstddef>\n#include <cstdint>\n#include <memory>\n#include <new>\n#include <type_traits>\nclass Arena {\n    std::unique_ptr<std::byte[]> buf_; std::size_t cap_, off_ = 0;\npublic:\n    explicit Arena(std::size_t bytes) : buf_(new std::byte[bytes]), cap_(bytes) {}\n    Arena(const Arena&) = delete; Arena& operator=(const Arena&) = delete;\n    void* alloc(std::size_t n, std::size_t align) {\n        auto base = reinterpret_cast<std::uintptr_t>(buf_.get());\n        auto p = (base + off_ + align - 1) & ~(std::uintptr_t)(align - 1);\n        if (p + n > base + cap_) return nullptr;\n        off_ = p + n - base; return reinterpret_cast<void*>(p);\n    }\n    template<class T> T* make_array(std::size_t n) {\n        static_assert(std::is_trivially_default_constructible_v<T>);\n        void* p = alloc(n * sizeof(T), alignof(T)); if (!p) return nullptr;\n        return new (p) T[n]();\n    }\n    void reset() { off_ = 0; }\n    std::size_t used() const { return off_; }\n};\n"}
+  hints={["Align the absolute address, not just the offset (the buffer may sit at any 16-aligned address).", "Placement-new `T[n]()` value-initialises."]}
+  explanation="llama.cpp's ggml uses a context arena for tensors in the same spirit."
+/>

@@ -40,3 +40,20 @@ At every junction the CPU guesses the turn and floors it. Guess wrong and it rev
   explanation="The classic Stack Overflow answer. (At -O3 some compilers emit cmov and the gap vanishes.)"
   devices={["phone", "desktop"]}
 />
+
+## Go branchless
+
+Sources: [Stack Overflow: why is processing a sorted array faster?](https://stackoverflow.com/questions/11227809), Agner Fog, [microarchitecture guide](https://www.agner.org/optimize/microarchitecture.pdf)
+
+<Code
+  id="branchless-count"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `long sum_above(const int* a, std::size_t n, int t)`, which sums elements >= t without an if: use a mask (`-(x >= t)`) or a ternary the compiler can turn into cmov. Also write `int clamp_bl(int x, int lo, int hi)` using std::min/std::max."
+  starter={"#include <cstddef>\n#include <algorithm>\nlong sum_above(const int* a, std::size_t n, int t) { return 0; }\nint clamp_bl(int x, int lo, int hi) { return x; }\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() {\n    int a[4] = {1, 200, 50, 130};\n    CHECK(sum_above(a, 4, 128) == 330);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\n#include <vector>\n#include <random>\nint main() {\n    int a[4] = {1, 200, 50, 130};\n    CHECK(sum_above(a, 4, 128) == 330);\n    std::mt19937 g(7); std::uniform_int_distribution<int> d(-1000, 1000);\n    std::vector<int> v(10000); for (auto& x : v) x = d(g);\n    long e = 0; for (int x : v) if (x >= -5) e += x;\n    CHECK(sum_above(v.data(), v.size(), -5) == e);\n    CHECK(clamp_bl(5, 0, 3) == 3 && clamp_bl(-2, 0, 3) == 0 && clamp_bl(2, 0, 3) == 2);\n    return 0;\n}\n"}
+  solution={"#include <cstddef>\n#include <algorithm>\nlong sum_above(const int* a, std::size_t n, int t) {\n    long s = 0;\n    for (std::size_t i = 0; i < n; ++i) s += a[i] & -(int)(a[i] >= t);\n    return s;\n}\nint clamp_bl(int x, int lo, int hi) { return std::min(std::max(x, lo), hi); }\n"}
+  hints={["-(int)true is all ones, and -(int)false is 0.", "x & mask keeps or zeroes x."]}
+  explanation="Branchless code also vectorises: SIMD compares produce exactly these masks."
+/>

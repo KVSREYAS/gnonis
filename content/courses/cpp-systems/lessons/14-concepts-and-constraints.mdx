@@ -45,3 +45,20 @@ Pass an `int` and the error says *constraints not satisfied: HasSize<int>*, not 
   explanation="requires-expression plus a compound requirement."
   devices={["phone", "desktop"]}
 />
+
+## Constrain a kernel
+
+Sources: [cppreference: constraints and concepts](https://en.cppreference.com/w/cpp/language/constraints), Bjarne Stroustrup, *A Tour of C++* (3rd ed.), ch. 8
+
+<Code
+  id="concept-sum"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Define `concept Numeric` (std::integral or std::floating_point) and `concept NumericRange`: a type R with std::ranges::begin/end whose `std::ranges::range_value_t<R>` is Numeric. Then write `auto sum_all(const NumericRange auto& r)` returning the sum as range_value_t<R>."
+  starter={"#include <concepts>\n#include <ranges>\ntemplate <class T> concept Numeric = true; // TODO\ntemplate <class R> concept NumericRange = true; // TODO\nauto sum_all(const NumericRange auto& r) { return 0; }\n"}
+  visibleTests={"#include \"check.h\"\n\n#include <vector>\nint main() {\n    std::vector<int> v{1, 2, 3};\n    CHECK(sum_all(v) == 6);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\n#include <vector>\n#include <array>\n#include <string>\n#include <type_traits>\nint main() {\n    std::vector<int> v{1, 2, 3};\n    CHECK(sum_all(v) == 6);\n    std::array<double, 3> a{0.5, 0.25, 0.25};\n    CHECK(sum_all(a) == 1.0);\n    static_assert(std::is_same_v<decltype(sum_all(a)), double>);\n    static_assert(!NumericRange<std::vector<std::string>>);\n    static_assert(!NumericRange<int>);\n    static_assert(NumericRange<std::vector<float>>);\n    return 0;\n}\n"}
+  solution={"#include <concepts>\n#include <ranges>\ntemplate <class T> concept Numeric = std::integral<T> || std::floating_point<T>;\ntemplate <class R> concept NumericRange = std::ranges::range<R> && Numeric<std::ranges::range_value_t<R>>;\nauto sum_all(const NumericRange auto& r) {\n    std::ranges::range_value_t<std::remove_cvref_t<decltype(r)>> s{};\n    for (const auto& x : r) s += x;\n    return s;\n}\n"}
+  hints={["std::ranges::range<R> covers begin/end.", "Use std::remove_cvref_t on decltype(r)."]}
+  explanation="The static_asserts prove the constraint rejects strings and non-ranges at compile time."
+/>

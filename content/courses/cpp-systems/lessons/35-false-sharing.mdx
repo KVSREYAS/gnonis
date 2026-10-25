@@ -40,3 +40,29 @@ Two of your crew keep separate notebooks, but they're glued to the same clipboar
   explanation="Rounded up to its alignment."
   devices={["phone", "desktop"]}
 />
+
+## Fix it
+
+Sources: [cppreference: hardware_destructive_interference_size](https://en.cppreference.com/w/cpp/thread/hardware_destructive_interference_size), Herb Sutter, [Eliminate False Sharing (Dr. Dobb's)](https://www.drdobbs.com/parallel/eliminate-false-sharing/217500206)
+
+<MCQ
+  id="fs-fix"
+  prompt="Which change removes false sharing in per-thread counters?"
+  options={["Make counters atomic", "alignas(64) per counter, or accumulate in a local and write once at the end", "Use more threads", "Use volatile"]}
+  answer={1}
+  explanation="Both work. A local accumulator is often simplest."
+  devices={["phone", "desktop"]}
+/>
+
+<Code
+  id="padded-counters"
+  devices={["desktop"]}
+  language="cpp"
+  prompt={"Write `struct alignas(64) PaddedCounter { std::atomic<long> v{0}; };` and `long count_parallel(unsigned nthreads, long per_thread)`. Each thread increments its own PaddedCounter (relaxed) per_thread times, then sum. static_assert that sizeof(PaddedCounter) == 64."}
+  starter={"#include <atomic>\nstruct PaddedCounter { std::atomic<long> v{0}; };\nlong count_parallel(unsigned nthreads, long per_thread) { return 0; }\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() { CHECK(count_parallel(2, 10) == 20); return 0; }\n"}
+  tests={"#include \"check.h\"\n\nint main() {\n    static_assert(sizeof(PaddedCounter) == 64 && alignof(PaddedCounter) == 64);\n    CHECK(count_parallel(2, 10) == 20);\n    CHECK(count_parallel(8, 50000) == 400000);\n    CHECK(count_parallel(0, 5) == 0);\n    return 0;\n}\n"}
+  solution={"#include <atomic>\n#include <thread>\n#include <vector>\nstruct alignas(64) PaddedCounter { std::atomic<long> v{0}; };\nstatic_assert(sizeof(PaddedCounter) == 64);\nlong count_parallel(unsigned nthreads, long per_thread) {\n    std::vector<PaddedCounter> cs(nthreads);\n    {\n        std::vector<std::jthread> ts;\n        for (unsigned t = 0; t < nthreads; ++t)\n            ts.emplace_back([&, t] { for (long i = 0; i < per_thread; ++i) cs[t].v.fetch_add(1, std::memory_order_relaxed); });\n    }\n    long s = 0; for (auto& c : cs) s += c.v.load();\n    return s;\n}\n"}
+  hints={["std::vector respects over-aligned types since C++17."]}
+  explanation="The hidden test asserts the layout, not the timing, because CI timing is noisy."
+/>

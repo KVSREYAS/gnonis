@@ -39,3 +39,20 @@ For a power-of-two `a`, `a - 1` is a mask of the low bits. Adding `a - 1` and cl
   explanation="16 floats = 64 bytes, and alignas(64) keeps it at 64."
   devices={["phone", "desktop"]}
 />
+
+## Write align_up
+
+Sources: [cppreference: std::aligned_alloc](https://en.cppreference.com/w/cpp/memory/c/aligned_alloc), [operator new with align_val_t](https://en.cppreference.com/w/cpp/memory/new/operator_new)
+
+<Code
+  id="align-up-fn"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `constexpr std::uintptr_t align_up(std::uintptr_t x, std::size_t a)` (a is a power of two) and `bool is_aligned(const void* p, std::size_t a)`. Then write `float* alloc_floats_aligned(std::size_t n, std::size_t a)` using std::aligned_alloc, rounding the byte size up to a multiple of a."
+  starter={"#include <cstdint>\n#include <cstddef>\n#include <cstdlib>\nconstexpr std::uintptr_t align_up(std::uintptr_t x, std::size_t a) { return x; }\nbool is_aligned(const void* p, std::size_t a) { return false; }\nfloat* alloc_floats_aligned(std::size_t n, std::size_t a) { return nullptr; }\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() {\n    static_assert(align_up(1000, 64) == 1024);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\n#include <initializer_list>\nint main() {\n    static_assert(align_up(1000, 64) == 1024 && align_up(1024, 64) == 1024 && align_up(0, 16) == 0 && align_up(1, 8) == 8);\n    for (std::size_t a : {16, 32, 64, 4096}) {\n        float* p = alloc_floats_aligned(1000, a);\n        CHECK(p && is_aligned(p, a));\n        for (int i = 0; i < 1000; ++i) p[i] = i;\n        CHECK(p[999] == 999);\n        std::free(p);\n    }\n    char buf[8]; CHECK(is_aligned(buf + 0, 1));\n    return 0;\n}\n"}
+  solution={"#include <cstdint>\n#include <cstddef>\n#include <cstdlib>\nconstexpr std::uintptr_t align_up(std::uintptr_t x, std::size_t a) { return (x + a - 1) & ~(std::uintptr_t)(a - 1); }\nbool is_aligned(const void* p, std::size_t a) { return (reinterpret_cast<std::uintptr_t>(p) & (a - 1)) == 0; }\nfloat* alloc_floats_aligned(std::size_t n, std::size_t a) {\n    std::size_t bytes = align_up(n * sizeof(float), a);\n    return static_cast<float*>(std::aligned_alloc(a, bytes ? bytes : a));\n}\n"}
+  hints={["~(a - 1) clears the low bits.", "aligned_alloc requires size % align == 0."]}
+  explanation="Arena allocators (module 12) use align_up on every allocation."
+/>

@@ -27,3 +27,20 @@ Six questions, then the getaway: the update loop.
   explanation="Data-Oriented Docks is cleared. Crates are flowing."
   devices={["phone", "desktop"]}
 />
+
+## Getaway: the update loop
+
+Step every living body in SoA order, and retire the ones that hit the floor.
+
+<Code
+  id="soa-update"
+  devices={["desktop"]}
+  language="cpp"
+  prompt={"Implement `struct Bodies { std::vector<float> x, v; std::vector<std::uint8_t> alive; }` with `void step(Bodies& b, float dt, float floor)`. For each alive body: v -= 9.8f*dt and x += v*dt. If x < floor, set x = floor, v = 0 and alive = 0. Return the number still alive. Keep it SoA, with no per-body objects."}
+  starter={"#include <vector>\n#include <cstdint>\n#include <cstddef>\nstruct Bodies { std::vector<float> x, v; std::vector<std::uint8_t> alive; };\nstd::size_t step(Bodies& b, float dt, float floor) { return 0; }\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() {\n    Bodies b{{10.f}, {0.f}, {1}};\n    CHECK(step(b, 0.1f, 0.f) == 1 && b.v[0] < 0);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\n#include <cmath>\nint main() {\n    Bodies b{{10.f, 0.05f, 5.f}, {0.f, 0.f, 0.f}, {1, 1, 0}};\n    std::size_t n = step(b, 0.1f, 0.f);\n    CHECK(n == 1);\n    CHECK(std::fabs(b.v[0] + 0.98f) < 1e-5f && std::fabs(b.x[0] - (10.f - 0.098f)) < 1e-5f);\n    CHECK(b.x[1] == 0.f && b.alive[1] == 0 && b.v[1] == 0.f);\n    CHECK(b.x[2] == 5.f);\n    for (int i = 0; i < 100; ++i) step(b, 0.1f, 0.f);\n    CHECK(b.alive[0] == 0 && b.x[0] == 0.f);\n    return 0;\n}\n"}
+  solution={"#include <vector>\n#include <cstdint>\n#include <cstddef>\nstruct Bodies { std::vector<float> x, v; std::vector<std::uint8_t> alive; };\nstd::size_t step(Bodies& b, float dt, float floor) {\n    std::size_t n = 0;\n    for (std::size_t i = 0; i < b.x.size(); ++i) {\n        if (!b.alive[i]) continue;\n        b.v[i] -= 9.8f * dt;\n        b.x[i] += b.v[i] * dt;\n        if (b.x[i] < floor) { b.x[i] = floor; b.v[i] = 0; b.alive[i] = 0; } else ++n;\n    }\n    return n;\n}\n"}
+  hints={["Update v first, then x (semi-implicit Euler)."]}
+  explanation="This is the shape of every particle, physics and ECS system in game engines."
+/>

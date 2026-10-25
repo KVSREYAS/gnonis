@@ -42,7 +42,9 @@ function runValidate(cwd: string, env: Record<string, string | undefined>, args:
     if (value === undefined) delete childEnv[key];
     else childEnv[key] = value;
   }
-  return spawnSync(tsx, ["--tsconfig", path.join(repo, "tsconfig.json"), script, "--no-python", ...args], {
+  // Baseline cases only care about the id diff. Compiling every C++ reference solution
+  // blows the 5s unit-test budget; `npm run validate:content` still runs g++.
+  return spawnSync(tsx, ["--tsconfig", path.join(repo, "tsconfig.json"), script, "--no-python", "--no-cpp", ...args], {
     cwd,
     env: childEnv,
     encoding: "utf8",

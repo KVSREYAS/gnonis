@@ -50,3 +50,20 @@ Matrix Mint prints the money: 90%+ of an LLM's FLOPs are matmuls.
   explanation="Same FLOPs, different memory access."
   devices={["phone", "desktop"]}
 />
+
+## Build it
+
+Sources: [Siboehm, How to Optimize a CUDA Matmul](https://siboehm.com/articles/22/CUDA-MMM) (CPU ideas carry over), Goto & van de Geijn, [Anatomy of High-Performance Matrix Multiplication](https://www.cs.utexas.edu/~flame/pubs/GotoTOMS_revision.pdf), [Algorithmica: matmul](https://en.algorithmica.org/hpc/algorithms/matmul/)
+
+<Code
+  id="matmul-tiled"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `void matmul(const float* A, const float* B, float* C, int M, int N, int K, int T)`. A is M×K, B is K×N and C is M×N, all row-major. Overwrite C with A·B using T×T×T tiles over (i, k, j) with i-k-j order inside the tiles. Handle sizes that aren't multiples of T."
+  starter={"void matmul(const float* A, const float* B, float* C, int M, int N, int K, int T) {}\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() { float A[4] = {1, 2, 3, 4}, B[4] = {5, 6, 7, 8}, C[4] = {9, 9, 9, 9}; matmul(A, B, C, 2, 2, 2, 1); CHECK(C[0] == 19 && C[3] == 50); return 0; }\n"}
+  tests={"#include \"check.h\"\n\n#include <vector>\n#include <array>\n#include <cmath>\nint main() {\n    float A[4] = {1, 2, 3, 4}, B[4] = {5, 6, 7, 8}, C[4] = {9, 9, 9, 9}; matmul(A, B, C, 2, 2, 2, 1); CHECK(C[0] == 19 && C[1] == 22 && C[2] == 43 && C[3] == 50);\n    for (auto [M, N, K, T] : std::vector<std::array<int, 4>>{{1, 7, 5, 4}, {33, 17, 29, 8}, {64, 64, 64, 16}, {5, 3, 70, 32}}) {\n        std::vector<float> a(M * K), b(K * N), c(M * N, 123.f);\n        for (int i = 0; i < M * K; ++i) a[i] = (i % 7) - 3.f;\n        for (int i = 0; i < K * N; ++i) b[i] = (i % 5) * 0.5f;\n        matmul(a.data(), b.data(), c.data(), M, N, K, T);\n        for (int i = 0; i < M; ++i) for (int j = 0; j < N; ++j) {\n            double r = 0; for (int k = 0; k < K; ++k) r += a[i * K + k] * b[k * N + j];\n            CHECK(std::fabs(c[i * N + j] - r) < 1e-3);\n        }\n    }\n    return 0;\n}\n"}
+  solution={"#include <algorithm>\nvoid matmul(const float* A, const float* B, float* C, int M, int N, int K, int T) {\n    std::fill(C, C + (long)M * N, 0.f);\n    for (int i0 = 0; i0 < M; i0 += T)\n        for (int k0 = 0; k0 < K; k0 += T)\n            for (int j0 = 0; j0 < N; j0 += T)\n                for (int i = i0; i < std::min(i0 + T, M); ++i)\n                    for (int k = k0; k < std::min(k0 + T, K); ++k) {\n                        float a = A[i * K + k];\n                        for (int j = j0; j < std::min(j0 + T, N); ++j) C[i * N + j] += a * B[k * N + j];\n                    }\n}\n"}
+  hints={["Zero C first.", "Hoist A[i*K+k] out of the j loop."]}
+  explanation="Real BLAS adds register blocking and packing on top of this. Same idea, more levels."
+/>

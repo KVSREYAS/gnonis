@@ -48,3 +48,20 @@ The Capstone Heist: run a tiny transformer layer in pure C++. First, the vault's
   explanation="Original strides were [4, 1], swapped to [1, 4]."
   devices={["phone", "desktop"]}
 />
+
+## Build it
+
+Sources: [PyTorch: tensor views](https://pytorch.org/docs/stable/tensor_view.html), Edward Z. Yang, [PyTorch internals](http://blog.ezyang.com/2019/05/pytorch-internals/)
+
+<Code
+  id="tensor"
+  devices={["desktop"]}
+  language="cpp"
+  prompt={"Implement `struct Tensor { std::shared_ptr<std::vector<float>> data; std::vector<std::size_t> shape, stride; std::size_t offset = 0; }` with `static Tensor zeros(std::vector<std::size_t> shape)` (row-major strides), `float& at(std::initializer_list<std::size_t> idx)`, `Tensor transpose(std::size_t a, std::size_t b) const` (a view) and `bool is_contiguous() const`."}
+  starter={"#include <vector>\n#include <memory>\n#include <initializer_list>\n#include <cstddef>\nstruct Tensor {\n    std::shared_ptr<std::vector<float>> data; std::vector<std::size_t> shape, stride; std::size_t offset = 0;\n    static Tensor zeros(std::vector<std::size_t> shape) {\n        Tensor t; t.shape = shape; t.stride.assign(shape.size(), 0);\n        std::size_t n = 1; for (auto d : shape) n *= d;\n        t.data = std::make_shared<std::vector<float>>(n ? n : 1, 0.f);\n        return t;\n    }\n    float& at(std::initializer_list<std::size_t> idx) { return (*data)[0]; }\n    Tensor transpose(std::size_t a, std::size_t b) const { return *this; }\n    bool is_contiguous() const { return false; }\n};\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() { auto t = Tensor::zeros({2, 3, 4}); CHECK(t.stride[0] == 12); t.at({1, 2, 3}) = 5; CHECK((*t.data)[23] == 5); return 0; }\n"}
+  tests={"#include \"check.h\"\n\nint main() {\n    auto t = Tensor::zeros({2, 3, 4}); CHECK(t.stride[0] == 12 && t.stride[1] == 4 && t.stride[2] == 1 && t.data->size() == 24);\n    t.at({1, 2, 3}) = 5; CHECK((*t.data)[23] == 5 && t.is_contiguous());\n    auto m = Tensor::zeros({3, 4}); for (std::size_t i = 0; i < 3; ++i) for (std::size_t j = 0; j < 4; ++j) m.at({i, j}) = float(i * 10 + j);\n    auto mt = m.transpose(0, 1);\n    CHECK(mt.shape[0] == 4 && mt.stride[0] == 1 && mt.stride[1] == 4 && !mt.is_contiguous());\n    CHECK(mt.at({3, 2}) == 23 && mt.data == m.data);\n    mt.at({0, 1}) = -1; CHECK(m.at({1, 0}) == -1);\n    return 0;\n}\n"}
+  solution={"#include <vector>\n#include <memory>\n#include <initializer_list>\n#include <cstddef>\n#include <utility>\nstruct Tensor {\n    std::shared_ptr<std::vector<float>> data; std::vector<std::size_t> shape, stride; std::size_t offset = 0;\n    static Tensor zeros(std::vector<std::size_t> shape) {\n        Tensor t; t.shape = shape; t.stride.assign(shape.size(), 1);\n        std::size_t n = 1;\n        for (std::size_t i = shape.size(); i-- > 0;) { t.stride[i] = n; n *= shape[i]; }\n        t.data = std::make_shared<std::vector<float>>(n, 0.f); return t;\n    }\n    float& at(std::initializer_list<std::size_t> idx) {\n        std::size_t o = offset, d = 0; for (auto i : idx) o += i * stride[d++];\n        return (*data)[o];\n    }\n    Tensor transpose(std::size_t a, std::size_t b) const { Tensor t = *this; std::swap(t.shape[a], t.shape[b]); std::swap(t.stride[a], t.stride[b]); return t; }\n    bool is_contiguous() const {\n        std::size_t n = 1;\n        for (std::size_t i = shape.size(); i-- > 0;) { if (shape[i] != 1 && stride[i] != n) return false; n *= shape[i]; }\n        return true;\n    }\n};\n"}
+  hints={["Fill strides right to left.", "A transpose is a view: it shares the data pointer."]}
+  explanation="This is exactly how PyTorch, ggml and every inference runtime describe tensors."
+/>
