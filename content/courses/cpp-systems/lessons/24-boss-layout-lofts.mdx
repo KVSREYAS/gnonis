@@ -27,3 +27,20 @@ Six questions, then the getaway: implement the layout rules the compiler uses.
   explanation="Layout Lofts is cleared. Not a single wasted byte."
   devices={["phone", "desktop"]}
 />
+
+## Getaway: be the compiler
+
+Given each member's size and alignment, lay the struct out the way the compiler does.
+
+<Code
+  id="layout-calc"
+  devices={["desktop"]}
+  language="cpp"
+  prompt={"Write `std::size_t struct_size(const std::vector<std::pair<std::size_t,std::size_t>>& members)`, where each member is {size, align} in declaration order. Apply the C/C++ rules: each offset rounds up to its align, the total rounds up to the max align, and an empty struct returns 1. Also write `std::vector<std::size_t> offsets(...)` with the same input."}
+  starter={"#include <vector>\n#include <cstddef>\n#include <utility>\nstd::vector<std::size_t> offsets(const std::vector<std::pair<std::size_t, std::size_t>>& m) { return {}; }\nstd::size_t struct_size(const std::vector<std::pair<std::size_t, std::size_t>>& m) { return 0; }\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() {\n    CHECK(struct_size({{1, 1}, {4, 4}, {1, 1}}) == 12);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\n#include <cstdint>\nstruct A { char c; int i; char d; };\nstruct C { char c; double x; int i; };\nstruct E { char a; short b; char c; long long d; };\nint main() {\n    CHECK(struct_size({{1, 1}, {4, 4}, {1, 1}}) == sizeof(A));\n    CHECK(struct_size({{1, 1}, {8, 8}, {4, 4}}) == sizeof(C));\n    CHECK(struct_size({{1, 1}, {2, 2}, {1, 1}, {8, 8}}) == sizeof(E));\n    CHECK(struct_size({}) == 1);\n    CHECK(offsets({{1, 1}, {8, 8}, {4, 4}}) == std::vector<std::size_t>({0, 8, 16}));\n    CHECK(struct_size({{3, 1}}) == 3);\n    return 0;\n}\n"}
+  solution={"#include <vector>\n#include <cstddef>\n#include <utility>\n#include <algorithm>\nstd::vector<std::size_t> offsets(const std::vector<std::pair<std::size_t, std::size_t>>& m) {\n    std::vector<std::size_t> out; std::size_t off = 0;\n    for (auto [sz, al] : m) { off = (off + al - 1) / al * al; out.push_back(off); off += sz; }\n    return out;\n}\nstd::size_t struct_size(const std::vector<std::pair<std::size_t, std::size_t>>& m) {\n    if (m.empty()) return 1;\n    std::size_t off = 0, maxal = 1;\n    for (auto [sz, al] : m) { off = (off + al - 1) / al * al + sz; maxal = std::max(maxal, al); }\n    return (off + maxal - 1) / maxal * maxal;\n}\n"}
+  hints={["Round the running offset up to each member's alignment, then add its size.", "Finally round the total up to the largest alignment."]}
+  explanation="The hidden tests check your answers against what g++ actually produces."
+/>

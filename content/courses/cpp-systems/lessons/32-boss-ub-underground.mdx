@@ -27,3 +27,20 @@ Six questions, then the getaway: arithmetic that can't fall through.
   explanation="UB Underground is cleared. No trapdoors triggered."
   devices={["phone", "desktop"]}
 />
+
+## Getaway: overflow-safe maths
+
+Add and average without ever stepping off the edge of `int`.
+
+<Code
+  id="checked-add"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `bool checked_add(int a, int b, int& out)` (false on overflow, without ever overflowing; no __builtin allowed) and `int midpoint_safe(int a, int b)`, which returns a + (b − a)/2 rounded towards a, without overflow even for INT_MIN/INT_MAX (use unsigned or wider arithmetic)."
+  starter={"bool checked_add(int a, int b, int& out) { out = (int)((long long)a + b); return true; }\nint midpoint_safe(int a, int b) { return (int)(((long long)a + b) / 2); }\n"}
+  visibleTests={"#include \"check.h\"\n\n#include <climits>\nint main() {\n    int r; CHECK(checked_add(2, 3, r) && r == 5);\n    CHECK(!checked_add(INT_MAX, 1, r));\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\n#include <climits>\n#include <numeric>\nint main() {\n    int r = 0;\n    CHECK(checked_add(2, 3, r) && r == 5);\n    CHECK(!checked_add(INT_MAX, 1, r) && !checked_add(INT_MIN, -1, r));\n    CHECK(checked_add(INT_MAX, INT_MIN, r) && r == -1);\n    CHECK(checked_add(INT_MAX, 0, r) && r == INT_MAX);\n    CHECK(midpoint_safe(INT_MAX, INT_MAX - 2) == std::midpoint(INT_MAX, INT_MAX - 2));\n    CHECK(midpoint_safe(INT_MIN, INT_MAX) == std::midpoint(INT_MIN, INT_MAX));\n    CHECK(midpoint_safe(1, 4) == std::midpoint(1, 4) && midpoint_safe(4, 1) == std::midpoint(4, 1));\n    return 0;\n}\n"}
+  solution={"#include <climits>\nbool checked_add(int a, int b, int& out) {\n    if ((b > 0 && a > INT_MAX - b) || (b < 0 && a < INT_MIN - b)) return false;\n    out = a + b; return true;\n}\nint midpoint_safe(int a, int b) {\n    long long d = (long long)b - a;\n    return (int)(a + d / 2);\n}\n"}
+  hints={["Check against INT_MAX − b before adding.", "long long can hold any difference of two ints."]}
+  explanation="The tests compare against std::midpoint (C++20). A correct solution never performs a signed overflow, so the results stay defined."
+/>

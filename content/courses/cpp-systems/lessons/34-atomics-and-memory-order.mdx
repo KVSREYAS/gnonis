@@ -50,3 +50,20 @@ Concurrency Casino's chip counter is atomic, so nobody double-spends. But when y
   explanation="A data race is UB. In practice you see numbers below 2,000,000, but the standard gives no guarantee at all."
   devices={["phone", "desktop"]}
 />
+
+## Spinlock
+
+Sources: [cppreference: std::memory_order](https://en.cppreference.com/w/cpp/atomic/memory_order), Herb Sutter, [atomic<> Weapons (C++ and Beyond 2012)](https://herbsutter.com/2013/02/11/atomic-weapons-the-c-memory-model-and-modern-hardware/), Williams ch. 5
+
+<Code
+  id="spinlock"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Implement `class Spinlock` with lock()/unlock() using std::atomic_flag or std::atomic<bool>. Use acquire on lock success and release on unlock, and spin on a relaxed load before retrying the exchange (test-and-test-and-set). Also add `bool try_lock()`. It must work with std::lock_guard."
+  starter={"#include <atomic>\nclass Spinlock {\npublic:\n    void lock() {}\n    bool try_lock() { return false; }\n    void unlock() {}\n};\n"}
+  visibleTests={"#include \"check.h\"\n\n#include <mutex>\nint main() {\n    Spinlock s; { std::lock_guard g(s); }\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\n#include <mutex>\n#include <thread>\n#include <vector>\nint main() {\n    Spinlock s; long n = 0;\n    {\n        std::vector<std::jthread> ts;\n        for (int t = 0; t < 4; ++t) ts.emplace_back([&] { for (int i = 0; i < 20000; ++i) { std::lock_guard g(s); ++n; } });\n    }\n    CHECK(n == 80000);\n    CHECK(s.try_lock() && !s.try_lock()); s.unlock(); CHECK(s.try_lock()); s.unlock();\n    return 0;\n}\n"}
+  solution={"#include <atomic>\nclass Spinlock {\n    std::atomic<bool> held_{false};\npublic:\n    void lock() {\n        for (;;) {\n            if (!held_.exchange(true, std::memory_order_acquire)) return;\n            while (held_.load(std::memory_order_relaxed)) {}\n        }\n    }\n    bool try_lock() { return !held_.load(std::memory_order_relaxed) && !held_.exchange(true, std::memory_order_acquire); }\n    void unlock() { held_.store(false, std::memory_order_release); }\n};\n"}
+  hints={["exchange(true) returns the old value: false means you got the lock.", "Spinning on load avoids hammering the cache line with writes."]}
+  explanation="In real code, prefer std::mutex (it parks waiting threads). Spinlocks only win for very short critical sections."
+/>

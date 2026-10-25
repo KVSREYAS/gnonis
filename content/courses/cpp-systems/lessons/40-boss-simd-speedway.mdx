@@ -27,3 +27,20 @@ Six questions, then the getaway: an SSE kernel.
   explanation="SIMD Speedway is cleared. Chequered flag."
   devices={["phone", "desktop"]}
 />
+
+## Getaway: ReLU and scale kernel
+
+Needs an x86-64 runner.
+
+<Code
+  id="sse-relu"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="With SSE intrinsics, write `void relu_scale(float* x, std::size_t n, float s)` computing x[i] = max(x[i], 0) * s in place. Use _mm_max_ps with a zero vector and _mm_set1_ps(s), plus a scalar tail."
+  starter={"#include <immintrin.h>\n#include <cstddef>\nvoid relu_scale(float* x, std::size_t n, float s) {}\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() { float a[5] = {-1, 2, -3, 4, 5}; relu_scale(a, 5, 2); CHECK(a[0] == 0 && a[1] == 4 && a[4] == 10); return 0; }\n"}
+  tests={"#include \"check.h\"\n\n#include <vector>\nint main() {\n    float a[5] = {-1, 2, -3, 4, 5}; relu_scale(a, 5, 2); CHECK(a[0] == 0 && a[1] == 4 && a[2] == 0 && a[3] == 8 && a[4] == 10);\n    std::vector<float> v(1030); for (int i = 0; i < 1030; ++i) v[i] = (i % 3 ? 1.f : -1.f) * i;\n    relu_scale(v.data() + 1, 1029, 0.5f);\n    for (int i = 1; i < 1030; ++i) CHECK(v[i] == ((i % 3) ? i * 0.5f : 0.f));\n    CHECK(v[0] == 0.f);\n    relu_scale(v.data(), 0, 3);\n    return 0;\n}\n"}
+  solution={"#include <immintrin.h>\n#include <cstddef>\n#include <algorithm>\nvoid relu_scale(float* x, std::size_t n, float s) {\n    const __m128 z = _mm_setzero_ps(), vs = _mm_set1_ps(s);\n    std::size_t i = 0;\n    for (; i + 4 <= n; i += 4) _mm_storeu_ps(x + i, _mm_mul_ps(_mm_max_ps(_mm_loadu_ps(x + i), z), vs));\n    for (; i < n; ++i) x[i] = std::max(x[i], 0.0f) * s;\n}\n"}
+  hints={["_mm_set1_ps broadcasts a scalar to all lanes."]}
+  explanation="Fusing the activation with the scale saves a full pass over memory. That's kernel fusion in miniature."
+/>

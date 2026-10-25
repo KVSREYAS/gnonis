@@ -39,3 +39,20 @@ For `template<class T> void f(T&& x)`: passing an lvalue `int` deduces `T = int&
   explanation="Forwarding references plus std::forward<Args>."
   devices={["phone", "desktop"]}
 />
+
+## emplace without copies
+
+Sources: [cppreference: std::forward](https://en.cppreference.com/w/cpp/utility/forward), Meyers, *Effective Modern C++*, Items 24–30
+
+<Code
+  id="forward-wrapper"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `template<class F, class... Args> decltype(auto) call_logged(int& calls, F&& f, Args&&... args)`, which increments calls and then invokes f with perfectly forwarded args, returning whatever f returns (including references)."
+  starter={"#include <utility>\ntemplate <class F, class... Args>\ndecltype(auto) call_logged(int& calls, F&& f, Args&&... args) {\n    ++calls;\n    return f(args...); // TODO: forward properly\n}\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() {\n    int calls = 0;\n    CHECK(call_logged(calls, [](int a, int b) { return a + b; }, 2, 3) == 5);\n    CHECK(calls == 1);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\n#include <memory>\n#include <string>\nint main() {\n    int calls = 0;\n    CHECK(call_logged(calls, [](int a, int b) { return a + b; }, 2, 3) == 5);\n    auto p = std::make_unique<int>(42);\n    auto take = [](std::unique_ptr<int> q) { return *q; };\n    CHECK(call_logged(calls, take, std::move(p)) == 42);\n    CHECK(p == nullptr);\n    int x = 1;\n    auto ref = [](int& r) -> int& { return r; };\n    call_logged(calls, ref, x) = 9;\n    CHECK(x == 9 && calls == 3);\n    return 0;\n}\n"}
+  solution={"#include <utility>\n#include <functional>\ntemplate <class F, class... Args>\ndecltype(auto) call_logged(int& calls, F&& f, Args&&... args) {\n    ++calls;\n    return std::invoke(std::forward<F>(f), std::forward<Args>(args)...);\n}\n"}
+  hints={["Without std::forward, the unique_ptr argument would be an lvalue and wouldn't compile.", "decltype(auto) keeps int& returns as references."]}
+  explanation="This is the shape of std::invoke wrappers, thread pools and logging decorators."
+/>

@@ -41,3 +41,20 @@ An IEEE-754 float is 1 sign bit, 8 exponent bits (bias 127) and 23 mantissa bits
   explanation="memcpy is fine. Dereferencing a uint32_t* that points at a float is UB."
   devices={["phone", "desktop"]}
 />
+
+## Decode a float
+
+Sources: [cppreference: std::bit_cast](https://en.cppreference.com/w/cpp/numeric/bit_cast), [type aliasing rules](https://en.cppreference.com/w/cpp/language/reinterpret_cast#Type_aliasing)
+
+<Code
+  id="float-parts"
+  devices={["desktop"]}
+  language="cpp"
+  prompt={"Using std::bit_cast, write `struct Parts { unsigned sign; int exponent; std::uint32_t mantissa; }; Parts decompose(float f)` (exponent unbiased: field − 127) and `float bf16_round_trip(float f)`, which truncates to bfloat16 by keeping the top 16 bits and zeroing the low 16."}
+  starter={"#include <bit>\n#include <cstdint>\nstruct Parts { unsigned sign; int exponent; std::uint32_t mantissa; };\nParts decompose(float f) { return {}; }\nfloat bf16_round_trip(float f) { return f; }\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() {\n    auto p = decompose(1.0f);\n    CHECK(p.sign == 0 && p.exponent == 0 && p.mantissa == 0);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\nint main() {\n    auto p = decompose(1.0f); CHECK(p.sign == 0 && p.exponent == 0 && p.mantissa == 0);\n    auto q = decompose(-6.0f); CHECK(q.sign == 1 && q.exponent == 2 && q.mantissa == 0x400000);\n    CHECK(bf16_round_trip(1.5f) == 1.5f);\n    float r = bf16_round_trip(3.14159265f); CHECK(r == 3.140625f);\n    CHECK(bf16_round_trip(-2.0f) == -2.0f);\n    return 0;\n}\n"}
+  solution={"#include <bit>\n#include <cstdint>\nstruct Parts { unsigned sign; int exponent; std::uint32_t mantissa; };\nParts decompose(float f) {\n    auto u = std::bit_cast<std::uint32_t>(f);\n    return { u >> 31, int((u >> 23) & 0xFF) - 127, u & 0x7FFFFF };\n}\nfloat bf16_round_trip(float f) { return std::bit_cast<float>(std::bit_cast<std::uint32_t>(f) & 0xFFFF0000u); }\n"}
+  hints={["-6 = -1.5 × 2², and the mantissa bits of .5 are 0x400000."]}
+  explanation="bf16 is just the top half of an fp32. That's why converting between them is so cheap on accelerators."
+/>

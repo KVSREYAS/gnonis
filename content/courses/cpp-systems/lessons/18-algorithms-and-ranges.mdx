@@ -41,3 +41,20 @@ The STL Strip has 100+ algorithms on the shelf. Most programmers use three.
   explanation="Average O(n) versus O(n log n)."
   devices={["phone", "desktop"]}
 />
+
+## Top-k for sampling
+
+Top-k sampling in an LLM needs the k largest logits. Sources: [cppreference: algorithm library](https://en.cppreference.com/w/cpp/algorithm), [Sean Parent, C++ Seasoning (GoingNative 2013)](https://www.youtube.com/watch?v=W2tWOdzgXHA)
+
+<Code
+  id="topk"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `std::vector<int> topk_indices(const std::vector<float>& logits, std::size_t k)`, returning the indices of the k largest values, sorted by value descending (ties: smaller index first). Use std::partial_sort or nth_element plus sort. k may exceed the size; clamp it."
+  starter={"#include <vector>\n#include <algorithm>\n#include <numeric>\nstd::vector<int> topk_indices(const std::vector<float>& logits, std::size_t k) { return {}; }\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() {\n    auto r = topk_indices({0.1f, 0.9f, 0.5f}, 2);\n    CHECK(r.size() == 2 && r[0] == 1 && r[1] == 2);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\n#include <random>\nint main() {\n    auto r = topk_indices({0.1f, 0.9f, 0.5f}, 2);\n    CHECK(r.size() == 2 && r[0] == 1 && r[1] == 2);\n    CHECK(topk_indices({1, 1, 1}, 2) == std::vector<int>({0, 1}));\n    CHECK(topk_indices({3, 1}, 10) == std::vector<int>({0, 1}));\n    CHECK(topk_indices({}, 3).empty());\n    std::mt19937 g(1); std::uniform_real_distribution<float> d(-5, 5);\n    std::vector<float> big(50000); for (auto& x : big) x = d(g);\n    auto t = topk_indices(big, 50);\n    auto sorted = big; std::sort(sorted.begin(), sorted.end(), std::greater<>());\n    for (int i = 0; i < 50; ++i) CHECK(big[t[i]] == sorted[i]);\n    return 0;\n}\n"}
+  solution={"#include <vector>\n#include <algorithm>\n#include <numeric>\nstd::vector<int> topk_indices(const std::vector<float>& logits, std::size_t k) {\n    std::vector<int> idx(logits.size());\n    std::iota(idx.begin(), idx.end(), 0);\n    k = std::min(k, idx.size());\n    std::partial_sort(idx.begin(), idx.begin() + k, idx.end(), [&](int a, int b) {\n        return logits[a] != logits[b] ? logits[a] > logits[b] : a < b;\n    });\n    idx.resize(k);\n    return idx;\n}\n"}
+  hints={["Sort indices, not values: std::iota fills 0..n-1.", "The comparator looks values up through the index."]}
+  explanation="partial_sort is O(n log k), much cheaper than a full sort for k = 50 over a 128k vocabulary."
+/>

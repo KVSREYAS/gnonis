@@ -39,3 +39,20 @@ Two gang members each refuse to leave until the other does. Nobody ever leaves, 
   explanation="lock() is the safe check-and-take. The shared_ptr(weak_ptr) constructor throws bad_weak_ptr instead."
   devices={["phone", "desktop"]}
 />
+
+## Fix it
+
+Source: [cppreference: weak_ptr](https://en.cppreference.com/w/cpp/memory/weak_ptr)
+
+<Code
+  id="tree-weak"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Complete `TreeNode`. Children are owned via `std::vector<std::shared_ptr<TreeNode>> kids`, the parent is a `std::weak_ptr<TreeNode> parent`, and `add_child(self)` creates a child whose parent is self. A global counter `alive` tracks construction and destruction. When the root dies, every node must be destroyed."
+  starter={"#include <memory>\n#include <vector>\nextern int alive;\nstruct TreeNode {\n    std::vector<std::shared_ptr<TreeNode>> kids;\n    std::shared_ptr<TreeNode> parent; // TODO: wrong type\n    TreeNode() { ++alive; }\n    ~TreeNode() { --alive; }\n};\nstd::shared_ptr<TreeNode> add_child(const std::shared_ptr<TreeNode>& self) {\n    auto k = std::make_shared<TreeNode>();\n    k->parent = self;\n    self->kids.push_back(k);\n    return k;\n}\n"}
+  visibleTests={"#include \"check.h\"\n\nint alive = 0;\nint main() {\n    { auto r = std::make_shared<TreeNode>(); add_child(r); }\n    CHECK(alive == 0);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\nint alive = 0;\nint main() {\n    {\n        auto r = std::make_shared<TreeNode>();\n        auto c = add_child(r); auto g = add_child(c); add_child(r);\n        CHECK(alive == 4);\n        CHECK(g->parent.lock() == c);\n    }\n    CHECK(alive == 0);\n    return 0;\n}\n"}
+  solution={"#include <memory>\n#include <vector>\nextern int alive;\nstruct TreeNode {\n    std::vector<std::shared_ptr<TreeNode>> kids;\n    std::weak_ptr<TreeNode> parent;\n    TreeNode() { ++alive; }\n    ~TreeNode() { --alive; }\n};\nstd::shared_ptr<TreeNode> add_child(const std::shared_ptr<TreeNode>& self) {\n    auto k = std::make_shared<TreeNode>();\n    k->parent = self;\n    self->kids.push_back(k);\n    return k;\n}\n"}
+  hints={["One word to change."]}
+  explanation="Parent-owns-child plus a weak back-pointer is the standard tree and graph pattern."
+/>

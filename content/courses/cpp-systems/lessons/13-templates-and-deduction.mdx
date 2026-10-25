@@ -45,3 +45,20 @@ Template Town builds anything to order, but the foreman guesses your measurement
   explanation="auto drops references unless you ask for them with auto&."
   devices={["phone", "desktop"]}
 />
+
+## Your own template
+
+Sources: Meyers, *Effective Modern C++*, Items 1–2; [cppreference: template argument deduction](https://en.cppreference.com/w/cpp/language/template_argument_deduction)
+
+<Code
+  id="max-of"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `template<class T> const T& max_of(const T& a, const T& b)` returning the larger (a on ties), and a variadic `template<class T, class... Rest> T max_all(T first, Rest... rest)` that returns the maximum of all its arguments using a fold or recursion."
+  starter={"template <class T> const T& max_of(const T& a, const T& b) { return a; }\ntemplate <class T, class... Rest> T max_all(T first, Rest... rest) { return first; }\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() {\n    CHECK(max_of(3, 7) == 7);\n    CHECK(max_all(1, 9, 4) == 9);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\n#include <string>\nint main() {\n    CHECK(max_of(3, 7) == 7 && max_of(7, 3) == 7);\n    int a = 5, b = 5; CHECK(&max_of(a, b) == &a);\n    CHECK(max_all(1, 9, 4) == 9 && max_all(42) == 42 && max_all(-3, -1, -2) == -1);\n    CHECK(max_all(std::string(\"a\"), std::string(\"c\"), std::string(\"b\")) == \"c\");\n    return 0;\n}\n"}
+  solution={"template <class T> const T& max_of(const T& a, const T& b) { return (b > a) ? b : a; }\ntemplate <class T> T max_all(T first) { return first; }\ntemplate <class T, class... Rest> T max_all(T first, Rest... rest) { T r = max_all(rest...); return r > first ? r : first; }\n"}
+  hints={["Recursion: max_all(first, rest...) = max(first, max_all(rest...)).", "Or use a fold over a lambda."]}
+  explanation="Variadic templates power std::make_unique, std::tuple and every forwarding factory."
+/>

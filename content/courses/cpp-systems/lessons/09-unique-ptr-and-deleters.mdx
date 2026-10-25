@@ -42,3 +42,20 @@ On x86-64 with libstdc++ or libc++, a `unique_ptr<T>` with the default deleter i
   explanation="Stateless deleters are free. Function pointers cost a word."
   devices={["phone", "desktop"]}
 />
+
+## Wrap a C API
+
+Sources: [cppreference: unique_ptr](https://en.cppreference.com/w/cpp/memory/unique_ptr), Core Guidelines R.20/R.21
+
+<Code
+  id="malloc-owner"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `IntBuf alloc_ints(std::size_t n)`, which mallocs n zeroed ints (use std::calloc) and returns them as `IntBuf = std::unique_ptr<int[], FreeDeleter>`. FreeDeleter must be an empty struct calling std::free, so sizeof(IntBuf) == sizeof(int*)."
+  starter={"#include <cstdlib>\n#include <memory>\nstruct FreeDeleter { /* TODO */ void operator()(void*) const {} };\nusing IntBuf = std::unique_ptr<int[], FreeDeleter>;\nIntBuf alloc_ints(std::size_t n) { return IntBuf(nullptr); }\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() {\n    auto b = alloc_ints(4);\n    CHECK(b != nullptr && b[3] == 0);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\nint main() {\n    static_assert(sizeof(IntBuf) == sizeof(int*));\n    auto b = alloc_ints(1000);\n    CHECK(b != nullptr);\n    long s = 0; for (int i = 0; i < 1000; ++i) s += b[i];\n    CHECK(s == 0);\n    b[999] = 5; CHECK(b[999] == 5);\n    IntBuf c = std::move(b); CHECK(!b && c[999] == 5);\n    return 0;\n}\n"}
+  solution={"#include <cstdlib>\n#include <memory>\nstruct FreeDeleter { void operator()(void* p) const noexcept { std::free(p); } };\nusing IntBuf = std::unique_ptr<int[], FreeDeleter>;\nIntBuf alloc_ints(std::size_t n) { return IntBuf(static_cast<int*>(std::calloc(n, sizeof(int)))); }\n"}
+  hints={["calloc zeroes memory for you.", "An empty struct with operator() is a stateless deleter."]}
+  explanation="Same pattern for cudaFree, fclose, SDL_DestroyWindow and every other C cleanup function."
+/>

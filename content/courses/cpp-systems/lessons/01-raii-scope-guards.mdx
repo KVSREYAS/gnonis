@@ -41,3 +41,20 @@ Locals are destroyed in reverse order of construction when they leave scope, whe
   explanation="Unwinding runs the destructors of every fully constructed local, so the lock is released."
   devices={["phone", "desktop"]}
 />
+
+## Write a scope guard
+
+When there's no ready-made RAII type, wrap the cleanup in a guard. (C++ Core Guidelines E.19, GSL `finally`.) Source: [cppreference: RAII](https://en.cppreference.com/w/cpp/language/raii)
+
+<Code
+  id="scope-exit"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Implement `ScopeExit<F>`: it stores a callable and calls it once in its destructor, unless `dismiss()` was called. It must not be copyable. Add a helper `make_scope_exit(f)`."
+  starter={"#include <utility>\ntemplate <class F>\nclass ScopeExit {\npublic:\n    explicit ScopeExit(F f) : f_(std::move(f)) {}\n    // TODO: destructor, dismiss(), delete copies\nprivate:\n    F f_;\n};\ntemplate <class F> ScopeExit<F> make_scope_exit(F f) { return ScopeExit<F>(std::move(f)); }\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() {\n    int n = 0;\n    { auto g = make_scope_exit([&] { ++n; }); }\n    CHECK(n == 1);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\n#include <stdexcept>\n#include <type_traits>\nint main() {\n    int n = 0;\n    { auto g = make_scope_exit([&] { ++n; }); }\n    CHECK(n == 1);\n    { auto g = make_scope_exit([&] { ++n; }); g.dismiss(); }\n    CHECK(n == 1);\n    try { auto g = make_scope_exit([&] { n += 10; }); throw std::runtime_error(\"boom\"); } catch (...) {}\n    CHECK(n == 11);\n    static_assert(!std::is_copy_constructible_v<ScopeExit<void(*)()>>);\n    return 0;\n}\n"}
+  solution={"#include <utility>\ntemplate <class F>\nclass ScopeExit {\npublic:\n    explicit ScopeExit(F f) : f_(std::move(f)) {}\n    ~ScopeExit() { if (active_) f_(); }\n    void dismiss() noexcept { active_ = false; }\n    ScopeExit(const ScopeExit&) = delete;\n    ScopeExit& operator=(const ScopeExit&) = delete;\nprivate:\n    F f_;\n    bool active_ = true;\n};\ntemplate <class F> ScopeExit<F> make_scope_exit(F f) { return ScopeExit<F>(std::move(f)); }\n"}
+  hints={["Add a bool flag for dismiss.", "`= delete` the copy constructor and copy assignment."]}
+  explanation="C++17 guaranteed copy elision lets make_scope_exit return a non-copyable, non-movable guard."
+/>

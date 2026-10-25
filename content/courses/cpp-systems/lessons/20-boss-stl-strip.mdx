@@ -27,3 +27,20 @@ Six questions, then the getaway: count the words in the police scanner chatter.
   explanation="STL Strip is cleared. You know the stock."
   devices={["phone", "desktop"]}
 />
+
+## Getaway: word frequencies
+
+Split the scanner chatter on spaces and report the words the city repeats most.
+
+<Code
+  id="word-freq"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `std::vector<std::pair<std::string,int>> top_words(std::string_view text, std::size_t k)`. Split on spaces, ignore empty tokens, count with std::unordered_map, then return the k most frequent sorted by count descending, ties alphabetical."
+  starter={"#include <string>\n#include <string_view>\n#include <vector>\n#include <unordered_map>\n#include <algorithm>\nstd::vector<std::pair<std::string, int>> top_words(std::string_view text, std::size_t k) { return {}; }\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() {\n    auto r = top_words(\"grove street grove\", 1);\n    CHECK(r.size() == 1 && r[0].first == \"grove\" && r[0].second == 2);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\nint main() {\n    auto r = top_words(\"grove street grove\", 1);\n    CHECK(r.size() == 1 && r[0].first == \"grove\" && r[0].second == 2);\n    auto s = top_words(\"  b a  c b a d \", 3);\n    CHECK(s.size() == 3 && s[0].first == \"a\" && s[1].first == \"b\" && s[2].first == \"c\" && s[2].second == 1);\n    CHECK(top_words(\"\", 5).empty());\n    CHECK(top_words(\"x\", 5).size() == 1);\n    return 0;\n}\n"}
+  solution={"#include <string>\n#include <string_view>\n#include <vector>\n#include <unordered_map>\n#include <algorithm>\nstd::vector<std::pair<std::string, int>> top_words(std::string_view text, std::size_t k) {\n    std::unordered_map<std::string, int> counts;\n    std::size_t i = 0;\n    while (i < text.size()) {\n        std::size_t j = text.find(' ', i);\n        if (j == std::string_view::npos) j = text.size();\n        if (j > i) ++counts[std::string(text.substr(i, j - i))];\n        i = j + 1;\n    }\n    std::vector<std::pair<std::string, int>> v(counts.begin(), counts.end());\n    std::sort(v.begin(), v.end(), [](const auto& a, const auto& b) { return a.second != b.second ? a.second > b.second : a.first < b.first; });\n    if (v.size() > k) v.resize(k);\n    return v;\n}\n"}
+  hints={["string_view::find and substr don't allocate.", "Sort with a two-key comparator."]}
+  explanation="Same shape as building a tokenizer's vocabulary from a corpus."
+/>

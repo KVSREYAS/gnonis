@@ -27,3 +27,20 @@ Six questions, then the getaway: an honest stopwatch.
   explanation="Perf Pier is cleared. Your numbers hold up."
   devices={["phone", "desktop"]}
 />
+
+## Getaway: honest harness
+
+Time many reps, then report the median and the best, not one lucky sample.
+
+<Code
+  id="bench-harness"
+  devices={["desktop"]}
+  language="cpp"
+  prompt={"Write `template<class F> Stats bench(F f, int reps, int iters)` where `struct Stats { double median_ns, min_ns; }`. For each rep, time `iters` calls of f() with std::chrono::steady_clock and record ns per call. Return the median (the average of the middle two for even reps) and the minimum. Also write `template<class T> void do_not_optimize(T const& v)` using `asm volatile(\"\" : : \"r,m\"(v) : \"memory\")`."}
+  starter={"#include <chrono>\n#include <vector>\n#include <algorithm>\nstruct Stats { double median_ns, min_ns; };\ntemplate<class T> void do_not_optimize(T const& v) {}\ntemplate<class F> Stats bench(F f, int reps, int iters) { return {0, 0}; }\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() { auto s = bench([] { int x = 1; do_not_optimize(x); }, 5, 100); CHECK(s.min_ns <= s.median_ns); return 0; }\n"}
+  tests={"#include \"check.h\"\n\n#include <thread>\n#include <cmath>\nint main() {\n    auto s = bench([] { int x = 1; do_not_optimize(x); }, 5, 100); CHECK(s.min_ns <= s.median_ns && s.min_ns >= 0);\n    auto slow = bench([] { std::this_thread::sleep_for(std::chrono::microseconds(200)); }, 4, 3);\n    CHECK(slow.min_ns > 150000 && slow.median_ns < 5e7);\n    double acc = 0; auto w = bench([&] { acc += std::sqrt(acc + 2.0); do_not_optimize(acc); }, 3, 1000);\n    CHECK(w.median_ns > 0);\n    return 0;\n}\n"}
+  solution={"#include <chrono>\n#include <vector>\n#include <algorithm>\nstruct Stats { double median_ns, min_ns; };\ntemplate<class T> void do_not_optimize(T const& v) { asm volatile(\"\" : : \"r,m\"(v) : \"memory\"); }\ntemplate<class F> Stats bench(F f, int reps, int iters) {\n    std::vector<double> t;\n    for (int r = 0; r < reps; ++r) {\n        auto a = std::chrono::steady_clock::now();\n        for (int i = 0; i < iters; ++i) f();\n        auto b = std::chrono::steady_clock::now();\n        t.push_back(std::chrono::duration<double, std::nano>(b - a).count() / iters);\n    }\n    std::sort(t.begin(), t.end());\n    std::size_t n = t.size();\n    double med = n % 2 ? t[n / 2] : (t[n / 2 - 1] + t[n / 2]) / 2;\n    return {med, t[0]};\n}\n"}
+  hints={["steady_clock is monotonic. system_clock can jump.", "Sort the samples, then pick the middle."]}
+  explanation="Google Benchmark's DoNotOptimize uses the same empty-asm trick."
+/>

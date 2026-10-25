@@ -41,3 +41,20 @@ Stop photocopying the evidence every time someone wants to look at it. Hand them
   explanation="Any contiguous range of float with a known size."
   devices={["phone", "desktop"]}
 />
+
+## A span-based kernel
+
+Sources: [cppreference: std::span](https://en.cppreference.com/w/cpp/container/span), Core Guidelines I.13 (don't pass an array as a single pointer)
+
+<Code
+  id="span-dot"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `float dot(std::span<const float> a, std::span<const float> b)`. It returns the dot product and throws std::invalid_argument if the sizes differ. Also write `void axpy(float alpha, std::span<const float> x, std::span<float> y)` computing y += alpha·x (same size check)."
+  starter={"#include <span>\n#include <stdexcept>\nfloat dot(std::span<const float> a, std::span<const float> b) { return 0; }\nvoid axpy(float alpha, std::span<const float> x, std::span<float> y) {}\n"}
+  visibleTests={"#include \"check.h\"\n\n#include <vector>\nint main() {\n    std::vector<float> a{1, 2, 3};\n    float b[3] = {4, 5, 6};\n    CHECK(dot(a, b) == 32);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\n#include <vector>\n#include <array>\nint main() {\n    std::vector<float> a{1, 2, 3};\n    float b[3] = {4, 5, 6};\n    std::array<float, 3> c{1, 1, 1};\n    CHECK(dot(a, b) == 32 && dot(c, a) == 6);\n    axpy(2, a, c); CHECK(c[0] == 3 && c[2] == 7);\n    CHECK(dot(std::span<const float>(a).subspan(1), std::span<const float>(b, 2)) == 2 * 4 + 3 * 5);\n    bool threw = false; try { dot(a, std::span<const float>(b, 2)); } catch (const std::invalid_argument&) { threw = true; }\n    CHECK(threw);\n    return 0;\n}\n"}
+  solution={"#include <span>\n#include <stdexcept>\nfloat dot(std::span<const float> a, std::span<const float> b) {\n    if (a.size() != b.size()) throw std::invalid_argument(\"size mismatch\");\n    float s = 0;\n    for (std::size_t i = 0; i < a.size(); ++i) s += a[i] * b[i];\n    return s;\n}\nvoid axpy(float alpha, std::span<const float> x, std::span<float> y) {\n    if (x.size() != y.size()) throw std::invalid_argument(\"size mismatch\");\n    for (std::size_t i = 0; i < x.size(); ++i) y[i] += alpha * x[i];\n}\n"}
+  hints={["span<float> converts to span<const float>, but not the other way."]}
+  explanation="Every kernel in the capstone takes spans, so callers can pass vectors, arrays or slices of a big buffer."
+/>

@@ -27,3 +27,20 @@ Six questions, then the getaway: shuffle three guests between rooms using moves 
   explanation="Move Motel is cleared. Not a single unnecessary photocopy."
   devices={["phone", "desktop"]}
 />
+
+## Getaway: rotate three guests
+
+No copies allowed: the test type has its copy constructor deleted.
+
+<Code
+  id="rotate3"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `template<class T> void rotate3(T& a, T& b, T& c)` so that afterwards a holds old b, b holds old c, and c holds old a. Use only moves (T may be move-only)."
+  starter={"#include <utility>\ntemplate <class T>\nvoid rotate3(T& a, T& b, T& c) {\n    // TODO\n}\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() {\n    int a = 1, b = 2, c = 3;\n    rotate3(a, b, c);\n    CHECK(a == 2 && b == 3 && c == 1);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\n#include <memory>\n#include <string>\nint main() {\n    int a = 1, b = 2, c = 3;\n    rotate3(a, b, c);\n    CHECK(a == 2 && b == 3 && c == 1);\n    auto x = std::make_unique<int>(1), y = std::make_unique<int>(2), z = std::make_unique<int>(3);\n    rotate3(x, y, z);\n    CHECK(*x == 2 && *y == 3 && *z == 1);\n    std::string s = std::string(40, 's'), t = \"t\", u = \"u\";\n    rotate3(s, t, u);\n    CHECK(s == \"t\" && t == \"u\" && u.size() == 40);\n    return 0;\n}\n"}
+  solution={"#include <utility>\ntemplate <class T>\nvoid rotate3(T& a, T& b, T& c) {\n    T tmp = std::move(a);\n    a = std::move(b);\n    b = std::move(c);\n    c = std::move(tmp);\n}\n"}
+  hints={["You need exactly one temporary."]}
+  explanation="That's three move assignments plus one move construction, and it's how std::rotate works on move-only ranges."
+/>

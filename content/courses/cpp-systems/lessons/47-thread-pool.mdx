@@ -40,3 +40,20 @@ Hire a permanent crew instead of recruiting off the street for every job.
   explanation="That's the promise/future contract."
   devices={["phone", "desktop"]}
 />
+
+## Build it
+
+Sources: [cppreference: std::packaged_task](https://en.cppreference.com/w/cpp/thread/packaged_task), Williams ch. 9 (thread pools), Sean Parent, [Better Code: Concurrency](https://www.youtube.com/watch?v=zULU6Hhp42w)
+
+<Code
+  id="thread-pool"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Implement `class ThreadPool` with ctor(unsigned n) starting n std::jthread workers, `template<class F> auto submit(F f) -> std::future<decltype(f())>` and a destructor that drains the queue and stops cleanly. Use std::mutex, std::condition_variable and a std::queue<std::function<void()>>. Wrap tasks in std::shared_ptr<std::packaged_task<R()>> (std::function needs copyable callables)."
+  starter={"#include <future>\n#include <functional>\n#include <queue>\n#include <thread>\n#include <vector>\n#include <mutex>\n#include <condition_variable>\n#include <type_traits>\nclass ThreadPool {\npublic:\n    explicit ThreadPool(unsigned) {}\n    template<class F> auto submit(F f) -> std::future<decltype(f())> {\n        using R = decltype(f());\n        std::promise<R> p;\n        if constexpr (std::is_void_v<R>) p.set_value();\n        else p.set_value(R{});\n        return p.get_future();\n    }\n};\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() { ThreadPool p(2); auto f = p.submit([] { return 6 * 7; }); CHECK(f.get() == 42); return 0; }\n"}
+  tests={"#include \"check.h\"\n\n#include <atomic>\n#include <stdexcept>\nint main() {\n    { ThreadPool p(2); auto f = p.submit([] { return 6 * 7; }); CHECK(f.get() == 42); }\n    std::atomic<int> ran{0};\n    { ThreadPool p(4); std::vector<std::future<int>> fs;\n      for (int i = 0; i < 1000; ++i) fs.push_back(p.submit([i, &ran] { ++ran; return i * 2; }));\n      long s = 0; for (auto& f : fs) s += f.get(); CHECK(s == 999L * 1000); }\n    CHECK(ran == 1000);\n    { ThreadPool p(1); auto f = p.submit([]() -> int { throw std::runtime_error(\"boom\"); });\n      bool caught = false; try { f.get(); } catch (const std::runtime_error&) { caught = true; } CHECK(caught); }\n    std::atomic<int> drained{0};\n    { ThreadPool p(1); for (int i = 0; i < 50; ++i) p.submit([&] { ++drained; }); }\n    CHECK(drained == 50);\n    { ThreadPool p(2); auto v = p.submit([] {}); v.get(); }\n    return 0;\n}\n"}
+  solution={"#include <future>\n#include <functional>\n#include <queue>\n#include <thread>\n#include <vector>\n#include <mutex>\n#include <condition_variable>\n#include <memory>\nclass ThreadPool {\n    std::mutex m_; std::condition_variable cv_; std::queue<std::function<void()>> q_; bool stop_ = false;\n    std::vector<std::jthread> workers_;\npublic:\n    explicit ThreadPool(unsigned n) {\n        for (unsigned i = 0; i < n; ++i) workers_.emplace_back([this] {\n            for (;;) {\n                std::function<void()> job;\n                { std::unique_lock lk(m_); cv_.wait(lk, [&] { return stop_ || !q_.empty(); });\n                  if (q_.empty()) return; job = std::move(q_.front()); q_.pop(); }\n                job();\n            }\n        });\n    }\n    ~ThreadPool() { { std::scoped_lock lk(m_); stop_ = true; } cv_.notify_all(); }\n    template<class F> auto submit(F f) -> std::future<decltype(f())> {\n        using R = decltype(f());\n        auto task = std::make_shared<std::packaged_task<R()>>(std::move(f));\n        auto fut = task->get_future();\n        { std::scoped_lock lk(m_); q_.push([task] { (*task)(); }); }\n        cv_.notify_one(); return fut;\n    }\n};\n"}
+  hints={["Workers exit only when stop_ is set and the queue is empty, so the destructor drains it.", "Declare workers_ last so they're destroyed (joined) first."]}
+  explanation="Member order matters: jthreads must join before the mutex and queue they use are destroyed."
+/>

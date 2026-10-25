@@ -41,3 +41,31 @@ Every trip to DRAM is a drive across the whole map. The cache is your pockets: s
   explanation="1e6 × 100 ns = 0.1 s. A prefetched linear scan of the same data takes a few ms or less."
   devices={["phone", "desktop"]}
 />
+
+## Traversal order
+
+For `float a[N][N]`, `a[i][j]` and `a[i][j+1]` are neighbours. `a[i+1][j]` is N×4 bytes away.
+
+Sources: Ulrich Drepper, [What Every Programmer Should Know About Memory](https://people.freebsd.org/~lstewart/articles/cpumemory.pdf), Scott Meyers, [CPU Caches and Why You Care](https://www.youtube.com/watch?v=WDIkqP4JbkE)
+
+<MCQ
+  id="row-col"
+  prompt="Summing a 4096×4096 float matrix column by column instead of row by row. Typical result?"
+  options={["Same speed", "Several times slower: each access lands on a new cache line, and only 4 of its 64 bytes are used", "Faster, because columns are contiguous", "Compile error"]}
+  answer={1}
+  explanation="Column-order access uses 1/16 of each line and defeats the prefetcher's stride detection at large strides."
+  devices={["phone", "desktop"]}
+/>
+
+<Code
+  id="transpose-blocked"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `void transpose(const float* src, float* dst, int n, int block)`, transposing an n×n row-major matrix (dst[j*n+i] = src[i*n+j]) using block×block tiles so both reads and writes stay cache-friendly. n need not be a multiple of block."
+  starter={"void transpose(const float* src, float* dst, int n, int block) {\n    // TODO: tiled loops\n}\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() {\n    float s[4] = {1, 2, 3, 4}, d[4] = {};\n    transpose(s, d, 2, 1);\n    CHECK(d[1] == 3 && d[2] == 2);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\n#include <vector>\nint main() {\n    for (int n : {1, 7, 64, 100}) for (int b : {1, 8, 16, 32}) {\n        std::vector<float> s(n * n), d(n * n, -1);\n        for (int i = 0; i < n * n; ++i) s[i] = (float)i;\n        transpose(s.data(), d.data(), n, b);\n        for (int i = 0; i < n; ++i) for (int j = 0; j < n; ++j) CHECK(d[j * n + i] == s[i * n + j]);\n    }\n    return 0;\n}\n"}
+  solution={"#include <algorithm>\nvoid transpose(const float* src, float* dst, int n, int block) {\n    for (int ii = 0; ii < n; ii += block)\n        for (int jj = 0; jj < n; jj += block)\n            for (int i = ii; i < std::min(ii + block, n); ++i)\n                for (int j = jj; j < std::min(jj + block, n); ++j)\n                    dst[j * n + i] = src[i * n + j];\n}\n"}
+  hints={["Two outer loops over tiles, two inner loops within a tile.", "Clamp the inner bounds with std::min."]}
+  explanation="With block = 16 (64 bytes of floats), each tile's reads and writes fit in L1."
+/>

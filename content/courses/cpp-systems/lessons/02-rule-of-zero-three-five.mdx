@@ -39,3 +39,20 @@ Make members `std::vector`, `std::string`, `std::unique_ptr`. The compiler gener
   explanation="A user-declared destructor suppresses the implicit move ctor and move assignment. The (deprecated) implicit copy still exists, so moves quietly degrade to copies."
   devices={["phone", "desktop"]}
 />
+
+## Write the five
+
+Source: [C++ Core Guidelines C.20/C.21](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rc-zero), [cppreference: rule of three/five/zero](https://en.cppreference.com/w/cpp/language/rule_of_three)
+
+<Code
+  id="buffer-five"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Implement `Buffer`, an owning `int` array with `size()`, `operator[]`, deep copy, and noexcept moves that leave the source empty (size 0, null data). Use copy-and-swap or write each one."
+  starter={"#include <cstddef>\n#include <utility>\nclass Buffer {\npublic:\n    explicit Buffer(std::size_t n = 0) : n_(n), p_(n ? new int[n]() : nullptr) {}\n    ~Buffer() { delete[] p_; }\n    // TODO: copy ctor, copy assign, move ctor, move assign\n    std::size_t size() const { return n_; }\n    int& operator[](std::size_t i) { return p_[i]; }\n    const int* data() const { return p_; }\nprivate:\n    std::size_t n_;\n    int* p_;\n};\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() {\n    Buffer a(3); a[0] = 7;\n    Buffer b = a; b[0] = 9;\n    CHECK(a[0] == 7);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\n#include <type_traits>\nint main() {\n    Buffer a(3); a[0] = 7;\n    Buffer b = a; b[0] = 9;\n    CHECK(a[0] == 7 && b[0] == 9 && b.data() != a.data());\n    Buffer c = std::move(b);\n    CHECK(c.size() == 3 && c[0] == 9 && b.size() == 0 && b.data() == nullptr);\n    Buffer d; d = a; CHECK(d.size() == 3 && d[0] == 7 && d.data() != a.data());\n    d = std::move(c); CHECK(d[0] == 9);\n    d = d; CHECK(d[0] == 9);\n    static_assert(std::is_nothrow_move_constructible_v<Buffer>);\n    return 0;\n}\n"}
+  solution={"#include <cstddef>\n#include <utility>\n#include <algorithm>\nclass Buffer {\npublic:\n    explicit Buffer(std::size_t n = 0) : n_(n), p_(n ? new int[n]() : nullptr) {}\n    ~Buffer() { delete[] p_; }\n    Buffer(const Buffer& o) : n_(o.n_), p_(o.n_ ? new int[o.n_] : nullptr) { std::copy(o.p_, o.p_ + o.n_, p_); }\n    Buffer(Buffer&& o) noexcept : n_(std::exchange(o.n_, 0)), p_(std::exchange(o.p_, nullptr)) {}\n    Buffer& operator=(Buffer o) noexcept { swap(o); return *this; }\n    void swap(Buffer& o) noexcept { std::swap(n_, o.n_); std::swap(p_, o.p_); }\n    std::size_t size() const { return n_; }\n    int& operator[](std::size_t i) { return p_[i]; }\n    const int* data() const { return p_; }\nprivate:\n    std::size_t n_;\n    int* p_;\n};\n"}
+  hints={["std::exchange makes moves one-liners.", "Copy-and-swap handles self-assignment for free."]}
+  explanation="The by-value operator= serves as both copy and move assignment."
+/>

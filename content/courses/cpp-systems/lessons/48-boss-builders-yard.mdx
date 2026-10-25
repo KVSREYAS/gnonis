@@ -27,3 +27,20 @@ Six questions, then the getaway: a free-list pool.
   explanation="Builders' Yard is cleared. Solid work."
   devices={["phone", "desktop"]}
 />
+
+## Getaway: free-list pool
+
+Hand objects out of a fixed block and take them back, with no heap traffic.
+
+<Code
+  id="free-list-pool"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Implement `template<class T, std::size_t N> class Pool` with fixed storage for N objects (alignas(T) std::byte storage[N][sizeof(T)]) and an intrusive free list of indices. `template<class... A> T* create(A&&...)` returns nullptr when exhausted (placement-new with perfect forwarding), `void destroy(T*)` calls the dtor and pushes the slot back, and `std::size_t live() const` counts live objects. The destructor must destroy anything still live."
+  starter={"#include <cstddef>\n#include <new>\n#include <utility>\ntemplate<class T, std::size_t N> class Pool {\npublic:\n    template<class... A> T* create(A&&... a) { return nullptr; }\n    void destroy(T* p) {}\n    std::size_t live() const { return 0; }\n};\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() { Pool<int, 2> p; int* a = p.create(5); CHECK(a && *a == 5 && p.live() == 1); p.destroy(a); CHECK(p.live() == 0); return 0; }\n"}
+  tests={"#include \"check.h\"\n\n#include <string>\n#include <memory>\nstatic int alive = 0;\nstruct Tracked { std::string s; Tracked(std::string x) : s(std::move(x)) { ++alive; } ~Tracked() { --alive; } };\nint main() {\n    { Pool<int, 2> p; int* a = p.create(5); int* b = p.create(6); CHECK(a && b && !p.create(7));\n      p.destroy(a); int* c = p.create(8); CHECK(c == a && *c == 8 && *b == 6); }\n    { Pool<Tracked, 3> p; auto* x = p.create(\"grove\"); p.create(std::string(40, 'z')); CHECK(alive == 2 && x->s == \"grove\");\n      p.destroy(x); CHECK(alive == 1); }\n    CHECK(alive == 0);\n    Pool<std::unique_ptr<int>, 1> up; auto* u = up.create(std::make_unique<int>(3)); CHECK(**u == 3);\n    return 0;\n}\n"}
+  solution={"#include <cstddef>\n#include <new>\n#include <utility>\n#include <array>\ntemplate<class T, std::size_t N> class Pool {\n    alignas(T) std::byte storage_[N][sizeof(T)];\n    std::array<std::size_t, N> next_{}; std::array<bool, N> used_{};\n    std::size_t free_ = 0, live_ = 0;\n    T* slot(std::size_t i) { return std::launder(reinterpret_cast<T*>(storage_[i])); }\npublic:\n    Pool() { for (std::size_t i = 0; i < N; ++i) next_[i] = i + 1; }\n    Pool(const Pool&) = delete; Pool& operator=(const Pool&) = delete;\n    ~Pool() { for (std::size_t i = 0; i < N; ++i) if (used_[i]) slot(i)->~T(); }\n    template<class... A> T* create(A&&... a) {\n        if (free_ == N) return nullptr;\n        std::size_t i = free_;\n        T* p = ::new (storage_[i]) T(std::forward<A>(a)...);\n        free_ = next_[i]; used_[i] = true; ++live_; return p;\n    }\n    void destroy(T* p) {\n        std::size_t i = (reinterpret_cast<std::byte*>(p) - &storage_[0][0]) / sizeof(T);\n        p->~T(); used_[i] = false; next_[i] = free_; free_ = i; --live_;\n    }\n    std::size_t live() const { return live_; }\n};\n"}
+  hints={["Free list: next_[i] links free slots, and free_ == N means empty.", "std::forward the constructor arguments."]}
+  explanation="Fixed-size pools give O(1) create and destroy with no fragmentation. Inference servers use them for request and sequence objects."
+/>

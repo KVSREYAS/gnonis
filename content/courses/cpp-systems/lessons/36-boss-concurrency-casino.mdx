@@ -27,3 +27,20 @@ Six questions, then the getaway: a blocking queue for the crew.
   explanation="Concurrency Casino is cleared. The house pays out."
   devices={["phone", "desktop"]}
 />
+
+## Getaway: bounded blocking queue
+
+Producers wait when the table is full. Consumers wait when it is empty.
+
+<Code
+  id="bounded-queue"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Implement `template<class T> class BoundedQueue` with ctor(capacity), `void push(T)` (blocks while full), `T pop()` (blocks while empty) and `bool try_pop(T&)`. Use std::mutex, two std::condition_variables (not_full, not_empty) and a std::deque. Always wait with a predicate (spurious wakeups)."
+  starter={"#include <mutex>\n#include <condition_variable>\n#include <deque>\ntemplate<class T> class BoundedQueue {\npublic:\n    explicit BoundedQueue(std::size_t cap) {}\n    void push(T v) {}\n    T pop() { return T{}; }\n    bool try_pop(T& out) { return false; }\n};\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() { BoundedQueue<int> q(2); q.push(1); CHECK(q.pop() == 1); int x; CHECK(!q.try_pop(x)); return 0; }\n"}
+  tests={"#include \"check.h\"\n\n#include <thread>\n#include <vector>\n#include <memory>\nint main() {\n    BoundedQueue<int> q(4); long sum = 0;\n    {\n        std::jthread cons([&] { for (int i = 0; i < 40000; ++i) sum += q.pop(); });\n        std::vector<std::jthread> prods;\n        for (int p = 0; p < 4; ++p) prods.emplace_back([&] { for (int i = 1; i <= 10000; ++i) q.push(i); });\n    }\n    CHECK(sum == 4L * 10000 * 10001 / 2);\n    BoundedQueue<std::unique_ptr<int>> mq(1); mq.push(std::make_unique<int>(7)); CHECK(*mq.pop() == 7);\n    int x; CHECK(!q.try_pop(x));\n    return 0;\n}\n"}
+  solution={"#include <mutex>\n#include <condition_variable>\n#include <deque>\ntemplate<class T> class BoundedQueue {\n    std::mutex m_; std::condition_variable not_full_, not_empty_; std::deque<T> q_; std::size_t cap_;\npublic:\n    explicit BoundedQueue(std::size_t cap) : cap_(cap) {}\n    void push(T v) {\n        { std::unique_lock lk(m_); not_full_.wait(lk, [&] { return q_.size() < cap_; }); q_.push_back(std::move(v)); }\n        not_empty_.notify_one();\n    }\n    T pop() {\n        std::unique_lock lk(m_); not_empty_.wait(lk, [&] { return !q_.empty(); });\n        T v = std::move(q_.front()); q_.pop_front(); lk.unlock(); not_full_.notify_one(); return v;\n    }\n    bool try_pop(T& out) {\n        std::unique_lock lk(m_); if (q_.empty()) return false;\n        out = std::move(q_.front()); q_.pop_front(); lk.unlock(); not_full_.notify_one(); return true;\n    }\n};\n"}
+  hints={["wait(lock, pred) loops for you.", "Notify after unlocking to avoid waking a thread straight into a held lock."]}
+  explanation="This is the request queue in front of every inference server's batcher."
+/>

@@ -50,3 +50,20 @@ Concurrency Casino: many players, one table. The house has one rule: settle up b
   explanation="The mutex makes it deterministic. Without it, it's a data race (UB)."
   devices={["phone", "desktop"]}
 />
+
+## Parallel sum
+
+Sources: [cppreference: std::jthread](https://en.cppreference.com/w/cpp/thread/jthread), Anthony Williams, *C++ Concurrency in Action* (2nd ed.), Core Guidelines CP.25 (prefer gsl::joining_thread/jthread)
+
+<Code
+  id="par-sum"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `double parallel_sum(std::span<const double> v, unsigned nthreads)`. Split v into nthreads contiguous chunks, sum each chunk in its own std::jthread into a per-thread slot (no shared accumulator), then add up the partials. Handle nthreads > size and nthreads == 0 (treat as 1)."
+  starter={"#include <span>\n#include <thread>\n#include <vector>\ndouble parallel_sum(std::span<const double> v, unsigned nthreads) { return 0; }\n"}
+  visibleTests={"#include \"check.h\"\n\nint main() {\n    std::vector<double> v(1000, 1.0);\n    CHECK(parallel_sum(v, 4) == 1000);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\nint main() {\n    std::vector<double> v(100001); for (std::size_t i = 0; i < v.size(); ++i) v[i] = (double)i;\n    for (unsigned t : {0u, 1u, 3u, 8u, 32u}) CHECK(parallel_sum(v, t) == 100000.0 * 100001 / 2);\n    std::vector<double> small{1, 2}; CHECK(parallel_sum(small, 16) == 3);\n    CHECK(parallel_sum({}, 4) == 0);\n    return 0;\n}\n"}
+  solution={"#include <span>\n#include <thread>\n#include <vector>\n#include <numeric>\n#include <algorithm>\ndouble parallel_sum(std::span<const double> v, unsigned nthreads) {\n    nthreads = std::max(1u, nthreads);\n    std::vector<double> part(nthreads, 0.0);\n    std::size_t chunk = (v.size() + nthreads - 1) / nthreads;\n    {\n        std::vector<std::jthread> ts;\n        for (unsigned t = 0; t < nthreads; ++t)\n            ts.emplace_back([&, t] {\n                std::size_t b = std::min(v.size(), t * chunk), e = std::min(v.size(), b + chunk);\n                part[t] = std::accumulate(v.begin() + b, v.begin() + e, 0.0);\n            });\n    }\n    return std::accumulate(part.begin(), part.end(), 0.0);\n}\n"}
+  hints={["Clamp each chunk's begin and end to v.size().", "Each thread writes only its own part[t]."]}
+  explanation="Per-thread partials avoid locks. Module 09's false-sharing lesson shows why adjacent slots can still hurt."
+/>
