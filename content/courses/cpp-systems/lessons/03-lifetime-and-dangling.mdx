@@ -1,0 +1,56 @@
+---
+id: cpp-systems/01-lifetime/03-lifetime-and-dangling
+title: "Lifetimes and Dangling References"
+estMinutes: 7
+xp: 90
+missionIntro: "string_view, references and iterators don't own anything. Outlive the owner and you're holding a ghost."
+keyIdeas:
+  - "Non-owning types (T&, T*, string_view, span, iterators) must not outlive what they point to."
+  - "Binding a temporary to const T& (or T&&) extends its lifetime only for that direct binding."
+  - "Returning a reference or view to a local or a temporary dangles: it compiles, then it's undefined behaviour."
+---
+
+## Mission briefing
+
+Somebody gave CJ directions to a house that was demolished yesterday. He drives there anyway. That's a dangling reference: the address is valid-looking, the building is gone.
+
+**Mission:** learn which objects you're allowed to point at.
+
+## Views don't own
+
+`std::string_view` is a pointer and a length. If the `std::string` it views dies or reallocates, the view dangles. The same goes for spans, iterators after `push_back`, and references to vector elements.
+
+![A string_view pointing into a std::string's heap buffer that has been freed](/diagrams/cpp-systems/01-lifetime/03-lifetime-and-dangling.png)
+
+<SpotBug
+  id="sv-dangle"
+  prompt="Which line creates the dangling view?"
+  code={"#include <string>\n#include <string_view>\nstd::string make_name() { return \"Carl Johnson\"; }\nint main() {\n    std::string_view sv = make_name();\n    return sv.size();\n}"}
+  bugLine={5}
+  explanation="make_name() returns a temporary string that dies at the end of the full expression. sv points into freed memory. Lifetime extension doesn't apply to views."
+  devices={["phone", "desktop"]}
+/>
+
+<MCQ
+  id="extension"
+  prompt="Which of these keeps the temporary alive until the end of the scope?"
+  options={["`std::string_view v = std::string(\"x\");`", "`const std::string& r = std::string(\"x\");`", "`auto* p = &std::string(\"x\");` (doesn't compile)", "`std::string& r = std::string(\"x\");` (doesn't compile)"]}
+  answer={1}
+  explanation="Binding a prvalue directly to a const lvalue reference (or an rvalue reference) extends its lifetime to the reference's lifetime."
+  devices={["phone", "desktop"]}
+/>
+
+## Return by value
+
+When in doubt, return owning values. Copy elision and moves make it cheap.
+
+Sources: [cppreference: reference initialization, lifetime](https://en.cppreference.com/w/cpp/language/reference_initialization), Core Guidelines F.43, [CppCon 2018: Nicolai Josuttis, string_view](https://www.youtube.com/watch?v=sVIi9y_sZ5o)
+
+<MCQ
+  id="return-ref"
+  prompt={"`const std::string& longest(const std::string& a, const std::string& b)` is called as `auto& r = longest(\"x\", \"yy\");`. Is `r` safe to use on the next line?"}
+  options={["Yes", "No: the two temporary strings die at the end of the full expression, so r dangles", "Only with -O2", "Only if the strings are short (SSO)"]}
+  answer={1}
+  explanation="The temporaries are bound to the parameters, not to r. Their lifetime ends at the semicolon."
+  devices={["phone", "desktop"]}
+/>

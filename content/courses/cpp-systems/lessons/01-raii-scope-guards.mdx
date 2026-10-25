@@ -1,0 +1,43 @@
+---
+id: cpp-systems/01-lifetime/01-raii-scope-guards
+title: "RAII: The Bodyguard Pattern"
+estMinutes: 6
+xp: 80
+missionIntro: "Tie every resource to an object's lifetime, and the destructor cleans up on every exit path, exceptions included."
+keyIdeas:
+  - "A resource is acquired in a constructor and released in the destructor (Core Guidelines R.1)."
+  - "Destructors of fully constructed locals run in reverse order of construction, also during exception unwinding."
+  - "Scope guards generalise RAII to any \"undo this on exit\" action."
+---
+
+## Mission briefing
+
+Every resource in Los Santos (files, locks, sockets, GPU buffers) needs a bodyguard who never forgets to lock up. In C++ the bodyguard is an object, and its shift ends exactly at the closing brace.
+
+**Mission:** stop writing `close()` by hand.
+
+## Reverse order, every exit
+
+Locals are destroyed in reverse order of construction when they leave scope, whether that's via `return`, the end of the block, or an exception unwinding the stack. So `std::lock_guard`, `std::fstream` and `std::unique_ptr` never leak, even on the early-return path you forgot about.
+
+![Stack frames with objects constructed a,b,c and destroyed in reverse order, including an exception path](/diagrams/cpp-systems/01-lifetime/01-raii-scope-guards.png)
+
+<Trace
+  id="dtor-order"
+  prompt="Constructors talk, destructors talk back."
+  code={"#include <cstdio>\nstruct G { char n; G(char c) : n(c) { std::printf(\"+%c\", n); } ~G() { std::printf(\"-%c\", n); } };\nint main() {\n    G a('a');\n    {\n        G b('b');\n        G c('c');\n    }\n    G d('d');\n}"}
+  steps={[{"line": 4, "note": "a is built"}, {"line": 6, "note": "b, then c"}, {"line": 8, "note": "inner scope ends: c dies first, then b"}, {"line": 9, "note": "d is built"}, {"line": 10, "note": "main ends: d, then a"}]}
+  question="What does it print?"
+  answer="+a+b+c-c-b+d-d-a"
+  explanation="Reverse order of construction, scope by scope."
+  devices={["phone", "desktop"]}
+/>
+
+<MCQ
+  id="unwind"
+  prompt="A function constructs a `std::lock_guard`, then a call inside it throws. What happens to the mutex?"
+  options={["It stays locked forever", "It's unlocked when the guard is destroyed during stack unwinding", "It's unlocked only if you catch the exception in that function", "std::terminate is called"]}
+  answer={1}
+  explanation="Unwinding runs the destructors of every fully constructed local, so the lock is released."
+  devices={["phone", "desktop"]}
+/>

@@ -1,0 +1,63 @@
+---
+id: cpp-systems/08-ub/01-ub-catalogue
+title: "The UB Catalogue"
+estMinutes: 8
+xp: 100
+missionIntro: "Undefined behaviour isn't \"probably crashes\". The optimiser assumes it never happens and rewrites your code on that basis."
+keyIdeas:
+  - "Common UB: signed overflow, out-of-bounds access, use after free, null dereference, reading uninitialised values, data races, misaligned or type-punned access."
+  - "Compilers assume UB can't occur. `x + 1 > x` for signed int folds to true, and checks after a dereference can be deleted."
+  - "UB anywhere in an execution makes the whole execution meaningless, even \"before\" the UB (time travel)."
+---
+
+## Mission briefing
+
+The UB Underground has one rule: there are no rules. The compiler is a getaway driver who assumes you'll never do anything stupid, and plans the route accordingly.
+
+**Mission:** learn the stupid things.
+
+## Spot it
+
+
+
+![Compiler reasoning chain: deref p, therefore p non-null, therefore null check deleted](/diagrams/cpp-systems/08-ub/01-ub-catalogue.png)
+
+<SpotBug
+  id="signed-ovf"
+  prompt="Which line has undefined behaviour?"
+  code={"#include <climits>\n#include <cstdio>\nint main() {\n    unsigned u = UINT_MAX;\n    u = u + 1;\n    int i = INT_MAX;\n    i = i + 1;\n    std::printf(\"%u %d\", u, i);\n}"}
+  bugLine={7}
+  explanation="Unsigned arithmetic wraps by definition. Signed overflow is UB."
+  devices={["phone", "desktop"]}
+/>
+
+<MCQ
+  id="fold"
+  prompt={"With optimisation on, `bool f(int x) { return x + 1 > x; }` typically compiles to…"}
+  options={["A real comparison", "`return true;`", "A trap", "A call to abort"]}
+  answer={1}
+  explanation="Since signed overflow can't happen (by assumption), x + 1 > x is always true."
+  devices={["phone", "desktop"]}
+/>
+
+<SpotBug
+  id="null-check"
+  prompt="Which line does the optimiser make pointless?"
+  code={"int read(int* p) {\n    int v = *p;\n    if (p == nullptr) return -1;\n    return v;\n}"}
+  bugLine={3}
+  explanation="*p on line 2 lets the compiler assume p != nullptr, so the check on line 3 can be deleted. Check first, then dereference."
+  devices={["phone", "desktop"]}
+/>
+
+## Further reading
+
+Sources: John Regehr, [A Guide to Undefined Behavior in C and C++](https://blog.regehr.org/archives/213), Chris Lattner, [What Every C Programmer Should Know About UB](https://blog.llvm.org/2011/05/what-every-c-programmer-should-know.html), [cppreference: undefined behavior](https://en.cppreference.com/w/cpp/language/ub)
+
+<MCQ
+  id="time-travel"
+  prompt="A program has UB on its last line. Is the output printed before that line guaranteed?"
+  options={["Yes, always", "No: the standard places no requirements on any execution containing UB", "Only at -O0", "Only if stdout is flushed"]}
+  answer={1}
+  explanation="In practice output usually appears, but the standard guarantees nothing, and optimisers have reordered code across UB."
+  devices={["phone", "desktop"]}
+/>

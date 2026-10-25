@@ -1,0 +1,55 @@
+---
+id: cpp-systems/07-dod/02-hot-cold-splitting
+title: "Hot/Cold Splitting"
+estMinutes: 7
+xp: 90
+missionIntro: "Fields used every frame (hot) and fields used once in a blue moon (cold) shouldn't share cache lines."
+keyIdeas:
+  - "Move rarely used fields (names, debug info, config) into a separate cold array indexed the same way."
+  - "Smaller hot structs mean more objects per cache line and fewer misses per update."
+  - "Measure first: splitting only helps if the hot loop is memory-bound."
+---
+
+## Mission briefing
+
+Your getaway car carries the whole wardrobe in the trunk, and every corner is slower for it.
+
+**Mission:** leave the tuxedos at the safehouse.
+
+## Count the objects
+
+
+
+![128-byte enemy structs split into a dense hot array and a separate cold array](/diagrams/cpp-systems/07-dod/02-hot-cold-splitting.png)
+
+<Predict
+  id="hot-per-line"
+  prompt="An Enemy struct is 128 bytes (position, health, plus a 100-byte name and inventory). After splitting, the hot part is 16 bytes. How many hot records fit in one 64-byte line?"
+  answer={4}
+  tolerance={{"mode": "absolute", "value": 0}}
+  explanation="64 / 16 = 4, versus half an object per line before."
+  devices={["phone", "desktop"]}
+/>
+
+<Predict
+  id="hot-speedup"
+  prompt="Updating 1M enemies is purely bandwidth-bound. Bytes streamed drop from 128 MB to 16 MB. Ideal speedup?"
+  answer={8}
+  tolerance={{"mode": "relative", "value": 0.02}}
+  unit="x"
+  explanation="128 / 16 = 8x, assuming the loop is memory-bound and the cold data isn't touched."
+  devices={["phone", "desktop"]}
+/>
+
+## When to split
+
+Source: Mike Acton (CppCon 2014); Noel Llopis, [Data-Oriented Design (Game Developer, 2009)](https://gamesfromwithin.com/data-oriented-design)
+
+<MCQ
+  id="split-when"
+  prompt="Which signal says hot/cold splitting is worth trying?"
+  options={["The loop is compute-bound with high IPC", "perf shows the loop stalls on cache misses and touches only a few fields of a big struct", "The struct is 8 bytes", "The code is single-threaded"]}
+  answer={1}
+  explanation="Wasted bandwidth on unused fields is exactly what splitting fixes."
+  devices={["phone", "desktop"]}
+/>

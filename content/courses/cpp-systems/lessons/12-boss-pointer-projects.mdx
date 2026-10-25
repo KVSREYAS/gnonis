@@ -1,0 +1,29 @@
+---
+id: cpp-systems/03-ownership/04-boss-pointer-projects
+title: "Boss: Pointer Projects"
+estMinutes: 12
+xp: 220
+missionIntro: "unique, shared and weak, under fire. Then build a tiny shared pointer from scratch."
+kind: boss
+keyIdeas:
+  - "unique_ptr: exclusive, 8 bytes, free with stateless deleters."
+  - "shared_ptr: 16 bytes plus a control block with atomic counts."
+  - "weak_ptr observes and breaks cycles."
+---
+
+## Mission briefing
+
+The Pointer Projects are run by three gangs: Unique, Shared and Weak. Know their rules.
+
+Six questions, then the getaway: build your own shared pointer.
+
+<Boss
+  id="projects"
+  title="Pointer Projects"
+  briefing="Six questions, three hearts, three minutes. Don't leak."
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "predict", "prompt": "sizeof(std::unique_ptr<int>) on x86-64?", "answer": 8, "tolerance": {"mode": "absolute", "value": 0}, "unit": "bytes", "explanation": "Same as a raw pointer."}, {"type": "mcq", "prompt": "Which copies are allowed?", "options": ["unique_ptr copy", "shared_ptr copy", "Both", "Neither"], "answer": 1, "explanation": "unique_ptr is move-only."}, {"type": "mcq", "prompt": "What breaks a shared_ptr cycle?", "options": ["std::move", "Making one edge a weak_ptr", "make_shared", "reset() in the constructor"], "answer": 1, "explanation": "Weak edges don't keep anything alive."}, {"type": "predict", "prompt": "Allocations for `std::shared_ptr<T>(new T)`?", "answer": 2, "tolerance": {"mode": "absolute", "value": 0}, "explanation": "Object + control block."}, {"type": "fill", "text": "Copying a shared_ptr does an {{0}} increment, while moving it {{1}} the count.", "chips": ["atomic", "plain", "doesn't touch", "doubles"], "answers": ["atomic", "doesn't touch"], "explanation": "That's why sink parameters take shared_ptr by value and callers std::move into them."}, {"type": "mcq", "prompt": "Default for a function that just uses an object?", "options": ["shared_ptr by value", "unique_ptr&", "T& / const T&", "weak_ptr"], "answer": 2, "explanation": "F.7: take T* or T& unless ownership matters."}]}
+  explanation="Pointer Projects is cleared. Nobody leaked, nobody double-freed."
+  devices={["phone", "desktop"]}
+/>

@@ -1,0 +1,52 @@
+---
+id: cpp-systems/09-concurrency/02-atomics-and-memory-order
+title: "Atomics and Memory Ordering"
+estMinutes: 9
+xp: 110
+missionIntro: "std::atomic makes single operations indivisible. memory_order decides what other memory becomes visible along with them."
+keyIdeas:
+  - "seq_cst (the default) is one global order and the easiest to reason about."
+  - "release/acquire: everything written before a release-store is visible to a thread whose acquire-load reads that value. This is the message-passing pattern."
+  - "relaxed gives atomicity only, which suits counters but never flags that guard other data."
+---
+
+## Mission briefing
+
+Concurrency Casino's chip counter is atomic, so nobody double-spends. But when you shout "the package is ready", does your partner actually see the package?
+
+**Mission:** learn acquire and release.
+
+## Message passing
+
+
+
+![Producer release-store and consumer acquire-load forming a synchronizes-with edge that carries payload=42](/diagrams/cpp-systems/09-concurrency/02-atomics-and-memory-order.png)
+
+<Trace
+  id="acq-rel"
+  prompt="Release-store publishes data, and acquire-load receives it."
+  code={"#include <atomic>\n#include <cstdio>\n#include <thread>\nint payload = 0;\nstd::atomic<bool> ready{false};\nint main() {\n    std::thread producer([] {\n        payload = 42;\n        ready.store(true, std::memory_order_release);\n    });\n    while (!ready.load(std::memory_order_acquire)) {}\n    std::printf(\"%d\", payload);\n    producer.join();\n}"}
+  steps={[{"line": 8, "note": "plain write, sequenced before the release"}, {"line": 9, "note": "release: publishes everything above it"}, {"line": 11, "note": "acquire sees true, so it synchronises with the release"}, {"line": 12, "note": "payload is guaranteed to be 42"}]}
+  question="What does it print?"
+  answer="42"
+  explanation="With memory_order_relaxed on both sides, reading payload could race."
+  devices={["phone", "desktop"]}
+/>
+
+<MCQ
+  id="relaxed-ok"
+  prompt="Where is memory_order_relaxed appropriate?"
+  options={["A ready flag guarding a buffer", "A statistics counter read only at the end, after join", "A spinlock", "Double-checked locking"]}
+  answer={1}
+  explanation="Only atomicity is needed, with no ordering of other data."
+  devices={["phone", "desktop"]}
+/>
+
+<Predict
+  id="lost-updates"
+  prompt={"Two threads each do `++x` 1,000,000 times on a plain int with no sync. The standard says the final value is…? Enter -1 for \"undefined behaviour\"."}
+  answer={-1}
+  tolerance={{"mode": "absolute", "value": 0}}
+  explanation="A data race is UB. In practice you see numbers below 2,000,000, but the standard gives no guarantee at all."
+  devices={["phone", "desktop"]}
+/>

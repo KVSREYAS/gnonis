@@ -1,0 +1,52 @@
+---
+id: cpp-systems/13-capstone/02-tiled-matmul
+title: "Fast Matmul: Loop Order and Tiling"
+estMinutes: 10
+xp: 120
+missionIntro: "Matrix multiply is ~all of inference compute. The naive i-j-k loop leaves 10x or more on the table, and loop order plus tiling claws much of it back."
+keyIdeas:
+  - "C = A·B with i-j-k order strides down B's columns (cache-hostile). i-k-j order streams rows of B and C contiguously, which vectorises well."
+  - "Tiling keeps blocks of A, B and C in cache and reuses each loaded element many times."
+  - "FLOPs = 2·M·N·K. Arithmetic intensity determines whether you're memory- or compute-bound."
+---
+
+## Mission briefing
+
+Matrix Mint prints the money: 90%+ of an LLM's FLOPs are matmuls.
+
+**Mission:** print faster.
+
+## FLOPs
+
+
+
+![Tiled matmul: T×T blocks of A, B and C held in cache while the i-k-j inner loop streams rows](/diagrams/cpp-systems/13-capstone/02-tiled-matmul.png)
+
+<Predict
+  id="flops"
+  prompt="FLOPs for multiplying a [1, 4096] activation by a [4096, 4096] weight matrix (one token, one projection)?"
+  answer={33554432}
+  tolerance={{"mode": "relative", "value": 0.01}}
+  unit="FLOP"
+  explanation="2 × 1 × 4096 × 4096 ≈ 33.5 MFLOP."
+  devices={["phone", "desktop"]}
+/>
+
+<Predict
+  id="intensity"
+  prompt="That matvec reads 4096×4096 fp16 weights (2 bytes each). FLOPs per byte of weights?"
+  answer={1}
+  tolerance={{"mode": "relative", "value": 0.02}}
+  unit="FLOP/byte"
+  explanation="33.5M FLOP / 33.5 MB = 1 FLOP/byte, firmly memory-bound. That's why decode speed tracks bandwidth."
+  devices={["phone", "desktop"]}
+/>
+
+<MCQ
+  id="ikj"
+  prompt="Why is i-k-j faster than i-j-k for row-major matrices?"
+  options={["Fewer FLOPs", "The inner loop walks B and C rows contiguously, so it's cache-friendly and vectorisable", "It uses less memory", "The compiler likes k"]}
+  answer={1}
+  explanation="Same FLOPs, different memory access."
+  devices={["phone", "desktop"]}
+/>

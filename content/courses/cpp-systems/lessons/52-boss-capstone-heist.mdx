@@ -1,0 +1,29 @@
+---
+id: cpp-systems/13-capstone/04-boss-capstone-heist
+title: "Boss: The Inference Heist"
+estMinutes: 18
+xp: 300
+missionIntro: "Everything at once. Then run a complete tiny MLP forward pass in C++."
+kind: boss
+keyIdeas:
+  - "Tensors are buffers plus strides."
+  - "Matmul dominates, and decode is bandwidth-bound."
+  - "Stable softmax, then argmax."
+---
+
+## Mission briefing
+
+This is it: the big one. Get in, multiply, get out.
+
+Six questions, then the getaway: a two-layer forward pass from embedding to next token.
+
+<Boss
+  id="heist"
+  title="The Inference Heist"
+  briefing="Six questions, three hearts, three minutes. Make it count."
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "predict", "prompt": "Row-major [4, 5, 6]. Offset of [2, 1, 3]?", "answer": 69, "tolerance": {"mode": "absolute", "value": 0}, "explanation": "2·30 + 1·6 + 3."}, {"type": "predict", "prompt": "FLOPs of [8, 512] × [512, 256]?", "answer": 2097152, "tolerance": {"mode": "relative", "value": 0.01}, "unit": "FLOP", "explanation": "2·8·512·256."}, {"type": "mcq", "prompt": "Why subtract the max in softmax?", "options": ["Speed", "Prevent exp overflow (NaN)", "Sparsity", "Required by argmax"], "answer": 1, "explanation": "Identical maths, safe numerics."}, {"type": "mcq", "prompt": "Single-token decode matvec is usually bound by…", "options": ["FLOPs", "Memory bandwidth", "Branches", "Disk"], "answer": 1, "explanation": "~1 FLOP/byte."}, {"type": "mcq", "prompt": "Best loop order for row-major C += A·B?", "options": ["i-j-k", "i-k-j", "k-j-i", "j-i-k"], "answer": 1, "explanation": "Contiguous inner loop."}, {"type": "mcq", "prompt": "Transpose as a view…", "options": ["copies data", "swaps strides and shares the buffer", "is impossible", "needs a GPU"], "answer": 1, "explanation": "Metadata only."}]}
+  explanation="The Inference Heist is done. Respect +100."
+  devices={["phone", "desktop"]}
+/>

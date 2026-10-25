@@ -1,0 +1,42 @@
+---
+id: cpp-systems/07-dod/01-aos-vs-soa
+title: "Array of Structs vs Struct of Arrays"
+estMinutes: 8
+xp: 100
+missionIntro: "If a loop touches one field, store that field contiguously. SoA turns half-wasted cache lines into fully used ones."
+keyIdeas:
+  - "AoS (`std::vector<Particle>`) interleaves fields, so a loop over x drags y, z, mass and id through the cache too."
+  - "SoA (`struct { std::vector<float> x, y, z; }`) packs each field contiguously: 100% useful bytes and easy SIMD."
+  - "Mike Acton: \"where there is one, there are many\". Design for the transform you run on the whole batch."
+---
+
+## Mission briefing
+
+Your crew's records are stored one person per folder. To check everyone's ammo you open every folder and wade through their whole life story.
+
+**Mission:** keep an ammo spreadsheet instead.
+
+## Wasted bytes
+
+
+
+![AoS memory with x fields scattered every 32 bytes versus SoA with x values packed contiguously](/diagrams/cpp-systems/07-dod/01-aos-vs-soa.png)
+
+<Predict
+  id="aos-waste"
+  prompt={"Particle = {float x, y, z, vx, vy, vz, mass, id} (32 bytes). A loop reads only x for 1M particles. How many MB move through the cache?"}
+  answer={32}
+  tolerance={{"mode": "relative", "value": 0.02}}
+  unit="MB"
+  explanation="1M × 32 B = 32 MB with AoS, versus 4 MB with SoA x[]. That's 8x the traffic."
+  devices={["phone", "desktop"]}
+/>
+
+<MCQ
+  id="soa-simd"
+  prompt="Why does SoA vectorise more easily?"
+  options={["Structs can't be vectorised", "Consecutive x values sit in consecutive memory, so one SIMD load fetches 4–16 of them", "SoA uses fewer instructions per element in scalar code", "It doesn't"]}
+  answer={1}
+  explanation="AoS needs gathers or shuffles to collect the x's."
+  devices={["phone", "desktop"]}
+/>

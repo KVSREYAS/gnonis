@@ -1,0 +1,41 @@
+---
+id: cpp-systems/01-lifetime/02-rule-of-zero-three-five
+title: "The Rule of 0/3/5"
+estMinutes: 8
+xp: 90
+missionIntro: "Own resources in exactly one place. Everyone else gets zero special members."
+keyIdeas:
+  - "Rule of zero: classes that hold only RAII members declare no special members (Core Guidelines C.20)."
+  - "Rule of five: if you define or delete one of destructor, copy ctor/assign, move ctor/assign, consider all five (C.21)."
+  - "Declaring a destructor or copy operation suppresses the implicit move operations, so moves silently become copies."
+---
+
+## Mission briefing
+
+A raw pointer member is a gun with no safety. Copy the class and two objects own the same memory. Destroy both and you get a double free.
+
+**Mission:** decide who owns the gun, then write the paperwork.
+
+## Zero is the goal
+
+Make members `std::vector`, `std::string`, `std::unique_ptr`. The compiler generates correct copy, move and destroy, and you write nothing. Only a dedicated resource-owning class should hand-write the five.
+
+![Shallow copy: two Buffer objects pointing at the same heap block, versus deep copy and move](/diagrams/cpp-systems/01-lifetime/02-rule-of-zero-three-five.png)
+
+<SpotBug
+  id="double-free"
+  prompt="Tap the line where things go wrong."
+  code={"struct Buffer {\n    int* data;\n    explicit Buffer(int n) : data(new int[n]) {}\n    ~Buffer() { delete[] data; }\n};\nvoid f() {\n    Buffer a(16);\n    Buffer b = a;\n}"}
+  bugLine={8}
+  explanation="The implicit copy constructor copies the pointer. Both destructors delete[] the same block. Rule of three/five violated."
+  devices={["phone", "desktop"]}
+/>
+
+<MCQ
+  id="suppressed-move"
+  prompt="You add only a user-declared destructor to a class that has a `std::vector` member. What happens to `T x = std::move(y);`?"
+  options={["It moves as before", "It copies: the implicit move constructor is no longer declared, so overload resolution picks the copy constructor", "It fails to compile", "It's undefined behaviour"]}
+  answer={1}
+  explanation="A user-declared destructor suppresses the implicit move ctor and move assignment. The (deprecated) implicit copy still exists, so moves quietly degrade to copies."
+  devices={["phone", "desktop"]}
+/>

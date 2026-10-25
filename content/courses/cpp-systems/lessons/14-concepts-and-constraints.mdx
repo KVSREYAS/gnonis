@@ -1,0 +1,47 @@
+---
+id: cpp-systems/04-templates/02-concepts-and-constraints
+title: "Concepts and Constraints"
+estMinutes: 8
+xp: 100
+missionIntro: "C++20 concepts name requirements on template parameters. You get readable errors and overloading on capabilities."
+keyIdeas:
+  - "A concept is a named compile-time predicate: `template<class T> concept Number = std::integral<T> || std::floating_point<T>;`."
+  - "requires-expressions check that expressions are valid: `requires(T t) { t.size(); }`."
+  - "Constrained overloads are picked by the most specialised constraint that's satisfied."
+---
+
+## Mission briefing
+
+Template Town's old foreman accepted anything, then exploded 400 lines deep in an error message. The new one checks your ID at the door.
+
+**Mission:** write the bouncer's checklist.
+
+## Writing constraints
+
+```cpp
+template <class T>
+concept HasSize = requires(const T& t) { { t.size() } -> std::convertible_to<std::size_t>; };
+
+template <HasSize C> auto count(const C& c) { return c.size(); }
+```
+Pass an `int` and the error says *constraints not satisfied: HasSize<int>*, not a template stack trace.
+
+![Concept subsumption: integral containing signed_integral; the most constrained satisfied overload wins](/diagrams/cpp-systems/04-templates/02-concepts-and-constraints.png)
+
+<MCQ
+  id="which-overload"
+  prompt="`void f(std::integral auto)` and `void f(std::signed_integral auto)` both exist. Which runs for `f(-3)`?"
+  options={["The integral one", "The signed_integral one, because it's more constrained (it subsumes integral)", "Ambiguous", "Compile error"]}
+  answer={1}
+  explanation="signed_integral is defined in terms of integral, so it subsumes it and wins."
+  devices={["phone", "desktop"]}
+/>
+
+<CodeBlanks
+  id="concept-blanks"
+  prompt="Complete a concept for types you can add and that produce the same type."
+  code={"template <class T>\nconcept Addable = {{0}}(T a, T b) {\n    { a + b } -> std::{{1}}<T>;\n};"}
+  blanks={[{"answer": "requires"}, {"answer": "same_as"}]}
+  explanation="requires-expression plus a compound requirement."
+  devices={["phone", "desktop"]}
+/>

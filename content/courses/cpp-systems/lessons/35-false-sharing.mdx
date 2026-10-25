@@ -1,0 +1,42 @@
+---
+id: cpp-systems/09-concurrency/03-false-sharing
+title: "False Sharing"
+estMinutes: 8
+xp: 100
+missionIntro: "Two threads writing different variables on the same cache line fight over that line like it's the last parking spot."
+keyIdeas:
+  - "Coherence works per cache line (64 B). Writes by different cores to one line bounce it between them."
+  - "Pad hot per-thread data to its own line: alignas(std::hardware_destructive_interference_size) or alignas(64)."
+  - "The symptom: adding threads makes the loop slower."
+---
+
+## Mission briefing
+
+Two of your crew keep separate notebooks, but they're glued to the same clipboard. Every time one writes, the other has to wait.
+
+**Mission:** buy a second clipboard.
+
+## The numbers
+
+
+
+![Two cores ping-ponging one 64-byte line holding both counters versus padded counters on separate lines](/diagrams/cpp-systems/09-concurrency/03-false-sharing.png)
+
+<Predict
+  id="fs-slots"
+  prompt="Eight threads each increment their own `long counter[8]` slot (8 bytes each). How many cache lines do the 8 counters occupy, assuming a 64-byte-aligned array?"
+  answer={1}
+  tolerance={{"mode": "absolute", "value": 0}}
+  explanation="64 bytes, so one line, and all eight cores fight over it."
+  devices={["phone", "desktop"]}
+/>
+
+<Predict
+  id="pad-size"
+  prompt={"Padding each counter to its own line: sizeof(struct alignas(64) Slot { long v; })?"}
+  answer={64}
+  tolerance={{"mode": "absolute", "value": 0}}
+  unit="bytes"
+  explanation="Rounded up to its alignment."
+  devices={["phone", "desktop"]}
+/>

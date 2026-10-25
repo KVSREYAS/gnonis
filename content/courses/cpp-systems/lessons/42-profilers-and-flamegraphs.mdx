@@ -1,0 +1,54 @@
+---
+id: cpp-systems/11-perf/02-profilers-and-flamegraphs
+title: "Profilers and Flame Graphs"
+estMinutes: 8
+xp: 100
+missionIntro: "Don't guess where time goes. perf record samples the stack about 1,000 times a second, and a flame graph shows you the fat."
+keyIdeas:
+  - "`perf stat` gives counters (cycles, instructions, IPC, cache-misses, branch-misses). `perf record -g` plus `perf report` samples call stacks."
+  - "Flame graphs: width is time on CPU, and the y-axis is stack depth. Look for wide plateaus."
+  - "IPC well below 1 usually means memory stalls. Near 3–4 means you're compute-bound."
+---
+
+## Mission briefing
+
+The Pier has CCTV. Watch the tape before accusing anyone.
+
+**Mission:** read a profile.
+
+## Read the counters
+
+
+
+![Example flame graph with a wide plateau at matmul and narrow towers elsewhere](/diagrams/cpp-systems/11-perf/02-profilers-and-flamegraphs.png)
+
+<Predict
+  id="ipc"
+  prompt="perf stat: 12e9 instructions, 30e9 cycles. IPC?"
+  answer={0.4}
+  tolerance={{"mode": "absolute", "value": 0.01}}
+  explanation="12/30 = 0.4, so it's stalling, probably on memory."
+  devices={["phone", "desktop"]}
+/>
+
+<Predict
+  id="samples"
+  prompt="perf record at 999 Hz on one busy thread for 10 s. Roughly how many samples?"
+  answer={9990}
+  tolerance={{"mode": "relative", "value": 0.02}}
+  explanation="999 × 10."
+  devices={["phone", "desktop"]}
+/>
+
+<MCQ
+  id="flame"
+  prompt="In a flame graph, a function that's wide but has nothing stacked on top…"
+  options={["Is cheap", "Spends its time in itself (self time). Optimise it", "Is a leaf that never runs", "Is a recursion bug"]}
+  answer={1}
+  explanation="A wide plateau is hot self-time."
+  devices={["phone", "desktop"]}
+/>
+
+## Sources
+
+Brendan Gregg, [CPU Flame Graphs](https://www.brendangregg.com/FlameGraphs/cpuflamegraphs.html), [perf wiki](https://perf.wiki.kernel.org/index.php/Tutorial), Denis Bakhvalov, [*Performance Analysis and Tuning on Modern CPUs*](https://book.easyperf.net/perf_book)

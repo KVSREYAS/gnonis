@@ -1,0 +1,44 @@
+---
+id: cpp-systems/03-ownership/01-unique-ptr-and-deleters
+title: "unique_ptr and Custom Deleters"
+estMinutes: 7
+xp: 90
+missionIntro: "Exclusive ownership with zero overhead, plus custom deleters for C APIs."
+keyIdeas:
+  - "std::unique_ptr<T> is a move-only owner. With the default deleter it's the size of a raw pointer."
+  - "A stateless deleter (empty struct or captureless lambda) adds no size, but a function-pointer deleter adds 8 bytes."
+  - "Use make_unique (C++14) and pass ownership by value: `void take(std::unique_ptr<T>)`."
+---
+
+## Mission briefing
+
+Some loot belongs to exactly one crew member. Hand it over and it's theirs, with no copies and no arguments.
+
+**Mission:** use the cheapest safe in town.
+
+## How big is it?
+
+On x86-64 with libstdc++ or libc++, a `unique_ptr<T>` with the default deleter is 8 bytes, thanks to the empty-base / `[[no_unique_address]]` optimisation.
+
+![unique_ptr layouts: 8-byte pointer only, versus pointer plus function-pointer deleter (16 bytes)](/diagrams/cpp-systems/03-ownership/01-unique-ptr-and-deleters.png)
+
+<Predict
+  id="up-size-fnptr"
+  prompt="`std::unique_ptr<FILE, int(*)(FILE*)>` on x86-64. sizeof in bytes?"
+  answer={16}
+  tolerance={{"mode": "absolute", "value": 0}}
+  unit="bytes"
+  explanation="The pointer (8) plus the function pointer to fclose (8). A captureless-lambda or empty-struct deleter keeps it at 8."
+  devices={["phone", "desktop"]}
+/>
+
+<Trace
+  id="up-sizes"
+  prompt="Measured on x86-64 Linux, g++ 14."
+  code={"#include <cstdio>\n#include <cstdlib>\n#include <memory>\nstruct Free { void operator()(void* p) const { std::free(p); } };\nint main() {\n    std::printf(\"%zu %zu %zu\", sizeof(std::unique_ptr<int>),\n                sizeof(std::unique_ptr<int, Free>),\n                sizeof(std::unique_ptr<int, void(*)(void*)>));\n}"}
+  steps={[{"line": 6, "note": "default deleter"}, {"line": 7, "note": "empty struct deleter"}, {"line": 8, "note": "function pointer deleter"}]}
+  question="What does it print?"
+  answer="8 8 16"
+  explanation="Stateless deleters are free. Function pointers cost a word."
+  devices={["phone", "desktop"]}
+/>

@@ -1,0 +1,29 @@
+---
+id: cpp-systems/02-move/04-boss-move-motel
+title: "Boss: Move Motel"
+estMinutes: 10
+xp: 200
+missionIntro: "Value categories, noexcept growth and forwarding, under pressure. Then rotate three move-only guests."
+kind: boss
+keyIdeas:
+  - "std::move is a cast, and the overload decides what happens."
+  - "noexcept moves let vector move during growth."
+  - "Forwarding references plus std::forward preserve categories."
+---
+
+## Mission briefing
+
+The Move Motel manager wants a full audit before checkout.
+
+Six questions, then the getaway: shuffle three guests between rooms using moves only.
+
+<Boss
+  id="motel"
+  title="Move Motel"
+  briefing="Six questions, three hearts, three minutes. Mind the luggage."
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "mcq", "prompt": "Inside `void g(std::string&& s)`, the expression `s` is…", "options": ["a prvalue", "an xvalue", "an lvalue", "not an expression"], "answer": 2, "explanation": "It has a name."}, {"type": "predict", "prompt": "libstdc++ vector of a copy-only type grows from empty to 9 elements by push_back (capacities 1, 2, 4, 8, 16). Element copies due to reallocation?", "answer": 15, "tolerance": {"mode": "absolute", "value": 0}, "unit": "copies", "explanation": "1 + 2 + 4 + 8."}, {"type": "mcq", "prompt": "`template<class T> void f(T&&)` called with `f(std::string{})`. T is…", "options": ["std::string", "std::string&", "std::string&&", "const std::string&"], "answer": 0, "explanation": "Rvalue argument: T = std::string."}, {"type": "fill", "text": "std::{{0}} unconditionally casts to an rvalue, while std::{{1}} casts only if the original argument was an rvalue.", "chips": ["move", "forward", "exchange", "swap"], "answers": ["move", "forward"], "explanation": "Use move for things you own, forward for forwarding references."}, {"type": "mcq", "prompt": "Which makes vector growth move instead of copy?", "options": ["Marking the move constructor noexcept", "Making the destructor virtual", "Declaring a copy constructor", "Using reserve() after the fact"], "answer": 0, "explanation": "move_if_noexcept."}, {"type": "mcq", "prompt": "A defaulted move constructor `T(T&&) = default;` is noexcept when…", "options": ["never", "all members' move constructors are noexcept", "T has a destructor", "T is trivially copyable only"], "answer": 1, "explanation": "Defaulted special members inherit the noexcept-ness of what they call."}]}
+  explanation="Move Motel is cleared. Not a single unnecessary photocopy."
+  devices={["phone", "desktop"]}
+/>

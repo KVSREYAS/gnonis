@@ -1,0 +1,58 @@
+---
+id: cpp-systems/02-move/01-value-categories
+title: "Value Categories and std::move"
+estMinutes: 7
+xp: 90
+missionIntro: "lvalues have names, prvalues are fresh temporaries, xvalues are about to expire. std::move is only a cast."
+keyIdeas:
+  - "Every expression has a value category: lvalue, prvalue or xvalue (glvalue = lvalue + xvalue, rvalue = prvalue + xvalue)."
+  - "std::move(x) is static_cast<T&&>(x). It moves nothing by itself; the overload it selects does."
+  - "A named rvalue reference is itself an lvalue inside the function."
+---
+
+## Mission briefing
+
+At the Move Motel, guests either have a name on the register (lvalues) or are just passing through (rvalues). The receptionist decides who can be robbed of their luggage.
+
+**Mission:** learn which guests are fair game.
+
+## Overloads pick the category
+
+`f(T&)` binds lvalues, `f(T&&)` binds rvalues. `std::move` turns an lvalue into an xvalue so the `&&` overload wins.
+
+![Venn-style diagram of expression categories: glvalue, rvalue, lvalue, xvalue, prvalue](/diagrams/cpp-systems/02-move/01-value-categories.png)
+
+<Trace
+  id="which-overload"
+  prompt="Which overloads run?"
+  code={"#include <cstdio>\n#include <utility>\nvoid f(int&) { std::printf(\"L\"); }\nvoid f(int&&) { std::printf(\"R\"); }\nvoid g(int&& x) { f(x); }\nint main() {\n    int a = 1;\n    f(a);\n    f(2);\n    f(std::move(a));\n    g(3);\n}"}
+  steps={[{"line": 8, "note": "a is an lvalue: L"}, {"line": 9, "note": "2 is a prvalue: R"}, {"line": 10, "note": "std::move(a) is an xvalue: R"}, {"line": 5, "note": "inside g, x has a name, so it's an lvalue: L"}]}
+  question="What does it print?"
+  answer="LRRL"
+  explanation="A named rvalue reference is an lvalue. Use std::forward or std::move again to pass it on as an rvalue."
+  devices={["phone", "desktop"]}
+/>
+
+<MCQ
+  id="move-cast"
+  prompt="What does `std::move(v)` do to a `std::vector v` by itself, as a standalone statement?"
+  options={["Moves its buffer somewhere", "Nothing: it's a cast and the result is discarded", "Clears it", "Copies it"]}
+  answer={1}
+  explanation="No constructor or assignment is called, so nothing happens. Clang-tidy even warns about it."
+  devices={["phone", "desktop"]}
+/>
+
+## After the move
+
+A moved-from standard library object is in a valid but unspecified state. You can assign to it or destroy it, but don't read its value.
+
+Sources: [cppreference: value categories](https://en.cppreference.com/w/cpp/language/value_category), Scott Meyers, *Effective Modern C++*, Items 23–25
+
+<MCQ
+  id="moved-from"
+  prompt="After `std::string t = std::move(s);`, which use of `s` is always fine?"
+  options={["`s.size()` is guaranteed to be 0", "`s = \"new\";`", "`s[0]`", "Printing s and expecting the old text"]}
+  answer={1}
+  explanation="Valid but unspecified: reassign or destroy it. Many implementations leave it empty, but the standard doesn't promise that for every type."
+  devices={["phone", "desktop"]}
+/>

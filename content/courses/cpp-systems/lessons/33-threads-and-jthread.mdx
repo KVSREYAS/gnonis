@@ -1,0 +1,52 @@
+---
+id: cpp-systems/09-concurrency/01-threads-and-jthread
+title: "Threads, jthread and Stop Tokens"
+estMinutes: 8
+xp: 100
+missionIntro: "std::jthread joins itself and carries a stop token, which makes it RAII for threads. Plain std::thread calls std::terminate if you forget to join."
+keyIdeas:
+  - "Destroying a joinable std::thread calls std::terminate."
+  - "std::jthread (C++20) joins in its destructor and passes a std::stop_token for cooperative cancellation."
+  - "Share data by mutex (std::scoped_lock for several at once) or hand off ownership. Never race."
+---
+
+## Mission briefing
+
+Concurrency Casino: many players, one table. The house has one rule: settle up before you leave.
+
+**Mission:** never walk out without joining.
+
+## Spot the terminate
+
+
+
+![Four jthreads summing chunks into per-thread slots, joined at scope exit](/diagrams/cpp-systems/09-concurrency/01-threads-and-jthread.png)
+
+<SpotBug
+  id="no-join"
+  prompt="Which line calls std::terminate?"
+  code={"#include <thread>\nvoid work() {}\nint main() {\n    std::thread t(work);\n    if (true) return 0;\n    t.join();\n}"}
+  bugLine={5}
+  explanation="Returning destroys t while it's still joinable. Use std::jthread, or join on every path."
+  devices={["phone", "desktop"]}
+/>
+
+<MCQ
+  id="jthread-dtor"
+  prompt="std::jthread's destructor does what?"
+  options={["Detaches", "Calls terminate if joinable", "Requests stop, then joins", "Nothing"]}
+  answer={2}
+  explanation="request_stop() followed by join()."
+  devices={["phone", "desktop"]}
+/>
+
+<Trace
+  id="scoped-sum"
+  prompt="Four jthreads add to a shared counter under a mutex."
+  code={"#include <cstdio>\n#include <mutex>\n#include <thread>\n#include <vector>\nint main() {\n    long total = 0;\n    std::mutex m;\n    {\n        std::vector<std::jthread> ts;\n        for (int t = 0; t < 4; ++t)\n            ts.emplace_back([&, t] {\n                for (int i = 0; i < 1000; ++i) { std::scoped_lock lk(m); total += t; }\n            });\n    }\n    std::printf(\"%ld\", total);\n}"}
+  steps={[{"line": 9, "note": "the jthreads live in this scope"}, {"line": 12, "note": "each thread adds its id 1,000 times"}, {"line": 14, "note": "leaving the scope joins all four"}, {"line": 15, "note": "(0+1+2+3) × 1000"}]}
+  question="What does it print?"
+  answer="6000"
+  explanation="The mutex makes it deterministic. Without it, it's a data race (UB)."
+  devices={["phone", "desktop"]}
+/>

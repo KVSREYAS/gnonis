@@ -1,0 +1,41 @@
+---
+id: cpp-systems/02-move/03-perfect-forwarding
+title: "Perfect Forwarding"
+estMinutes: 8
+xp: 100
+missionIntro: "Forwarding references plus std::forward pass arguments through with their value category intact. That's how emplace_back works."
+keyIdeas:
+  - "`T&&` with T deduced is a forwarding reference: it binds anything (reference collapsing makes T = U& for lvalues)."
+  - "std::forward<T>(x) restores the original category: lvalues stay lvalues, rvalues become rvalues again."
+  - "emplace_back and make_unique forward constructor arguments to construct in place."
+---
+
+## Mission briefing
+
+You're the middleman. Packages arrive, some marked FRAGILE (lvalues, don't touch) and some marked TAKE IT (rvalues). Your job is to pass each one on with its label intact.
+
+**Mission:** don't peel off the labels.
+
+## Reference collapsing
+
+For `template<class T> void f(T&& x)`: passing an lvalue `int` deduces `T = int&`, and `int& &&` collapses to `int&`. Passing an rvalue deduces `T = int`.
+
+![Reference collapsing table: & &, & &&, && &, && && and what each collapses to](/diagrams/cpp-systems/02-move/03-perfect-forwarding.png)
+
+<MCQ
+  id="deduce-t"
+  prompt="`template<class T> void f(T&& x);` called as `int a = 0; f(a);`. What is T?"
+  options={["int", "int&", "int&&", "const int&"]}
+  answer={1}
+  explanation="Lvalue argument: T = int&, and the parameter type int& && collapses to int&."
+  devices={["phone", "desktop"]}
+/>
+
+<CodeBlanks
+  id="fwd-blanks"
+  prompt="Complete a forwarding factory."
+  code={"template <class T, class... Args>\nT make(Args{{0}} args) {\n    return T(std::{{1}}<Args>(args)...);\n}"}
+  blanks={[{"answer": "&&"}, {"answer": "forward"}]}
+  explanation="Forwarding references plus std::forward<Args>."
+  devices={["phone", "desktop"]}
+/>

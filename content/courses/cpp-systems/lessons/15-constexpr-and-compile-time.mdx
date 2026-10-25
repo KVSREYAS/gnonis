@@ -1,0 +1,49 @@
+---
+id: cpp-systems/04-templates/03-constexpr-and-compile-time
+title: "constexpr, consteval and if constexpr"
+estMinutes: 8
+xp: 100
+missionIntro: "Push work to compile time: lookup tables, checked constants, and branches that vanish per type."
+keyIdeas:
+  - "constexpr functions can run at compile time when given constant arguments. consteval functions must."
+  - "if constexpr discards the untaken branch per instantiation, so it can contain code that wouldn't compile for that T."
+  - "static_assert turns compile-time computations into tests."
+---
+
+## Mission briefing
+
+Why do the maths during the heist when you can do it while planning? Every value the compiler computes is one the CPU never has to.
+
+**Mission:** move the work to compile time.
+
+## if constexpr
+
+```cpp
+template <class T> constexpr std::size_t bytes_of() {
+  if constexpr (std::is_same_v<T, bool>) return 1;
+  else return sizeof(T);
+}
+```
+The discarded branch is never instantiated.
+
+![Timeline: work moved from runtime into compile time; if constexpr pruning branches per type](/diagrams/cpp-systems/04-templates/03-constexpr-and-compile-time.png)
+
+<Trace
+  id="constexpr-trace"
+  prompt="What prints? (Everything here is computed at compile time.)"
+  code={"#include <cstdio>\nconstexpr int tri(int n) { return n <= 0 ? 0 : n + tri(n - 1); }\ntemplate <class T> constexpr int kind() {\n    if constexpr (sizeof(T) == 1) return 1;\n    else if constexpr (sizeof(T) <= 4) return 4;\n    else return 8;\n}\nint main() {\n    static_assert(tri(4) == 10);\n    std::printf(\"%d %d%d%d\", tri(10), kind<char>(), kind<float>(), kind<double>());\n}"}
+  steps={[{"line": 2, "note": "tri(10) = 55"}, {"line": 4, "note": "char: 1"}, {"line": 5, "note": "float: 4"}, {"line": 6, "note": "double: 8"}]}
+  question="What does it print?"
+  answer="55 148"
+  explanation="Both functions are folded to constants by the compiler."
+  devices={["phone", "desktop"]}
+/>
+
+<MCQ
+  id="consteval"
+  prompt="What does `consteval int f(int)` guarantee?"
+  options={["It may run at compile time", "Every call must produce a compile-time constant, or the program is ill-formed", "It's inlined", "It runs once at startup"]}
+  answer={1}
+  explanation="consteval = immediate function."
+  devices={["phone", "desktop"]}
+/>

@@ -1,0 +1,29 @@
+---
+id: cpp-systems/10-simd/04-boss-simd-speedway
+title: "Boss: SIMD Speedway"
+estMinutes: 14
+xp: 240
+missionIntro: "Lanes, tails and accumulators at speed. Then build a vectorised ReLU and scale kernel."
+kind: boss
+keyIdeas:
+  - "SSE = 4 floats, AVX2 = 8, AVX-512 = 16."
+  - "Vector body + scalar tail."
+  - "Multiple accumulators hide latency."
+---
+
+## Mission briefing
+
+Final lap at the Speedway. Every lane counts.
+
+Six questions, then the getaway: an SSE kernel.
+
+<Boss
+  id="speedway"
+  title="SIMD Speedway"
+  briefing="Six questions, three hearts, three minutes. Stay in your lane."
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "predict", "prompt": "Float lanes in a 256-bit AVX2 register?", "answer": 8, "tolerance": {"mode": "absolute", "value": 0}, "explanation": "256/32."}, {"type": "predict", "prompt": "n = 37, 8-wide vectors. Tail iterations?", "answer": 5, "tolerance": {"mode": "absolute", "value": 0}, "explanation": "37 % 8."}, {"type": "mcq", "prompt": "Which keyword tells the compiler pointers don't alias?", "options": ["volatile", "__restrict", "inline", "register"], "answer": 1, "explanation": "A non-standard but universal extension."}, {"type": "mcq", "prompt": "_mm_load_ps on an address ≡ 4 mod 16…", "options": ["works", "may fault (it requires 16-byte alignment)", "is slower but safe", "rounds the pointer"], "answer": 1, "explanation": "Use loadu."}, {"type": "predict", "prompt": "FP add latency 4, throughput 2/cycle. Accumulators needed?", "answer": 8, "tolerance": {"mode": "absolute", "value": 0}, "explanation": "4 × 2."}, {"type": "mcq", "prompt": "Why isn't a float sum auto-vectorised at -O3 by default?", "options": ["Reassociation changes results", "Floats are slow", "Loops can't be vectorised", "Missing headers"], "answer": 0, "explanation": "IEEE semantics are preserved unless you opt out."}]}
+  explanation="SIMD Speedway is cleared. Chequered flag."
+  devices={["phone", "desktop"]}
+/>

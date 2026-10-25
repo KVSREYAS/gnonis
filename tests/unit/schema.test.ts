@@ -145,7 +145,7 @@ describe("loader", () => {
   it("loads the shipped course packs without a single issue", () => {
     const { courses, issues } = loadAllCourses();
     expect(issues).toEqual([]);
-    expect(courses.map((c) => c.slug)).toEqual(["llm-inference", "sample-bits-bytes"]);
+    expect(courses.map((c) => c.slug)).toEqual(["llm-inference", "sample-bits-bytes", "cpp-systems"]);
     const llm = courses[0];
     expect(llm.modules).toHaveLength(12);
     for (const m of llm.modules.slice(0, 4)) {

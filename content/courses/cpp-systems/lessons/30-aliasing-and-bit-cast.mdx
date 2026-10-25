@@ -1,0 +1,43 @@
+---
+id: cpp-systems/08-ub/02-aliasing-and-bit-cast
+title: "Strict Aliasing and std::bit_cast"
+estMinutes: 8
+xp: 100
+missionIntro: "Reading a float through an int* is UB. Use std::bit_cast or memcpy, which compile to the same single instruction."
+keyIdeas:
+  - "Strict aliasing: you may only access an object through its own type, a char/std::byte type, or a few allowed variants."
+  - "Type punning via reinterpret_cast or unions (in C++) is UB, and optimisers rely on that to reorder loads."
+  - "std::bit_cast<To>(from) (C++20) is the sanctioned, constexpr way, and memcpy works too. Both compile to a plain move."
+---
+
+## Mission briefing
+
+You want to read the serial number stamped inside a float. Breaking in with a crowbar (reinterpret_cast) gets you arrested. The locksmith (bit_cast) does it legally, just as fast.
+
+**Mission:** go legit.
+
+## Float bits
+
+An IEEE-754 float is 1 sign bit, 8 exponent bits (bias 127) and 23 mantissa bits.
+
+![IEEE-754 float bit layout: 1 sign, 8 exponent, 23 mantissa; bf16 keeps the top 16 bits](/diagrams/cpp-systems/08-ub/02-aliasing-and-bit-cast.png)
+
+<Trace
+  id="bitcast-trace"
+  prompt="Legal type punning."
+  code={"#include <bit>\n#include <cstdint>\n#include <cstdio>\nint main() {\n    float f = 1.0f;\n    auto u = std::bit_cast<std::uint32_t>(f);\n    std::printf(\"%08X %u\", u, (u >> 23) & 0xFF);\n}"}
+  steps={[{"line": 5, "note": "1.0 = sign 0, exponent 127, mantissa 0"}, {"line": 6, "note": "same 32 bits, viewed as an integer"}, {"line": 7, "note": "0x3F800000, exponent field 127"}]}
+  question="What does it print?"
+  answer="3F800000 127"
+  explanation="1.0f is 0x3F800000 and its biased exponent is 127."
+  devices={["phone", "desktop"]}
+/>
+
+<SpotBug
+  id="alias-ub"
+  prompt="Which line is the strict-aliasing violation?"
+  code={"#include <cstdint>\n#include <cstring>\nstd::uint32_t bits(float f) {\n    std::uint32_t a;\n    std::memcpy(&a, &f, sizeof a);\n    std::uint32_t b = *reinterpret_cast<std::uint32_t*>(&f);\n    return a ^ b;\n}"}
+  bugLine={6}
+  explanation="memcpy is fine. Dereferencing a uint32_t* that points at a float is UB."
+  devices={["phone", "desktop"]}
+/>

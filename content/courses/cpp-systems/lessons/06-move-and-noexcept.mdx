@@ -1,0 +1,44 @@
+---
+id: cpp-systems/02-move/02-move-and-noexcept
+title: "Moves, noexcept and vector Growth"
+estMinutes: 8
+xp: 100
+missionIntro: "std::vector only moves elements during reallocation if the move constructor is noexcept. Otherwise it copies."
+keyIdeas:
+  - "On reallocation std::vector uses std::move_if_noexcept to keep its strong exception guarantee."
+  - "A move constructor that isn't noexcept (and a copyable type) means every growth copies every element."
+  - "Mark move operations noexcept (Core Guidelines C.66), and `= default` gets it right automatically."
+---
+
+## Mission briefing
+
+The motel is expanding. Every guest has to change rooms. Move their luggage (cheap) or photocopy every item (expensive)? The manager only trusts movers who swear they'll never drop anything: `noexcept`.
+
+**Mission:** count the photocopies.
+
+## Count the copies
+
+Below, `Loud` counts copies. Its move constructor is NOT noexcept.
+
+![Vector reallocation: copying every element versus moving pointers when the move constructor is noexcept](/diagrams/cpp-systems/02-move/02-move-and-noexcept.png)
+
+<Trace
+  id="growth-copies"
+  prompt="Push 5 elements into an empty vector (libstdc++ capacities 1, 2, 4, 8). How many copies?"
+  code={"#include <cstdio>\n#include <vector>\nint copies = 0;\nstruct Loud {\n    Loud() = default;\n    Loud(const Loud&) { ++copies; }\n    Loud(Loud&&) {}\n};\nint main() {\n    std::vector<Loud> v;\n    for (int i = 0; i < 5; ++i) v.emplace_back();\n    std::printf(\"%d\", copies);\n}"}
+  steps={[{"line": 7, "note": "move ctor without noexcept"}, {"line": 11, "note": "reallocations at sizes 1, 2 and 4 move 1 + 2 + 4 elements"}, {"line": 12, "note": "each of those uses the copy ctor"}]}
+  question="What does it print?"
+  answer="7"
+  explanation="1 + 2 + 4 = 7 copies. Add noexcept to the move constructor and it prints 0."
+  devices={["phone", "desktop"]}
+/>
+
+<Predict
+  id="growth-copies-1000"
+  prompt="Same type, pushing 1,000 elements with libstdc++ doubling (1, 2, 4, …, 1024). How many copies in total?"
+  answer={1023}
+  tolerance={{"mode": "absolute", "value": 0}}
+  unit="copies"
+  explanation="Reallocations copy 1 + 2 + 4 + … + 512 = 1,023 elements."
+  devices={["phone", "desktop"]}
+/>
