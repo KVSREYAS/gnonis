@@ -298,7 +298,7 @@ export function CodeWidget({ id, exercise, setAction, onGrade, locked }: WidgetP
           autoCorrect="off"
           rows={3}
           placeholder="stdin for Run input. Nothing is saved."
-          className="mt-1 w-full resize-y rounded-lg border-2 border-border bg-ink px-3 py-2 font-mono text-base text-foreground outline-none focus:border-gold"
+          className="code-input mt-1 w-full resize-y rounded-lg border-2 border-border bg-ink px-3 py-2 font-mono text-base text-foreground outline-none focus:border-gold"
           data-testid="custom-stdin"
         />
       </label>
