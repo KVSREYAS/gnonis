@@ -1,0 +1,42 @@
+---
+id: cpp-systems/12-building-blocks/03-thread-pool
+title: "A Thread Pool with Futures"
+estMinutes: 9
+xp: 110
+missionIntro: "Spawning a thread costs microseconds. Keep a pool of workers and submit tasks that return std::future."
+keyIdeas:
+  - "Workers loop: wait on a condition variable, pop a std::function<void()>, run it."
+  - "submit() wraps the callable in std::packaged_task and returns its future. Exceptions propagate through the future."
+  - "Shutdown: set a stop flag under the lock, notify_all, then let the jthreads join."
+---
+
+## Mission briefing
+
+Hire a permanent crew instead of recruiting off the street for every job.
+
+**Mission:** run the crew.
+
+## Costs
+
+
+
+![Task queue feeding a fixed crew of worker threads, each returning results through futures](/diagrams/cpp-systems/12-building-blocks/03-thread-pool.png)
+
+<Predict
+  id="spawn-cost"
+  prompt="Thread creation takes ~10 µs and the task ~1 µs. Using a fresh thread per task for 100,000 tasks, roughly how much time goes to creation, in ms?"
+  answer={1000}
+  tolerance={{"mode": "relative", "value": 0.02}}
+  unit="ms"
+  explanation="1e5 × 10 µs = 1 s. A pool pays that once per worker."
+  devices={["phone", "desktop"]}
+/>
+
+<MCQ
+  id="future-ex"
+  prompt="A task submitted via packaged_task throws. What happens?"
+  options={["The worker thread dies", "std::terminate", "The exception is stored and rethrown by future.get()", "It's silently swallowed"]}
+  answer={2}
+  explanation="That's the promise/future contract."
+  devices={["phone", "desktop"]}
+/>

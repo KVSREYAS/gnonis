@@ -1,0 +1,29 @@
+---
+id: cpp-systems/11-perf/04-boss-perf-pier
+title: "Boss: Perf Pier"
+estMinutes: 14
+xp: 240
+missionIntro: "Benchmarks, profiles and assembly at speed. Then write a benchmark harness that can't be fooled."
+kind: boss
+keyIdeas:
+  - "Defeat dead-code elimination, and report median and spread."
+  - "IPC and flame graphs say where and why."
+  - "Read the assembly to confirm."
+---
+
+## Mission briefing
+
+The final race at Perf Pier, and the judges want evidence.
+
+Six questions, then the getaway: an honest stopwatch.
+
+<Boss
+  id="pier"
+  title="Perf Pier"
+  briefing="Six questions, three hearts, three minutes. No cheating."
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "mcq", "prompt": "Result unused in a benchmark loop. Risk?", "options": ["Overflow", "Dead-code elimination", "False sharing", "Stack overflow"], "answer": 1, "explanation": "Consume results."}, {"type": "predict", "prompt": "Instructions 9e9, cycles 3e9. IPC?", "answer": 3, "tolerance": {"mode": "absolute", "value": 0.01}, "explanation": "Compute-bound-ish."}, {"type": "mcq", "prompt": "`addss` is…", "options": ["Packed add", "Scalar single-precision add", "Integer add", "AVX-512"], "answer": 1, "explanation": "ss = scalar single."}, {"type": "mcq", "prompt": "Better summary of 30 noisy runs?", "options": ["The first run", "The mean only", "Median with spread (and min)", "The max"], "answer": 2, "explanation": "Robust to outliers."}, {"type": "mcq", "prompt": "Flame graph x-axis is…", "options": ["Time order", "Alphabetical stacks; width is sample share", "Memory", "Thread id"], "answer": 1, "explanation": "It is not a timeline."}, {"type": "predict", "prompt": "1e9 cache misses × 100 ns serialised. Seconds?", "answer": 100, "tolerance": {"mode": "relative", "value": 0.02}, "unit": "s", "explanation": "1e9 × 1e-7."}]}
+  explanation="Perf Pier is cleared. Your numbers hold up."
+  devices={["phone", "desktop"]}
+/>

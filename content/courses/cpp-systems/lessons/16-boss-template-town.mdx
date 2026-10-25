@@ -1,0 +1,29 @@
+---
+id: cpp-systems/04-templates/04-boss-template-town
+title: "Boss: Template Town"
+estMinutes: 12
+xp: 220
+missionIntro: "Deduction, concepts and constexpr. Then build a compile-time matrix shape checker."
+kind: boss
+keyIdeas:
+  - "Know the deduction rules for T, T& and T&&."
+  - "Concepts give readable constraints and overloading by capability."
+  - "constexpr plus static_assert moves checks to compile time."
+---
+
+## Mission briefing
+
+The Template Town council meets once a year to check your paperwork at compile time.
+
+Six questions, then the getaway: shapes that can't mismatch.
+
+<Boss
+  id="town"
+  title="Template Town"
+  briefing="Six questions, three hearts, three minutes. The compiler is the judge."
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "mcq", "prompt": "`template<class T> void f(T&);` called with `const int x = 1; f(x);`. T is…", "options": ["int", "const int", "const int&", "int&"], "answer": 1, "explanation": "Reference parameters keep const."}, {"type": "mcq", "prompt": "Which is a forwarding reference?", "options": ["`void f(std::vector<T>&&)` in a template", "`template<class T> void f(T&&)`", "`void f(int&&)`", "`auto& x`"], "answer": 1, "explanation": "Only a deduced T&& (or auto&&)."}, {"type": "mcq", "prompt": "An if constexpr branch that isn't taken…", "options": ["must still compile for every T", "isn't instantiated for that T", "runs at runtime", "is an error"], "answer": 1, "explanation": "That's the whole point."}, {"type": "predict", "prompt": "constexpr int f(int n) { return n < 2 ? n : f(n-1) + f(n-2); } What's f(10)?", "answer": 55, "tolerance": {"mode": "absolute", "value": 0}, "explanation": "Fibonacci."}, {"type": "fill", "text": "A {{0}}-expression checks that code is valid, and a {{1}} gives that check a name.", "chips": ["requires", "concept", "static_assert", "decltype"], "answers": ["requires", "concept"], "explanation": "C++20."}, {"type": "mcq", "prompt": "`std::vector v{1.0, 2.0};` deduces…", "options": ["std::vector<int>", "std::vector<double>", "std::initializer_list<double>", "Error"], "answer": 1, "explanation": "CTAD."}]}
+  explanation="Template Town is cleared. Your paperwork compiles."
+  devices={["phone", "desktop"]}
+/>

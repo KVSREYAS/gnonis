@@ -1,0 +1,29 @@
+---
+id: cpp-systems/08-ub/04-boss-ub-underground
+title: "Boss: UB Underground"
+estMinutes: 12
+xp: 220
+missionIntro: "Spot the UB before the optimiser exploits it. Then write overflow-safe arithmetic."
+kind: boss
+keyIdeas:
+  - "Signed overflow, out-of-bounds, use-after-free, aliasing violations and races are UB."
+  - "bit_cast or memcpy for type punning."
+  - "ASan+UBSan in CI, TSan for threads."
+---
+
+## Mission briefing
+
+Deep in the UB Underground, every corridor has a trapdoor.
+
+Six questions, then the getaway: arithmetic that can't fall through.
+
+<Boss
+  id="underground"
+  title="UB Underground"
+  briefing="Six questions, three hearts, three minutes. Watch your step."
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "mcq", "prompt": "Which is NOT undefined behaviour?", "options": ["INT_MAX + 1", "UINT_MAX + 1u", "Reading past the end of an array", "Dereferencing nullptr"], "answer": 1, "explanation": "Unsigned wraps."}, {"type": "mcq", "prompt": "Legal way to read a float's bits in C++20?", "options": ["reinterpret_cast<uint32_t&>(f)", "A union in C++", "std::bit_cast<uint32_t>(f)", "(uint32_t)f"], "answer": 2, "explanation": "bit_cast (or memcpy). (uint32_t)f converts the value."}, {"type": "mcq", "prompt": "Sanitizer for use-after-free?", "options": ["TSan", "ASan", "UBSan", "None"], "answer": 1, "explanation": "AddressSanitizer."}, {"type": "predict", "prompt": "1.0f as a uint32 in hex is 0x3F800000. What is its biased exponent field in decimal?", "answer": 127, "tolerance": {"mode": "absolute", "value": 0}, "explanation": "0x3F800000 >> 23 = 127."}, {"type": "fill", "text": "Because UB \"can't happen\", the optimiser may {{0}} a null check that comes {{1}} a dereference.", "chips": ["delete", "duplicate", "after", "before"], "answers": ["delete", "after"], "explanation": "Check first."}, {"type": "mcq", "prompt": "`int x; return x;`", "options": ["Returns 0", "Returns garbage but it's defined", "Undefined behaviour (reading an indeterminate value)", "Compile error"], "answer": 2, "explanation": "Erroneous behaviour in C++26, UB before that."}]}
+  explanation="UB Underground is cleared. No trapdoors triggered."
+  devices={["phone", "desktop"]}
+/>

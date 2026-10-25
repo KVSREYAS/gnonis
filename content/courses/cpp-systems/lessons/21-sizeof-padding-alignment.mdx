@@ -1,0 +1,59 @@
+---
+id: cpp-systems/06-layout/01-sizeof-padding-alignment
+title: "sizeof, Padding and Alignment"
+estMinutes: 7
+xp: 90
+missionIntro: "Every type has an alignment. The compiler pads structs to keep members aligned, and member order changes the size."
+keyIdeas:
+  - "Each member sits at an offset that's a multiple of its alignment, and the struct size rounds up to the largest alignment."
+  - "Ordering members from largest to smallest alignment minimises padding."
+  - "alignas raises alignment, for example alignas(64) to give an object its own cache line."
+---
+
+## Mission briefing
+
+The Layout Lofts landlord charges by the square metre, padding included.
+
+**Mission:** rearrange the furniture and pay less rent.
+
+## Measure it
+
+
+
+![Byte-by-byte layout of struct A versus struct B, padding bytes shaded grey](/diagrams/cpp-systems/06-layout/01-sizeof-padding-alignment.png)
+
+<Trace
+  id="padding"
+  prompt="x86-64: int is 4-aligned, double is 8-aligned."
+  code={"#include <cstdio>\n#include <cstddef>\nstruct A { char c; int i; char d; };\nstruct B { int i; char c; char d; };\nstruct C { char c; double x; int i; };\nstruct alignas(64) D { int counter; };\nint main() {\n    std::printf(\"%zu %zu %zu %zu %zu\", sizeof(A), sizeof(B), sizeof(C), offsetof(C, x), sizeof(D));\n}"}
+  steps={[{"line": 3, "note": "c@0, pad 3, i@4, d@8, pad to 12"}, {"line": 4, "note": "i@0, c@4, d@5, pad to 8"}, {"line": 5, "note": "c@0, pad 7, x@8, i@16, pad to 24"}, {"line": 6, "note": "alignas(64) rounds size to 64"}]}
+  question="What does it print?"
+  answer="12 8 24 8 64"
+  explanation="Same members, different order: A is 50% bigger than B."
+  devices={["phone", "desktop"]}
+/>
+
+<Predict
+  id="reorder-c"
+  prompt={"Reorder `struct C { char c; double x; int i; }` optimally (double, int, char). New sizeof?"}
+  answer={16}
+  tolerance={{"mode": "absolute", "value": 0}}
+  unit="bytes"
+  explanation="x@0, i@8, c@12, padded to 16 (a multiple of 8)."
+  devices={["phone", "desktop"]}
+/>
+
+## Why alignment
+
+Misaligned loads can be slower, split across cache lines, or fault on some ISAs. SIMD loads like `_mm256_load_ps` require 32-byte alignment.
+
+Sources: [cppreference: object alignment](https://en.cppreference.com/w/cpp/language/object#Alignment), [The Lost Art of Structure Packing (Eric S. Raymond)](http://www.catb.org/esr/structure-packing/)
+
+<MCQ
+  id="alignof-q"
+  prompt="alignof(std::max_align_t) on x86-64 Linux, which is also what malloc guarantees?"
+  options={["4", "8", "16", "64"]}
+  answer={2}
+  explanation="16 bytes on x86-64 glibc, so plain new/malloc memory isn't 32- or 64-byte aligned."
+  devices={["phone", "desktop"]}
+/>

@@ -1,0 +1,43 @@
+---
+id: cpp-systems/05-stl/03-views-span-and-string-view
+title: "span, string_view and Non-Owning Views"
+estMinutes: 7
+xp: 90
+missionIntro: "Pass contiguous data as std::span and text as std::string_view: one signature for arrays, vectors and buffers, with no copies."
+keyIdeas:
+  - "std::span<T> is a pointer plus a size (16 bytes with dynamic extent). It views any contiguous range."
+  - "std::string_view is the same idea for characters, 16 bytes on x86-64."
+  - "Both are cheap to pass by value and must never outlive the data they view."
+---
+
+## Mission briefing
+
+Stop photocopying the evidence every time someone wants to look at it. Hand them a window instead.
+
+**Mission:** write functions that accept any contiguous floats without templates or copies.
+
+## Sizes
+
+
+
+![A std::span as pointer+length windowing into part of a larger float buffer](/diagrams/cpp-systems/05-stl/03-views-span-and-string-view.png)
+
+<Trace
+  id="view-sizes"
+  prompt="x86-64 Linux, libstdc++."
+  code={"#include <cstdio>\n#include <span>\n#include <string>\n#include <string_view>\nint main() {\n    std::printf(\"%zu %zu %zu %zu\", sizeof(std::span<float>), sizeof(std::span<float, 4>),\n                sizeof(std::string_view), sizeof(std::string));\n}"}
+  steps={[{"line": 6, "note": "span: pointer + size; fixed-extent span: pointer only"}, {"line": 7, "note": "string_view: 16; std::string: 32 with small-string buffer"}]}
+  question="What does it print?"
+  answer="16 8 16 32"
+  explanation="A fixed-extent span stores only the pointer, because the size is in the type."
+  devices={["phone", "desktop"]}
+/>
+
+<MCQ
+  id="span-from"
+  prompt="Which can implicitly convert to `std::span<const float>`?"
+  options={["std::vector<float>", "float[8]", "std::array<float, 8>", "All of them"]}
+  answer={3}
+  explanation="Any contiguous range of float with a known size."
+  devices={["phone", "desktop"]}
+/>

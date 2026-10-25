@@ -1,0 +1,42 @@
+---
+id: cpp-systems/10-simd/03-reductions-and-accumulators
+title: "Reductions and Multiple Accumulators"
+estMinutes: 8
+xp: 100
+missionIntro: "One accumulator chains every add behind the previous one. Several accumulators let the CPU overlap them, often for a 4x or larger gain."
+keyIdeas:
+  - "FP add latency is ~4 cycles on modern x86, and throughput is ~2 per cycle. One chain uses a fraction of that."
+  - "K independent accumulators hide latency: you need about latency × throughput of them (4 × 2 = 8)."
+  - "This changes the rounding order. That's fine for ML, but document it."
+---
+
+## Mission briefing
+
+One lane on the speedway with every car waiting for the one in front. Open more lanes.
+
+**Mission:** break the dependency chain.
+
+## Latency maths
+
+
+
+![Single dependency chain of adds versus four interleaved accumulator chains overlapping in time](/diagrams/cpp-systems/10-simd/03-reductions-and-accumulators.png)
+
+<Predict
+  id="chain"
+  prompt="Summing 1,000,000 floats with one scalar accumulator, at FP add latency of 4 cycles. Minimum cycles?"
+  answer={4000000}
+  tolerance={{"mode": "relative", "value": 0.01}}
+  unit="cycles"
+  explanation="Each add waits for the previous one: 1e6 × 4."
+  devices={["phone", "desktop"]}
+/>
+
+<Predict
+  id="accs-needed"
+  prompt="Add latency 4 cycles, throughput 2 adds/cycle. How many independent accumulators saturate the adder?"
+  answer={8}
+  tolerance={{"mode": "absolute", "value": 0}}
+  explanation="Latency × throughput (Little's law)."
+  devices={["phone", "desktop"]}
+/>

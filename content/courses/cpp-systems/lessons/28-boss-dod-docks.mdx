@@ -1,0 +1,29 @@
+---
+id: cpp-systems/07-dod/04-boss-dod-docks
+title: "Boss: Data-Oriented Docks"
+estMinutes: 12
+xp: 220
+missionIntro: "AoS vs SoA, hot/cold and branches. Then write a data-oriented update loop."
+kind: boss
+keyIdeas:
+  - "Store fields the hot loop reads contiguously (SoA)."
+  - "Keep cold data out of hot cache lines."
+  - "Avoid unpredictable branches in hot loops."
+---
+
+## Mission briefing
+
+Data-Oriented Docks ships millions of crates a second. Your design either flows or jams.
+
+Six questions, then the getaway: the update loop.
+
+<Boss
+  id="docks-dod"
+  title="Data-Oriented Docks"
+  briefing="Six questions, three hearts, three minutes."
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "predict", "prompt": "AoS records are 48 bytes and the loop reads one 4-byte field. Fraction of streamed bytes that's useful, in %?", "answer": 8.33, "tolerance": {"mode": "absolute", "value": 0.2}, "unit": "%", "explanation": "4/48."}, {"type": "mcq", "prompt": "\"Where there is one, there are many\" argues for…", "options": ["Virtual functions per object", "Batch-oriented transforms over arrays", "Deep inheritance", "Linked lists"], "answer": 1, "explanation": "Acton's DOD principle."}, {"type": "predict", "prompt": "Hot struct 32 B. Records per 64-byte line?", "answer": 2, "tolerance": {"mode": "absolute", "value": 0}, "explanation": "64/32."}, {"type": "mcq", "prompt": "Branch mispredict cost on modern x86, roughly?", "options": ["1 cycle", "15–20 cycles", "1,000 cycles", "Free"], "answer": 1, "explanation": "Pipeline flush."}, {"type": "fill", "text": "SoA makes {{0}} loads trivial, while AoS needs {{1}} to collect one field.", "chips": ["SIMD", "gathers", "virtual", "heap"], "answers": ["SIMD", "gathers"], "explanation": "Contiguous fields."}, {"type": "mcq", "prompt": "First step before restructuring data?", "options": ["Rewrite in assembly", "Profile to confirm the loop is memory-bound", "Add threads", "Use std::list"], "answer": 1, "explanation": "Measure."}]}
+  explanation="Data-Oriented Docks is cleared. Crates are flowing."
+  devices={["phone", "desktop"]}
+/>

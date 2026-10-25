@@ -1,0 +1,42 @@
+---
+id: cpp-systems/07-dod/03-branches-and-predictability
+title: "Branch Prediction and Branchless Code"
+estMinutes: 8
+xp: 100
+missionIntro: "A mispredicted branch costs ~15–20 cycles. On random data, arithmetic beats if."
+keyIdeas:
+  - "Modern CPUs speculate past branches. A mispredict flushes the pipeline: roughly 15–20 cycles on recent x86 cores."
+  - "Sorted or patterned data predicts well, and random data doesn't (the famous \"why is sorted faster\" question)."
+  - "Branchless forms (ternary to cmov, masks, min/max) trade a little extra work for no mispredicts."
+---
+
+## Mission briefing
+
+At every junction the CPU guesses the turn and floors it. Guess wrong and it reverses back down the street.
+
+**Mission:** remove the junctions.
+
+## The cost
+
+
+
+![Pipeline timeline: correct prediction flows on, mispredict flushes ~15-20 cycles of work](/diagrams/cpp-systems/07-dod/03-branches-and-predictability.png)
+
+<Predict
+  id="mispredict"
+  prompt="A loop does 100M iterations over random data, the branch is mispredicted 50% of the time, and a mispredict costs 15 cycles at 3 GHz. Extra time in ms?"
+  answer={250}
+  tolerance={{"mode": "relative", "value": 0.03}}
+  unit="ms"
+  explanation="50M × 15 = 750M cycles / 3e9 = 0.25 s."
+  devices={["phone", "desktop"]}
+/>
+
+<MCQ
+  id="sorted"
+  prompt="Why does `if (data[i] >= 128) sum += data[i];` run much faster once data is sorted?"
+  options={["Sorting makes the data smaller", "The branch becomes a long run of not-taken then taken, which the predictor nails", "The compiler removes the branch", "Cache effects only"]}
+  answer={1}
+  explanation="The classic Stack Overflow answer. (At -O3 some compilers emit cmov and the gap vanishes.)"
+  devices={["phone", "desktop"]}
+/>

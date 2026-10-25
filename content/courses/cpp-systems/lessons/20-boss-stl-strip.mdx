@@ -1,0 +1,29 @@
+---
+id: cpp-systems/05-stl/04-boss-stl-strip
+title: "Boss: STL Strip"
+estMinutes: 12
+xp: 220
+missionIntro: "Containers, algorithms and views at speed. Then build a word-frequency counter."
+kind: boss
+keyIdeas:
+  - "vector by default, with reserve when you know the size."
+  - "Algorithms and ranges over raw loops."
+  - "span and string_view for non-owning parameters."
+---
+
+## Mission briefing
+
+The STL Strip manager runs a pop quiz on stock.
+
+Six questions, then the getaway: count the words in the police scanner chatter.
+
+<Boss
+  id="strip"
+  title="STL Strip"
+  briefing="Six questions, three hearts, three minutes."
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "predict", "prompt": "libstdc++ vector, empty, push_back 100 elements one by one. Number of reallocations?", "answer": 8, "tolerance": {"mode": "absolute", "value": 0}, "explanation": "Capacities 1, 2, 4, 8, 16, 32, 64, 128."}, {"type": "mcq", "prompt": "Which keeps element addresses stable across inserts?", "options": ["std::vector", "std::deque push_back", "std::unordered_map (node-based)", "std::string"], "answer": 2, "explanation": "Rehashing invalidates iterators, but not pointers or references to elements. Deque push_back invalidates iterators and keeps references, so the cleanest answer is the node-based map."}, {"type": "mcq", "prompt": "Fastest way to the k-th smallest element, with no full order needed?", "options": ["sort", "nth_element", "make_heap + k pops", "set"], "answer": 1, "explanation": "Average linear time."}, {"type": "predict", "prompt": "sizeof(std::span<float>) with dynamic extent on x86-64?", "answer": 16, "tolerance": {"mode": "absolute", "value": 0}, "unit": "bytes", "explanation": "Pointer + size."}, {"type": "fill", "text": "C++20 views are {{0}}: they compute elements only when {{1}}.", "chips": ["lazy", "eager", "iterated", "constructed"], "answers": ["lazy", "iterated"], "explanation": "Composable with no allocation."}, {"type": "mcq", "prompt": "Remove all zeros from a vector in C++20, idiomatically.", "options": ["for loop with erase", "std::erase(v, 0)", "std::remove(v.begin(), v.end(), 0) alone", "v.clear()"], "answer": 1, "explanation": "std::erase / std::erase_if wrap erase-remove."}]}
+  explanation="STL Strip is cleared. You know the stock."
+  devices={["phone", "desktop"]}
+/>

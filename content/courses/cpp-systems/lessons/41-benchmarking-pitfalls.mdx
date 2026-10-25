@@ -1,0 +1,53 @@
+---
+id: cpp-systems/11-perf/01-benchmarking-pitfalls
+title: "Benchmarking Without Lying"
+estMinutes: 8
+xp: 100
+missionIntro: "The optimiser deletes work whose results are unused, and noisy machines lie. Benchmark like a scientist."
+keyIdeas:
+  - "Dead-code elimination: if the result isn't used, the loop may vanish. Use benchmark::DoNotOptimize, or consume the result."
+  - "Warm up, repeat, and report the median or minimum with spread. Pin the CPU frequency or at least note it."
+  - "Microbenchmarks lie about caches: a 4 KB working set lives in L1, while production data might not."
+---
+
+## Mission briefing
+
+Perf Pier hosts the drag races. Half the racers are cheating, and they don't even know it.
+
+**Mission:** catch them.
+
+## Catch the cheat
+
+
+
+![Benchmark timeline showing warm-up, repeated samples and median versus a single noisy run](/diagrams/cpp-systems/11-perf/01-benchmarking-pitfalls.png)
+
+<MCQ
+  id="dce"
+  prompt="A benchmark of `for (i...) x = sqrt(i);` reports 0.3 ns per iteration at -O2, and x is never used. Most likely?"
+  options={["sqrt is that fast", "The compiler deleted the loop because x is unused", "The timer is broken", "Caching"]}
+  answer={1}
+  explanation="Carruth's CppCon 2015 talk demonstrates exactly this."
+  devices={["phone", "desktop"]}
+/>
+
+<Predict
+  id="timer-res"
+  prompt="Your timer resolution is ~20 ns and one call takes ~2 ns. Minimum iterations per timing sample to keep timer error under 1%?"
+  answer={1000}
+  tolerance={{"mode": "relative", "value": 0.01}}
+  explanation="Error 20 ns ≤ 1% of total → total ≥ 2000 ns → 1,000 iterations."
+  devices={["phone", "desktop"]}
+/>
+
+<Ordering
+  id="bench-steps"
+  prompt="Order a trustworthy benchmark."
+  items={["Fix the input size to match production", "Warm up (caches, page faults, frequency)", "Run many repetitions with DoNotOptimize on results", "Report median and spread, not one run", "Profile the winner to explain why it wins"]}
+  explanation="Explain, don't just measure."
+  devices={["phone", "desktop"]}
+/>
+
+## Sources
+
+Chandler Carruth, [Tuning C++: Benchmarks, and CPUs, and Compilers! Oh My! (CppCon 2015)](https://www.youtube.com/watch?v=nXaxk27zwlk), [Google Benchmark user guide](https://github.com/google/benchmark/blob/main/docs/user_guide.md), Andrei Alexandrescu, *Writing Fast Code*

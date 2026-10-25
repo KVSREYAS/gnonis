@@ -1,0 +1,54 @@
+---
+id: cpp-systems/08-ub/03-sanitizers
+title: "Sanitizers: ASan, UBSan, TSan"
+estMinutes: 7
+xp: 90
+missionIntro: "Compile with -fsanitize and the runtime catches UB, memory errors and races as they happen, with a stack trace."
+keyIdeas:
+  - "AddressSanitizer: out-of-bounds, use-after-free and leaks. Typical slowdown about 2x."
+  - "UBSan: signed overflow, misaligned access, bad shifts and more, at low cost. TSan: data races, typically 5–15x slower with 5–10x memory."
+  - "Run tests under ASan+UBSan in CI, and run concurrent code under TSan separately (TSan and ASan can't be combined)."
+---
+
+## Mission briefing
+
+The UB Underground hates witnesses. Sanitizers are witnesses: cameras on every corner that shout the moment someone misbehaves.
+
+**Mission:** install cameras before the heist, not after.
+
+## Which camera?
+
+
+
+![Three sanitizer cameras (ASan, UBSan, TSan) watching memory, arithmetic and threads, with slowdown factors](/diagrams/cpp-systems/08-ub/03-sanitizers.png)
+
+<MCQ
+  id="which-san"
+  prompt="Two threads increment a plain int without a lock. Which sanitizer reports it?"
+  options={["ASan", "UBSan", "TSan", "MSan"]}
+  answer={2}
+  explanation="Data races are TSan's job."
+  devices={["phone", "desktop"]}
+/>
+
+<Ordering
+  id="san-steps"
+  prompt="Order a sensible sanitizer workflow."
+  items={["Build tests with -fsanitize=address,undefined -g -O1", "Run the full test suite", "Fix reports from the top of the first stack trace", "Build a separate -fsanitize=thread job for concurrent tests", "Keep both jobs in CI so regressions fail fast"]}
+  explanation="ASan+UBSan together, TSan separately, both in CI."
+  devices={["phone", "desktop"]}
+/>
+
+<Predict
+  id="asan-slow"
+  prompt="A test suite takes 4 minutes normally. Using ASan's documented typical ~2x slowdown, how long under ASan?"
+  answer={8}
+  tolerance={{"mode": "relative", "value": 0.05}}
+  unit="min"
+  explanation="Roughly 2x. TSan would be 20–60 minutes."
+  devices={["phone", "desktop"]}
+/>
+
+## Docs
+
+Sources: [Clang AddressSanitizer](https://clang.llvm.org/docs/AddressSanitizer.html), [ThreadSanitizer](https://clang.llvm.org/docs/ThreadSanitizer.html), [UBSan](https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html). (Every reference solution in this course is tested under ASan+UBSan.)

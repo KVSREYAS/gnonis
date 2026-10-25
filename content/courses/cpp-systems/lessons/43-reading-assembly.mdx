@@ -1,0 +1,54 @@
+---
+id: cpp-systems/11-perf/03-reading-assembly
+title: "Reading the Assembly"
+estMinutes: 8
+xp: 100
+missionIntro: "Compiler Explorer shows what you actually shipped. Learn to spot vectorised loops, calls and spills in ten seconds."
+keyIdeas:
+  - "x86-64 SysV: args in rdi, rsi, rdx, rcx, r8, r9 (xmm0–7 for floats), return in rax/xmm0."
+  - "`ps` suffix means packed single (SIMD), and `ss` is scalar single. `vfmadd231ps ymm` is AVX2 FMA on 8 floats."
+  - "Telltales: `call` in a hot loop (not inlined), lots of loads and stores to rsp (spills), branches inside the inner loop."
+---
+
+## Mission briefing
+
+Under Perf Pier is the engine room. Real speed is written in assembly.
+
+**Mission:** read enough of it to call a bluff.
+
+## Spot the vector
+
+
+
+![Side-by-side C++ loop and its x86 assembly with packed instructions highlighted](/diagrams/cpp-systems/11-perf/03-reading-assembly.png)
+
+<MCQ
+  id="ps-ss"
+  prompt="An inner loop contains `vmulps ymm0, ymm1, [rdi+rax]`. This is…"
+  options={["Scalar double", "AVX packed single-precision, 8 floats", "SSE integer", "A function call"]}
+  answer={1}
+  explanation="v = VEX encoding, ps = packed single, ymm = 256-bit."
+  devices={["phone", "desktop"]}
+/>
+
+<MCQ
+  id="first-arg"
+  prompt="Under the SysV ABI, the first integer or pointer argument arrives in…"
+  options={["rax", "rdi", "rsp", "rcx"]}
+  answer={1}
+  explanation="Windows x64 uses rcx instead."
+  devices={["phone", "desktop"]}
+/>
+
+<Predict
+  id="unroll"
+  prompt="An AVX2 loop body processes 4 ymm registers of floats per iteration. Floats per iteration?"
+  answer={32}
+  tolerance={{"mode": "absolute", "value": 0}}
+  explanation="4 × 8."
+  devices={["phone", "desktop"]}
+/>
+
+## Sources
+
+[Compiler Explorer](https://godbolt.org), Matt Godbolt, [What Has My Compiler Done for Me Lately? (CppCon 2017)](https://www.youtube.com/watch?v=bSkpMdDe4g4), [System V AMD64 ABI](https://gitlab.com/x86-psABIs/x86-64-ABI)

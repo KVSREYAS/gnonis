@@ -1,0 +1,41 @@
+---
+id: cpp-systems/12-building-blocks/01-arena-allocator
+title: "Arena Allocators"
+estMinutes: 9
+xp: 110
+missionIntro: "Bump a pointer to allocate and reset to free everything. That's the fastest allocator there is, and it's how inference engines handle per-step scratch memory."
+keyIdeas:
+  - "An arena owns one big buffer. Allocation is align_up(offset) then bump, which is O(1) with no per-object free."
+  - "Reset frees everything at once, which suits per-request or per-step lifetimes."
+  - "std::pmr::monotonic_buffer_resource is the standard arena and plugs into std::pmr containers."
+---
+
+## Mission briefing
+
+Builders' Yard. Instead of buying bricks one at a time, buy a truckload and hand them out.
+
+**Mission:** build the bump allocator.
+
+## Bump maths
+
+
+
+![Arena buffer with a bump pointer advancing past aligned allocations, and reset snapping it back](/diagrams/cpp-systems/12-building-blocks/01-arena-allocator.png)
+
+<Predict
+  id="bump"
+  prompt="Arena at offset 13. Allocate 8 bytes with alignment 16. New offset after allocation?"
+  answer={24}
+  tolerance={{"mode": "absolute", "value": 0}}
+  explanation="align_up(13,16) = 16, plus 8 = 24."
+  devices={["phone", "desktop"]}
+/>
+
+<MCQ
+  id="pmr"
+  prompt="Which standard type is an arena?"
+  options={["std::allocator", "std::pmr::monotonic_buffer_resource", "std::pmr::synchronized_pool_resource", "std::shared_ptr"]}
+  answer={1}
+  explanation="Memory is released only when the resource is destroyed or release() is called."
+  devices={["phone", "desktop"]}
+/>

@@ -1,0 +1,41 @@
+---
+id: cpp-systems/03-ownership/03-weak-ptr-and-cycles
+title: "weak_ptr and Reference Cycles"
+estMinutes: 7
+xp: 90
+missionIntro: "Two shared_ptrs pointing at each other never die. weak_ptr breaks the cycle."
+keyIdeas:
+  - "A cycle of shared_ptrs keeps every member alive forever: the counts never reach zero."
+  - "weak_ptr observes without owning: it bumps the weak count, and lock() returns a shared_ptr or null."
+  - "Typical pattern: parents own children (shared_ptr or unique_ptr), and children point back with weak_ptr or a raw pointer."
+---
+
+## Mission briefing
+
+Two gang members each refuse to leave until the other does. Nobody ever leaves, and the safehouse leaks money forever.
+
+**Mission:** make one of them a guest, not an owner.
+
+## Spot the cycle
+
+
+
+![Two nodes holding shared_ptrs to each other (counts stuck at 1) versus a weak back-edge](/diagrams/cpp-systems/03-ownership/03-weak-ptr-and-cycles.png)
+
+<SpotBug
+  id="cycle-leak"
+  prompt="Which line creates a leak?"
+  code={"#include <memory>\nstruct Node {\n    std::shared_ptr<Node> next;\n    std::shared_ptr<Node> prev;\n};\nint main() {\n    auto a = std::make_shared<Node>();\n    auto b = std::make_shared<Node>();\n    a->next = b;\n    b->prev = a;\n}"}
+  bugLine={10}
+  explanation="After this line a and b own each other. When main's locals die, both counts drop to 1, never 0. Make prev a weak_ptr."
+  devices={["phone", "desktop"]}
+/>
+
+<MCQ
+  id="lock"
+  prompt="`std::weak_ptr<T> w` observes an object that has already been destroyed. What does `w.lock()` return?"
+  options={["A dangling shared_ptr", "An empty shared_ptr", "It throws", "UB"]}
+  answer={1}
+  explanation="lock() is the safe check-and-take. The shared_ptr(weak_ptr) constructor throws bad_weak_ptr instead."
+  devices={["phone", "desktop"]}
+/>

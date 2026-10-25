@@ -1,0 +1,43 @@
+---
+id: cpp-systems/05-stl/02-algorithms-and-ranges
+title: "Algorithms and Ranges"
+estMinutes: 8
+xp: 90
+missionIntro: "Raw loops hide intent. Algorithms and C++20 ranges say what you mean, and the compiler still inlines everything."
+keyIdeas:
+  - "Prefer algorithms to raw loops: std::sort, partition, nth_element, accumulate, transform (Sean Parent: \"no raw loops\")."
+  - "nth_element is O(n) on average and finds the k-th element. partial_sort gives sorted top-k."
+  - "C++20 ranges compose lazily: `v | views::filter(f) | views::transform(g)` allocates nothing."
+---
+
+## Mission briefing
+
+The STL Strip has 100+ algorithms on the shelf. Most programmers use three.
+
+**Mission:** shoplift a few more.
+
+## Pipelines
+
+
+
+![Lazy range pipeline: elements flow one at a time through filter, transform and take](/diagrams/cpp-systems/05-stl/02-algorithms-and-ranges.png)
+
+<Trace
+  id="ranges-pipe"
+  prompt="A lazy pipeline."
+  code={"#include <cstdio>\n#include <ranges>\n#include <vector>\nint main() {\n    std::vector<int> v{5, 2, 8, 1, 9, 4};\n    auto big_sq = v | std::views::filter([](int x) { return x > 3; })\n                    | std::views::transform([](int x) { return x * x; })\n                    | std::views::take(2);\n    for (int x : big_sq) std::printf(\"%d \", x);\n}"}
+  steps={[{"line": 6, "note": "keep 5, 8, 9, 4"}, {"line": 7, "note": "square: 25, 64, 81, 16"}, {"line": 8, "note": "take the first two"}]}
+  question="What does it print?"
+  answer="25 64"
+  explanation="Views are lazy. Nothing happens until the for loop pulls elements."
+  devices={["phone", "desktop"]}
+/>
+
+<MCQ
+  id="nth"
+  prompt="You need the median of 10 million floats, and order doesn't matter otherwise. Best tool?"
+  options={["std::sort then index", "std::nth_element", "std::partial_sort of the whole range", "std::set"]}
+  answer={1}
+  explanation="Average O(n) versus O(n log n)."
+  devices={["phone", "desktop"]}
+/>

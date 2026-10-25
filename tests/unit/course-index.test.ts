@@ -5,11 +5,12 @@ import { courseHref, courseIndexLinks } from "@/lib/content/navigation";
 describe("course index", () => {
   it("lists every course pack with a /courses link", () => {
     const courses = getCourses();
-    expect(courses.map((course) => course.slug)).toEqual(["llm-inference", "sample-bits-bytes"]);
+    expect(courses.map((course) => course.slug)).toEqual(["llm-inference", "sample-bits-bytes", "cpp-systems"]);
     const links = courseIndexLinks(courses);
     expect(links).toEqual([
       { slug: "llm-inference", href: "/courses/llm-inference" },
       { slug: "sample-bits-bytes", href: "/courses/sample-bits-bytes" },
+      { slug: "cpp-systems", href: "/courses/cpp-systems" },
     ]);
     expect(links.map((link) => link.href)).toEqual(courses.map((course) => courseHref(course.slug)));
     for (const course of courses) {

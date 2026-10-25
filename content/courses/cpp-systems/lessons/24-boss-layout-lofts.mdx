@@ -1,0 +1,29 @@
+---
+id: cpp-systems/06-layout/04-boss-layout-lofts
+title: "Boss: Layout Lofts"
+estMinutes: 12
+xp: 220
+missionIntro: "Padding, cache lines and alignment at speed. Then write the compiler's struct layout algorithm yourself."
+kind: boss
+keyIdeas:
+  - "Member order changes sizeof. Sort by descending alignment."
+  - "64-byte lines: sequential access gets 16 floats per miss."
+  - "Round to powers of two with masks."
+---
+
+## Mission briefing
+
+The Layout Lofts inspector measures every byte.
+
+Six questions, then the getaway: implement the layout rules the compiler uses.
+
+<Boss
+  id="lofts"
+  title="Layout Lofts"
+  briefing="Six questions, three hearts, three minutes. Mind the padding."
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "predict", "prompt": "sizeof(struct { char a; double b; char c; }) on x86-64?", "answer": 24, "tolerance": {"mode": "absolute", "value": 0}, "unit": "bytes", "explanation": "a@0, b@8, c@16, padded to 24."}, {"type": "predict", "prompt": "Floats per 64-byte cache line?", "answer": 16, "tolerance": {"mode": "absolute", "value": 0}, "explanation": "64 / 4."}, {"type": "predict", "prompt": "align_up(129, 64)?", "answer": 192, "tolerance": {"mode": "absolute", "value": 0}, "explanation": "Next multiple of 64."}, {"type": "mcq", "prompt": "Which ordering minimises padding?", "options": ["Alphabetical", "Ascending size", "Descending alignment", "Random"], "answer": 2, "explanation": "Big-aligned members first."}, {"type": "predict", "prompt": "DRAM latency ~100 ns at 3 GHz. Roughly how many cycles?", "answer": 300, "tolerance": {"mode": "relative", "value": 0.05}, "unit": "cycles", "explanation": "100e-9 × 3e9."}, {"type": "mcq", "prompt": "malloc's guaranteed alignment on x86-64 glibc?", "options": ["4", "8", "16", "64"], "answer": 2, "explanation": "alignof(max_align_t)."}]}
+  explanation="Layout Lofts is cleared. Not a single wasted byte."
+  devices={["phone", "desktop"]}
+/>

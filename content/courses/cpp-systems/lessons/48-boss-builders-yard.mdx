@@ -1,0 +1,29 @@
+---
+id: cpp-systems/12-building-blocks/04-boss-builders-yard
+title: "Boss: Builders' Yard"
+estMinutes: 14
+xp: 240
+missionIntro: "Arenas, rings and pools at speed. Then build an object pool with a free list."
+kind: boss
+keyIdeas:
+  - "Arenas bump and reset."
+  - "SPSC uses two indices with acquire and release."
+  - "Pools reuse threads, and futures carry results and exceptions."
+---
+
+## Mission briefing
+
+The Builders' Yard foreman inspects your tools.
+
+Six questions, then the getaway: a free-list pool.
+
+<Boss
+  id="yard"
+  title="Builders' Yard"
+  briefing="Six questions, three hearts, three minutes. Measure twice."
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "predict", "prompt": "Arena offset 5, alloc 4 bytes at align 8. New offset?", "answer": 12, "tolerance": {"mode": "absolute", "value": 0}, "explanation": "align_up(5,8)=8, plus 4."}, {"type": "predict", "prompt": "Ring capacity 16. Slot for counter 35?", "answer": 3, "tolerance": {"mode": "absolute", "value": 0}, "explanation": "35 & 15."}, {"type": "mcq", "prompt": "SPSC full condition with monotonic counters?", "options": ["head == tail", "head − tail == N", "tail > head", "head == 0"], "answer": 1, "explanation": "N in flight."}, {"type": "mcq", "prompt": "Task throws inside packaged_task. Caller sees…", "options": ["terminate", "the exception from future.get()", "nothing", "a null future"], "answer": 1, "explanation": "Stored in the shared state."}, {"type": "mcq", "prompt": "Standard arena resource?", "options": ["new_delete_resource", "monotonic_buffer_resource", "unsynchronized_pool_resource", "null_memory_resource"], "answer": 1, "explanation": "Monotonic = bump."}, {"type": "mcq", "prompt": "Why must a pool's jthreads be declared after its queue and mutex?", "options": ["Style", "Members are destroyed in reverse order, so the workers join before what they use is destroyed", "Faster", "ABI"], "answer": 1, "explanation": "Reverse declaration order."}]}
+  explanation="Builders' Yard is cleared. Solid work."
+  devices={["phone", "desktop"]}
+/>

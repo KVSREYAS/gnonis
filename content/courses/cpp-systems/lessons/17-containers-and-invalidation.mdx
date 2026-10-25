@@ -1,0 +1,56 @@
+---
+id: cpp-systems/05-stl/01-containers-and-invalidation
+title: "Containers, Growth and Invalidation"
+estMinutes: 8
+xp: 90
+missionIntro: "Pick containers by access pattern, reserve when you know the size, and never hold an iterator across a reallocation."
+keyIdeas:
+  - "std::vector is the default: contiguous, cache-friendly, amortised O(1) push_back (libstdc++ doubles capacity)."
+  - "Reallocation invalidates all iterators, pointers and references into the vector. reserve() avoids it."
+  - "Node-based containers (std::map, std::list, std::unordered_map nodes) keep element addresses stable but chase pointers."
+---
+
+## Mission briefing
+
+STL Strip sells containers. The salesman always pushes the vector, and he's usually right.
+
+**Mission:** learn when his warranty is void.
+
+## Growth
+
+
+
+![Vector capacity doubling 1→2→4→8 with old buffers freed; an iterator left pointing at the freed block](/diagrams/cpp-systems/05-stl/01-containers-and-invalidation.png)
+
+<Trace
+  id="realloc-count"
+  prompt="Count reallocations while pushing 1,000 ints (libstdc++)."
+  code={"#include <cstdio>\n#include <vector>\nint main() {\n    std::vector<int> v;\n    std::size_t cap = v.capacity();\n    int reallocs = 0;\n    for (int i = 0; i < 1000; ++i) {\n        v.push_back(i);\n        if (v.capacity() != cap) { ++reallocs; cap = v.capacity(); }\n    }\n    std::printf(\"%d %zu\", reallocs, v.capacity());\n}"}
+  steps={[{"line": 5, "note": "capacity starts at 0"}, {"line": 9, "note": "capacities go 1, 2, 4, …, 1024"}, {"line": 11, "note": "11 growths, final capacity 1024"}]}
+  question="What does it print?"
+  answer="11 1024"
+  explanation="Geometric growth gives amortised O(1). MSVC uses 1.5x, so its numbers differ. `v.reserve(1000)` makes it 1 allocation."
+  devices={["phone", "desktop"]}
+/>
+
+<SpotBug
+  id="iter-invalid"
+  prompt="Which line is undefined behaviour?"
+  code={"#include <vector>\nint main() {\n    std::vector<int> v{1, 2, 3};\n    int& first = v[0];\n    v.push_back(4);\n    first = 10;\n}"}
+  bugLine={6}
+  explanation="push_back may reallocate (capacity 3 → 6 here), so `first` refers to freed memory."
+  devices={["phone", "desktop"]}
+/>
+
+## Choosing
+
+Sources: [cppreference: containers library, iterator invalidation](https://en.cppreference.com/w/cpp/container), Bjarne Stroustrup, [Why you should avoid linked lists (GoingNative 2012)](https://www.youtube.com/watch?v=YQs6IC-vgmo)
+
+<MCQ
+  id="list-vs-vector"
+  prompt="Insert 100k random ints into sorted position, searching linearly. In practice, which is fastest on modern CPUs?"
+  options={["std::list, because insertion is O(1)", "std::vector, because the linear search dominates and is cache-friendly", "std::deque", "All equal"]}
+  answer={1}
+  explanation="Stroustrup's demo: finding the position is O(n) for both, and pointer-chasing a list misses cache constantly. Vector wins by a wide margin."
+  devices={["phone", "desktop"]}
+/>

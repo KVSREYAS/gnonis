@@ -1,0 +1,29 @@
+---
+id: cpp-systems/09-concurrency/04-boss-concurrency-casino
+title: "Boss: Concurrency Casino"
+estMinutes: 14
+xp: 240
+missionIntro: "Threads, atomics and cache lines at speed. Then build a thread-safe bounded queue."
+kind: boss
+keyIdeas:
+  - "jthread joins itself."
+  - "Release/acquire publishes data, and relaxed only counts."
+  - "Pad per-thread hot data to 64 bytes."
+---
+
+## Mission briefing
+
+The Casino's pit boss deals fast and deals in parallel.
+
+Six questions, then the getaway: a blocking queue for the crew.
+
+<Boss
+  id="casino"
+  title="Concurrency Casino"
+  briefing="Six questions, three hearts, three minutes. The house always joins."
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "mcq", "prompt": "Destroying a joinable std::thread…", "options": ["joins", "detaches", "calls std::terminate", "is fine"], "answer": 2, "explanation": "Hence jthread."}, {"type": "mcq", "prompt": "Ordering for a flag that publishes a buffer?", "options": ["relaxed store, relaxed load", "release store, acquire load", "consume", "none"], "answer": 1, "explanation": "Message passing."}, {"type": "mcq", "prompt": "Data race on a plain int is…", "options": ["Lost updates only", "Undefined behaviour", "Implementation-defined", "Fine on x86"], "answer": 1, "explanation": "UB."}, {"type": "predict", "prompt": "Cache line size on x86-64, in bytes?", "answer": 64, "tolerance": {"mode": "absolute", "value": 0}, "explanation": "Also the usual value of hardware_destructive_interference_size."}, {"type": "mcq", "prompt": "Lock two mutexes without deadlock risk?", "options": ["Lock them in any order", "std::scoped_lock lk(m1, m2)", "Use a spinlock", "Lock one then try_lock forever"], "answer": 1, "explanation": "scoped_lock uses a deadlock-avoidance algorithm."}, {"type": "mcq", "prompt": "Adding threads makes a counter loop slower. Prime suspect?", "options": ["Too few threads", "False sharing", "Stack overflow", "Exceptions"], "answer": 1, "explanation": "Line ping-pong."}]}
+  explanation="Concurrency Casino is cleared. The house pays out."
+  devices={["phone", "desktop"]}
+/>

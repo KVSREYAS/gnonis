@@ -1,0 +1,47 @@
+---
+id: cpp-systems/04-templates/01-templates-and-deduction
+title: "Templates and Type Deduction"
+estMinutes: 7
+xp: 90
+missionIntro: "Function templates deduce T from the arguments. Know the three deduction cases and CTAD."
+keyIdeas:
+  - "For `T` by value, deduction drops references and top-level const. For `T&` it keeps const. For `T&&` it's forwarding."
+  - "auto uses the same rules as template deduction (except for braced initialisers)."
+  - "Class template argument deduction (C++17) deduces class templates from constructors: `std::vector v{1, 2, 3};`."
+---
+
+## Mission briefing
+
+Template Town builds anything to order, but the foreman guesses your measurements from what you hand him.
+
+**Mission:** know exactly what he'll guess.
+
+## Deduction cases
+
+`const int ci = 1;` then `f(ci)`:
+
+- `template<class T> void f(T)` gives T = int (const dropped: it's a copy)
+- `template<class T> void f(T&)` gives T = const int
+- `template<class T> void f(T&&)` gives T = const int&
+
+![Deduction table: argument const int& through by-value, by-reference and forwarding parameters](/diagrams/cpp-systems/04-templates/01-templates-and-deduction.png)
+
+<MCQ
+  id="deduce-value"
+  prompt="`template<class T> void f(T x);` called with `const int& r = 5; f(r);`. T is…"
+  options={["const int&", "const int", "int", "int&"]}
+  answer={2}
+  explanation="By-value deduction strips the reference, then top-level const."
+  devices={["phone", "desktop"]}
+/>
+
+<Trace
+  id="ctad"
+  prompt="CTAD and auto at work."
+  code={"#include <cstdio>\n#include <vector>\n#include <type_traits>\nint main() {\n    std::vector v{1, 2, 3};\n    auto x = v[0];\n    auto& y = v[0];\n    y = 7;\n    std::printf(\"%d %d %zu %d\", x, v[0], v.size(), (int)std::is_same_v<decltype(v), std::vector<int>>);\n}"}
+  steps={[{"line": 5, "note": "CTAD deduces std::vector<int>"}, {"line": 6, "note": "auto copies: x = 1"}, {"line": 7, "note": "auto& binds to the element"}, {"line": 8, "note": "v[0] becomes 7"}]}
+  question="What does it print?"
+  answer="1 7 3 1"
+  explanation="auto drops references unless you ask for them with auto&."
+  devices={["phone", "desktop"]}
+/>

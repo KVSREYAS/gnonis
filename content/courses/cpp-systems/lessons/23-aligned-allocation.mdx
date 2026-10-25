@@ -1,0 +1,41 @@
+---
+id: cpp-systems/06-layout/03-aligned-allocation
+title: "Aligned Allocation"
+estMinutes: 7
+xp: 90
+missionIntro: "malloc gives you 16-byte alignment. SIMD wants 32 or 64. Here's how to get it, and how to round pointers yourself."
+keyIdeas:
+  - "`new` respects alignas on types since C++17 (it calls operator new with std::align_val_t)."
+  - "std::aligned_alloc(align, size) needs size to be a multiple of align. Free it with std::free."
+  - "Round up to a power-of-two alignment with `(x + a - 1) & ~(a - 1)`."
+---
+
+## Mission briefing
+
+The vault only opens if you park exactly on the line. Being off by 4 bytes means no heist.
+
+**Mission:** park on 64-byte boundaries every time.
+
+## The bit trick
+
+For a power-of-two `a`, `a - 1` is a mask of the low bits. Adding `a - 1` and clearing those bits rounds up.
+
+![Address line with 64-byte boundaries; 1000 rounded up to 1024 with the bit mask](/diagrams/cpp-systems/06-layout/03-aligned-allocation.png)
+
+<Predict
+  id="align-up"
+  prompt="Round address 1000 up to a multiple of 64."
+  answer={1024}
+  tolerance={{"mode": "absolute", "value": 0}}
+  explanation="(1000 + 63) & ~63 = 1063 & ~63 = 1024."
+  devices={["phone", "desktop"]}
+/>
+
+<CodeBlanks
+  id="aligned-new"
+  prompt="Allocate 1,024 floats on a 64-byte boundary with C++17 aligned new."
+  code={"struct alignas({{0}}) Block { float v[16]; };\nBlock* p = new Block[64];\n// sizeof(Block) == {{1}}"}
+  blanks={[{"answer": "64", "pattern": "^64$"}, {"answer": "64", "pattern": "^64$"}]}
+  explanation="16 floats = 64 bytes, and alignas(64) keeps it at 64."
+  devices={["phone", "desktop"]}
+/>

@@ -1,0 +1,43 @@
+---
+id: cpp-systems/10-simd/02-intrinsics-sse
+title: "SSE Intrinsics"
+estMinutes: 9
+xp: 110
+missionIntro: "When the compiler won't, you can: _mm_loadu_ps, _mm_mul_ps, _mm_add_ps, four floats at a time."
+keyIdeas:
+  - "`<immintrin.h>` intrinsics map ~1:1 to instructions. __m128 holds 4 floats."
+  - "loadu tolerates any alignment. load needs 16-byte alignment and faults otherwise."
+  - "Handle the tail: process n/4 vector iterations, then n%4 scalar ones."
+---
+
+## Mission briefing
+
+You've earned your SIMD licence. Time to drive manual.
+
+**Mission:** a 4-lane dot product, tail and all.
+
+## Lanes in action
+
+
+
+![Four SSE lanes multiplying and accumulating, then a horizontal sum and scalar tail](/diagrams/cpp-systems/10-simd/02-intrinsics-sse.png)
+
+<Trace
+  id="sse-trace"
+  prompt="SSE2, x86-64."
+  code={"#include <cstdio>\n#include <immintrin.h>\nint main() {\n    float a[4] = {1, 2, 3, 4}, b[4] = {10, 20, 30, 40}, out[4];\n    __m128 va = _mm_loadu_ps(a);\n    __m128 vb = _mm_loadu_ps(b);\n    _mm_storeu_ps(out, _mm_add_ps(_mm_mul_ps(va, vb), va));\n    std::printf(\"%g %g %g %g\", out[0], out[1], out[2], out[3]);\n}"}
+  steps={[{"line": 5, "note": "four floats in one register"}, {"line": 7, "note": "lane-wise a*b + a"}]}
+  question="What does it print?"
+  answer="11 42 93 164"
+  explanation="Each lane computes independently: 1·10+1, 2·20+2, …"
+  devices={["phone", "desktop"]}
+/>
+
+<Predict
+  id="tail"
+  prompt="n = 1003 floats with 4-wide SSE. How many scalar tail iterations?"
+  answer={3}
+  tolerance={{"mode": "absolute", "value": 0}}
+  explanation="1003 % 4."
+  devices={["phone", "desktop"]}
+/>

@@ -1,0 +1,41 @@
+---
+id: cpp-systems/12-building-blocks/02-spsc-ring-buffer
+title: "Lock-Free SPSC Ring Buffer"
+estMinutes: 10
+xp: 120
+missionIntro: "One producer, one consumer, two atomic indices and no locks. The workhorse of audio, networking and token streaming."
+keyIdeas:
+  - "A power-of-two capacity lets you wrap indices with `& (N - 1)` instead of %."
+  - "The producer owns head and the consumer owns tail. Each reads the other's index with acquire and publishes its own with release."
+  - "Put head and tail on separate cache lines to avoid false sharing."
+---
+
+## Mission briefing
+
+A conveyor belt between two workers. No foreman (lock) needed, as long as each touches only their own end.
+
+**Mission:** build the belt.
+
+## Index maths
+
+
+
+![Ring of 8 slots with head and tail indices on separate cache lines, producer and consumer at each end](/diagrams/cpp-systems/12-building-blocks/02-spsc-ring-buffer.png)
+
+<Predict
+  id="ring-wrap"
+  prompt="Capacity 8. Index 13 maps to slot?"
+  answer={5}
+  tolerance={{"mode": "absolute", "value": 0}}
+  explanation="13 & 7 = 5."
+  devices={["phone", "desktop"]}
+/>
+
+<MCQ
+  id="ring-full"
+  prompt="With monotonically increasing head and tail counters, the buffer is full when…"
+  options={["head == tail", "head - tail == N", "tail - head == N", "head & (N-1) == 0"]}
+  answer={1}
+  explanation="Empty is head == tail, full is head − tail == N."
+  devices={["phone", "desktop"]}
+/>

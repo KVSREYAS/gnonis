@@ -1,0 +1,62 @@
+---
+id: cpp-systems/10-simd/01-auto-vectorization
+title: "Auto-Vectorisation"
+estMinutes: 8
+xp: 100
+missionIntro: "Write simple, aliasing-free loops over contiguous data and the compiler emits SIMD for you. Then check that it did."
+keyIdeas:
+  - "SSE2 is baseline on x86-64 (128-bit, 4 floats). AVX2 is 256-bit (8 floats) and needs -mavx2 or -march."
+  - "Vectorisation blockers: possible aliasing, non-contiguous access, loop-carried dependencies, function calls, and FP reductions without -ffast-math or -fassociative-math."
+  - "Check with -fopt-info-vec (GCC), -Rpass=loop-vectorize (Clang) or Compiler Explorer."
+---
+
+## Mission briefing
+
+SIMD Speedway: one instruction, many lanes. The compiler will happily drive, as long as the road is straight.
+
+**Mission:** build straight roads.
+
+## Lanes
+
+
+
+![Scalar loop processing one float per instruction versus SSE processing 4 lanes at once](/diagrams/cpp-systems/10-simd/01-auto-vectorization.png)
+
+<Predict
+  id="lanes-avx512"
+  prompt="How many float32 lanes in a 512-bit AVX-512 register?"
+  answer={16}
+  tolerance={{"mode": "absolute", "value": 0}}
+  explanation="512 / 32."
+  devices={["phone", "desktop"]}
+/>
+
+<MCQ
+  id="blocker"
+  prompt={"Why might GCC refuse to vectorise `void add(float* a, float* b, int n) { for (...) a[i] += b[i]; }`?"}
+  options={["float can't be vectorised", "a and b might overlap, so it needs a runtime check or __restrict", "n is an int", "It always vectorises"]}
+  answer={1}
+  explanation="GCC often adds a runtime overlap check (versioning). __restrict removes the doubt."
+  devices={["phone", "desktop"]}
+/>
+
+<MCQ
+  id="fp-reduce"
+  prompt="Why doesn't `float s = 0; for (...) s += a[i];` vectorise at plain -O2/-O3?"
+  options={["Floats are too small", "Vectorising reorders the additions, and FP addition isn't associative, so results could change", "Reductions are impossible", "Missing #include"]}
+  answer={1}
+  explanation="Allow it with -ffast-math/-fassociative-math, or split accumulators by hand (next lesson)."
+  devices={["phone", "desktop"]}
+/>
+
+## Reading
+
+Sources: [GCC auto-vectorization](https://gcc.gnu.org/projects/tree-ssa/vectorization.html), Matt Godbolt, [Compiler Explorer](https://godbolt.org), [Intel Intrinsics Guide](https://www.intel.com/content/www/us/en/docs/intrinsics-guide/)
+
+<Ordering
+  id="vec-workflow"
+  prompt="Order a vectorisation workflow."
+  items={["Write the loop over contiguous arrays with no aliasing", "Compile with -O3 -fopt-info-vec-missed", "Read why it was missed (aliasing, dependency, call)", "Fix the cause (__restrict, SoA, split accumulators)", "Confirm in Godbolt that packed instructions (mulps/vfmadd…ps) appear"]}
+  explanation="Measure after, of course."
+  devices={["phone", "desktop"]}
+/>

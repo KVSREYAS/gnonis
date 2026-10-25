@@ -1,0 +1,43 @@
+---
+id: cpp-systems/13-capstone/03-softmax-and-sampling
+title: "Stable Softmax and Greedy Decode"
+estMinutes: 9
+xp: 110
+missionIntro: "Turn logits into probabilities without overflowing, then pick the next token. This is the last step of every inference loop."
+keyIdeas:
+  - "Subtract the max before exp: softmax(x) = exp(x − m) / Σ exp(x − m). It's mathematically identical and can't overflow."
+  - "exp(89) already overflows float32 (max ≈ 3.4e38, ln ≈ 88.7)."
+  - "Greedy decoding is argmax. Temperature divides logits by T before softmax."
+---
+
+## Mission briefing
+
+The vault's last lock is probability. Get the numbers wrong and you get NaN, and alarms everywhere.
+
+**Mission:** a softmax that never overflows.
+
+## Overflow
+
+
+
+![Logits bar chart shifted down by the max, exponentiated and normalised into probabilities](/diagrams/cpp-systems/13-capstone/03-softmax-and-sampling.png)
+
+<Trace
+  id="softmax-ovf"
+  prompt="Naive versus stable."
+  code={"#include <cmath>\n#include <cstdio>\nint main() {\n    float x[3] = {1000.f, 1001.f, 1002.f};\n    float naive = std::exp(x[2]) / (std::exp(x[0]) + std::exp(x[1]) + std::exp(x[2]));\n    float m = x[2];\n    float stable = std::exp(x[2] - m) / (std::exp(x[0] - m) + std::exp(x[1] - m) + 1.f);\n    std::printf(\"%s %.3f\", std::isnan(naive) ? \"nan\" : \"ok\", stable);\n}"}
+  steps={[{"line": 5, "note": "exp(1000) = inf, and inf/inf = NaN"}, {"line": 6, "note": "subtract the max"}, {"line": 7, "note": "exp(-2), exp(-1), exp(0): finite"}]}
+  question="What does it print?"
+  answer="nan 0.665"
+  explanation="The stable version gives 1 / (e⁻² + e⁻¹ + 1) ≈ 0.665."
+  devices={["phone", "desktop"]}
+/>
+
+<Predict
+  id="exp-limit"
+  prompt="Largest integer x with exp(x) finite in float32?"
+  answer={88}
+  tolerance={{"mode": "absolute", "value": 0}}
+  explanation="ln(3.4e38) ≈ 88.72."
+  devices={["phone", "desktop"]}
+/>

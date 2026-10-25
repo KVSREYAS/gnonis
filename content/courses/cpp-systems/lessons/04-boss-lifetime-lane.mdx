@@ -1,0 +1,29 @@
+---
+id: cpp-systems/01-lifetime/04-boss-lifetime-lane
+title: "Boss: Lifetime Lane"
+estMinutes: 10
+xp: 200
+missionIntro: "RAII, the rule of 0/3/5 and dangling views, against the clock. Then build a move-only handle."
+kind: boss
+keyIdeas:
+  - "RAII ties cleanup to scope exit, on every path."
+  - "Prefer the rule of zero, and write all five only in resource classes."
+  - "Never let a view outlive its owner."
+---
+
+## Mission briefing
+
+The Lifetime Lane gang tests everyone who wants to move up. Six questions, three hearts.
+
+Then the getaway: write a move-only handle that closes its resource exactly once.
+
+<Boss
+  id="lane"
+  title="Lifetime Lane"
+  briefing="Six questions, three hearts, three minutes. Destructors never sleep."
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "mcq", "prompt": "Locals `a`, `b`, `c` are constructed in that order. Destruction order at scope exit?", "options": ["a b c", "c b a", "b a c", "Unspecified"], "answer": 1, "explanation": "Reverse order of construction."}, {"type": "mcq", "prompt": "Which declaration suppresses the implicit move constructor?", "options": ["A user-declared destructor", "A defaulted default constructor", "A static member", "A virtual function"], "answer": 0, "explanation": "So do a user-declared copy constructor and copy assignment."}, {"type": "predict", "prompt": "Rule of five: how many special member functions are in the set (excluding the default constructor)?", "answer": 5, "tolerance": {"mode": "absolute", "value": 0}, "explanation": "Destructor, copy ctor, copy assign, move ctor, move assign."}, {"type": "mcq", "prompt": "`std::string_view v = std::string(\"abc\") + \"d\";` What is v after the semicolon?", "options": ["\"abcd\"", "Dangling", "Empty", "A copy"], "answer": 1, "explanation": "The temporary string dies at the end of the full expression."}, {"type": "fill", "text": "Classes that only hold RAII members should follow the rule of {{0}}. The one class that owns a raw resource writes all {{1}}.", "chips": ["zero", "three", "five", "one"], "answers": ["zero", "five"], "explanation": "Core Guidelines C.20 and C.21."}, {"type": "mcq", "prompt": "Which is NOT RAII?", "options": ["std::lock_guard", "std::unique_ptr", "Calling fclose() at the end of main", "std::jthread joining in its destructor"], "answer": 2, "explanation": "A manual call is skipped by early returns and exceptions."}]}
+  explanation="Lifetime Lane is cleared. Your resources clean up after themselves."
+  devices={["phone", "desktop"]}
+/>
