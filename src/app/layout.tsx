@@ -12,9 +12,24 @@ const anton = Anton({ variable: "--font-anton", weight: "400", subsets: ["latin"
 const body = Atkinson_Hyperlegible({ variable: "--font-body", weight: ["400", "700"], subsets: ["latin"], display: "swap" });
 const code = JetBrains_Mono({ variable: "--font-code", subsets: ["latin"], display: "swap" });
 
+const description =
+  "Learn anything, one mission at a time. Short cards, instant feedback, and a boss at the end of every district.";
+
 export const metadata: Metadata = {
   title: { default: "Gnosis", template: "%s · Gnosis" },
-  description: "Learn LLM inference by doing: tokens, attention, KV caches, rooflines and the systems that serve models.",
+  description,
+  applicationName: "Gnosis",
+  openGraph: {
+    title: "Gnosis",
+    description,
+    siteName: "Gnosis",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "Gnosis",
+    description,
+  },
 };
 
 export const viewport: Viewport = {

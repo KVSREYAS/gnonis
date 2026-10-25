@@ -4,9 +4,9 @@ import { getCourses } from "@/lib/content/loader";
 import { summarizeCourse } from "@/lib/content/types";
 
 const TIPS = [
-  "Decode at batch size 1 is a race against memory bandwidth, not FLOPs.",
-  "The KV cache, not the weights, usually decides how many users fit on a GPU.",
   "Every lesson card is about two minutes. Every district ends with a boss.",
+  "XP is cash. A streak fills your wanted stars.",
+  "A desktop mission skipped on a phone stays marked on the map.",
 ];
 
 export default function Home() {
@@ -19,11 +19,11 @@ export default function Home() {
         <div className="mx-auto max-w-6xl px-4 pt-16 pb-10 sm:px-6 sm:pt-28 sm:pb-14">
           <div className="max-w-2xl rounded-xl bg-ink/90 p-5 sm:p-7">
             <p className="text-sm font-bold tracking-widest text-gold-ink uppercase">Gnosis</p>
-            <h1 className="mt-1 font-display text-5xl leading-[0.95] tracking-wide text-foreground sm:text-7xl">
-              LEARN HOW MODELS <span className="text-gold-ink">ACTUALLY RUN</span>
+            <h1 className="mt-1 font-display text-5xl leading-[0.95] tracking-wide text-balance text-foreground sm:text-7xl">
+              LEARN ANYTHING, <span className="text-gold-ink">ONE MISSION</span> AT A TIME
             </h1>
-            <p className="mt-4 max-w-[60ch] text-lg text-foreground">
-              Short cards, instant feedback, real numbers. Go from tokens and attention to KV caches and rooflines, one mission at a time.
+            <p className="mt-4 max-w-[60ch] text-lg text-balance text-foreground">
+              Short cards, instant feedback, real stakes. Any subject. Clear the district, then face the boss.
             </p>
           </div>
         </div>

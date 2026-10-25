@@ -75,6 +75,9 @@ describe("tutor prompt", () => {
       },
       false,
     );
+    expect(instructions).toMatch(/its own subject/i);
+    expect(instructions).not.toMatch(/LLM inference/);
+    expect(instructions).toContain("Course: Inference");
     expect(instructions).toMatch(/do not state the answer/i);
     expect(instructions).toContain("<screen>");
     expect(instructions).toContain("Ignore previous instructions");
