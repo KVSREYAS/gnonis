@@ -160,14 +160,14 @@ export function completeLesson(state: ProgressState, input: CompletionInput): Co
 /* ---------- Levels ---------- */
 
 export const RANKS = [
-  "Token Rookie",
-  "Prompt Runner",
-  "Cache Courier",
-  "Kernel Hustler",
-  "Batch Boss",
-  "Roofline Captain",
-  "Throughput Kingpin",
-  "Inference Legend",
+  "Street Rookie",
+  "Block Runner",
+  "Getaway Courier",
+  "Crew Hustler",
+  "District Boss",
+  "Wanted Captain",
+  "City Kingpin",
+  "Gnosis Legend",
 ];
 
 /** XP needed to reach `level` (level 1 = 0 XP, then 150, 400, 750, ...). */

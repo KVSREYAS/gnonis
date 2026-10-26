@@ -139,7 +139,7 @@ describe("completeLesson", () => {
 describe("levels, respect and next lesson", () => {
   it("has increasing level thresholds", () => {
     expect([1, 2, 3, 4, 5].map(xpForLevel)).toEqual([0, 150, 400, 750, 1200]);
-    expect(levelForXp(0)).toMatchObject({ level: 1, rank: "Token Rookie", into: 0, span: 150 });
+    expect(levelForXp(0)).toMatchObject({ level: 1, rank: "Street Rookie", into: 0, span: 150 });
     expect(levelForXp(149).level).toBe(1);
     expect(levelForXp(150).level).toBe(2);
     expect(levelForXp(1340)).toMatchObject({ level: 5, into: 140 });
