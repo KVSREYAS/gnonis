@@ -22,6 +22,11 @@ lessons:
 - shared-ptr-control-block
 - weak-ptr-and-cycles
 - boss-pointer-projects
+- classes-and-access
+- constructors-and-destructors
+- static-operators-and-friends
+- inheritance-and-polymorphism
+- boss-class-act-garage
 - templates-and-deduction
 - concepts-and-constraints
 - constexpr-and-compile-time
@@ -102,6 +107,19 @@ districts:
   - shared-ptr-control-block
   - weak-ptr-and-cycles
   - boss-pointer-projects
+- id: oop
+  title: Object-oriented programming
+  district: Class Act Garage
+  summary: Classes and access, constructors and destructors, static members, operators and friends, then inheritance and virtual functions.
+  tip: 'TIP: Data private, methods public, destructors virtual in base classes.'
+  art: docks
+  status: ready
+  lessons:
+  - classes-and-access
+  - constructors-and-destructors
+  - static-operators-and-friends
+  - inheritance-and-polymorphism
+  - boss-class-act-garage
 - id: 04-templates
   title: Templates and compile time
   district: Template Town

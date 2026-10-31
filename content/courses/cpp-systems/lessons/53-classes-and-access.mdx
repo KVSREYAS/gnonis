@@ -1,0 +1,69 @@
+---
+id: cpp-systems/oop/01-classes-and-access
+title: "Classes, Structs and Access"
+estMinutes: 7
+xp: 80
+missionIntro: "A class bundles data with the functions that use it. public, private and protected decide who gets through the door."
+keyIdeas:
+  - "`struct` and `class` are the same thing, except the default access: struct is public, class is private."
+  - "Member functions (methods) see the object's members directly."
+  - "public is for everyone, private is for the class only, and protected also lets derived classes in."
+---
+
+## Mission briefing
+
+Welcome to Class Act Garage, where every car comes with a locked glovebox.
+
+**Mission:** learn who's allowed to open it.
+
+## struct vs class
+
+Only one difference matters: the default access level. Convention: use `struct` for plain bundles of data and `class` when there's something to protect.
+
+![A class box with a public door for methods and a locked private room for data](/diagrams/cpp-systems/oop/01-classes-and-access.png)
+
+<MCQ
+  id="default-access"
+  prompt={"In `class Car { int fuel; };`, what access does `fuel` have?"}
+  options={["public", "private", "protected", "None"]}
+  answer={1}
+  explanation="class defaults to private, struct to public."
+  devices={["phone", "desktop"]}
+/>
+
+<Trace
+  id="methods"
+  prompt="Members and a method."
+  code={"#include <cstdio>\nstruct Car {\n    int fuel = 10;\n    void drive(int km) { fuel -= km / 2; }\n};\nint main() {\n    Car a, b;\n    a.drive(6);\n    b.drive(2);\n    a.drive(4);\n    std::printf(\"%d %d\", a.fuel, b.fuel);\n}"}
+  steps={[{"line": 8, "note": "each Car has its own fuel"}, {"line": 9, "note": "a: 10 - 3 = 7"}, {"line": 10, "note": "b: 10 - 1 = 9"}, {"line": 11, "note": "a: 7 - 2 = 5"}]}
+  question="What does it print?"
+  answer="5 9"
+  explanation="Every object gets its own copy of the data members, and methods act on the object they're called on."
+  devices={["phone", "desktop"]}
+/>
+
+## Access in action
+
+Private members are a compile-time lock, not a runtime one. The compiler refuses code outside the class that touches them.
+
+<SpotBug
+  id="private-access"
+  prompt="Which line won't compile?"
+  code={"class Safe {\n    int code = 1234;\npublic:\n    bool open(int guess) const { return guess == code; }\n};\nint main() {\n    Safe s;\n    bool ok = s.open(1111);\n    int c = s.code;\n}"}
+  bugLine={9}
+  explanation="`code` is private. Only Safe's own member functions (and friends) can read it."
+  devices={["phone", "desktop"]}
+/>
+
+<Code
+  id="counter-class"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `class Counter` with a private `int count_` starting at 0, and public methods `void click()` (adds 1), `void reset()` (back to 0) and `int value() const`."
+  starter={"class Counter {\npublic:\n    void click() {}\n    void reset() {}\n    int value() const { return 0; }\n};\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    Counter c; c.click(); c.click();\n    CHECK(c.value() == 2);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\nint main() {\n    Counter c; CHECK(c.value() == 0);\n    for (int i = 0; i < 5; ++i) c.click();\n    CHECK(c.value() == 5);\n    c.reset(); CHECK(c.value() == 0);\n    Counter d; d.click(); CHECK(d.value() == 1 && c.value() == 0);\n    return 0;\n}\n"}
+  solution={"class Counter {\n    int count_ = 0;\npublic:\n    void click() { ++count_; }\n    void reset() { count_ = 0; }\n    int value() const { return count_; }\n};\n"}
+  hints={["Give count_ a default member initialiser: `int count_ = 0;`."]}
+  explanation="Private data with public methods is the basic shape of nearly every class."
+/>

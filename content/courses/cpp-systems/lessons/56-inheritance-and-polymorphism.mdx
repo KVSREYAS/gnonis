@@ -1,0 +1,69 @@
+---
+id: cpp-systems/oop/04-inheritance-and-polymorphism
+title: "Inheritance, Virtual Functions and Polymorphism"
+estMinutes: 9
+xp: 100
+missionIntro: "A derived class reuses a base class. Make a function virtual and a base pointer calls the right version at runtime."
+keyIdeas:
+  - "`class Truck : public Vehicle` inherits Vehicle's public interface."
+  - "`virtual` plus `override` lets a call through a Base& or Base* pick the derived version. A class with a pure virtual function (`= 0`) is abstract."
+  - "If you delete through a base pointer, the base needs a `virtual` destructor."
+---
+
+## Mission briefing
+
+Bikes, cars and planes are all vehicles. Shout "honk" at any of them and each makes its own noise.
+
+**Mission:** one interface, many vehicles.
+
+## Virtual calls
+
+Each class with virtual functions has a table of function pointers (the vtable), and each object carries a hidden pointer to it. That's how the call finds the right version.
+
+![Truck object with a hidden vptr pointing at Truck's vtable, whose honk slot points at Truck::honk](/diagrams/cpp-systems/oop/04-inheritance-and-polymorphism.png)
+
+<Trace
+  id="virtual-honk"
+  prompt="Virtual vs non-virtual."
+  code={"#include <cstdio>\nstruct Vehicle {\n    virtual const char* honk() const { return \"beep\"; }\n    const char* kind() const { return \"vehicle\"; }\n    virtual ~Vehicle() = default;\n};\nstruct Truck : Vehicle {\n    const char* honk() const override { return \"HOOONK\"; }\n    const char* kind() const { return \"truck\"; }\n};\nint main() {\n    Truck t;\n    const Vehicle& v = t;\n    std::printf(\"%s %s\", v.honk(), v.kind());\n}"}
+  steps={[{"line": 13, "note": "a Vehicle reference to a Truck"}, {"line": 14, "note": "honk is virtual, so Truck's runs; kind isn't, so Vehicle's runs"}]}
+  question="What does it print?"
+  answer="HOOONK vehicle"
+  explanation="Only virtual functions dispatch on the real type of the object."
+  devices={["phone", "desktop"]}
+/>
+
+<MCQ
+  id="override-why"
+  prompt="What does `override` buy you?"
+  options={["Faster calls", "A compile error if the function doesn't actually override a base virtual (typo, wrong const)", "It makes the function virtual in the base", "Nothing"]}
+  answer={1}
+  explanation="Always write override on overriders."
+  devices={["phone", "desktop"]}
+/>
+
+<SpotBug
+  id="no-virtual-dtor"
+  prompt="Which line is undefined behaviour?"
+  code={"#include <string>\nstruct Base { ~Base() {} };\nstruct Derived : Base { std::string name = \"Big Smoke\"; };\nint main() {\n    Base* p = new Derived;\n    delete p;\n}"}
+  bugLine={6}
+  explanation="Base has no virtual destructor, so deleting a Derived through a Base* is UB, and name is never destroyed."
+  devices={["phone", "desktop"]}
+/>
+
+## Abstract shapes
+
+A pure virtual function `= 0` makes the class abstract: you can't create one directly, only derived classes that implement it.
+
+<Code
+  id="shapes"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write an abstract `struct Shape` with `virtual double area() const = 0;` and a virtual destructor. Add `Rect(double w, double h)` and `Circle(double r)` (use 3.14159 for pi) that override area(). Then write `double total_area(const std::vector<std::unique_ptr<Shape>>& shapes)`."
+  starter={"#include <vector>\n#include <memory>\nstruct Shape {\n    virtual double area() const { return 0; }\n    virtual ~Shape() = default;\n};\nstruct Rect : Shape { Rect(double, double) {} };\nstruct Circle : Shape { Circle(double) {} };\ndouble total_area(const std::vector<std::unique_ptr<Shape>>& shapes) { return 0; }\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    Rect r(2, 3);\n    CHECK(r.area() == 6);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <cmath>\nint main() {\n    Rect r(2, 3); CHECK(r.area() == 6);\n    std::vector<std::unique_ptr<Shape>> v;\n    v.push_back(std::make_unique<Rect>(4, 5));\n    v.push_back(std::make_unique<Circle>(1));\n    CHECK(std::fabs(total_area(v) - 23.14159) < 1e-9);\n    const Shape& s = Circle(2); CHECK(std::fabs(s.area() - 12.56636) < 1e-9);\n    CHECK(total_area({}) == 0);\n    return 0;\n}\n"}
+  solution={"#include <vector>\n#include <memory>\nstruct Shape {\n    virtual double area() const = 0;\n    virtual ~Shape() = default;\n};\nstruct Rect : Shape {\n    double w, h;\n    Rect(double w, double h) : w(w), h(h) {}\n    double area() const override { return w * h; }\n};\nstruct Circle : Shape {\n    double r;\n    Circle(double r) : r(r) {}\n    double area() const override { return 3.14159 * r * r; }\n};\ndouble total_area(const std::vector<std::unique_ptr<Shape>>& shapes) {\n    double t = 0;\n    for (const auto& s : shapes) t += s->area();\n    return t;\n}\n"}
+  hints={["Store the dimensions as members and override area().", "total_area just loops and calls s->area()."]}
+  explanation="total_area doesn't know or care which shapes it gets. That's polymorphism."
+/>

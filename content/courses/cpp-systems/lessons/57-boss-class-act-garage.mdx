@@ -1,0 +1,46 @@
+---
+id: cpp-systems/oop/05-boss-class-act-garage
+title: "Boss: Class Act Garage"
+estMinutes: 12
+xp: 200
+missionIntro: "Classes, constructors, operators and virtual functions, all at once. Then build the garage's vehicle roster."
+kind: boss
+keyIdeas:
+  - "class is private by default, struct is public."
+  - "Init lists, const methods and destructors."
+  - "virtual + override, abstract bases, virtual destructors."
+---
+
+## Mission briefing
+
+The garage owner wants proof you know your classes before handing over the keys.
+
+Six questions, then the getaway: build the roster.
+
+<Boss
+  id="garage"
+  title="Class Act Garage"
+  briefing="Six questions, three hearts, three minutes. Keys on the table."
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "mcq", "prompt": "Default access in a struct?", "options": ["private", "public", "protected", "none"], "answer": 1, "explanation": "class is private."}, {"type": "mcq", "prompt": "Which members can a derived class use?", "options": ["private only", "public and protected", "only static", "all, including private"], "answer": 1, "explanation": "private stays private, even from children."}, {"type": "mcq", "prompt": "A static data member is…", "options": ["copied into each object", "shared by all objects of the class", "only usable in static methods", "stored on the stack"], "answer": 1, "explanation": "One per class."}, {"type": "fill", "text": "Mark a method {{0}} when it only reads members, and add {{1}} to an overrider.", "chips": ["const", "override", "static", "friend"], "answers": ["const", "override"], "explanation": "Both are free compile-time safety."}, {"type": "mcq", "prompt": "`struct A { virtual void f() = 0; };` then `A a;`…", "options": ["works", "compile error: A is abstract", "runtime crash", "calls nothing"], "answer": 1, "explanation": "Pure virtual makes it abstract."}, {"type": "mcq", "prompt": "You delete a Derived through a Base*. Base needs…", "options": ["a static member", "a virtual destructor", "a friend", "nothing"], "answer": 1, "explanation": "Otherwise UB."}]}
+  explanation="Class Act Garage is cleared. The keys are yours."
+  devices={["phone", "desktop"]}
+/>
+
+## Getaway: the vehicle roster
+
+Build a small class hierarchy and a roster that owns vehicles through base pointers.
+
+<Code
+  id="roster"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write an abstract `class Vehicle` with constructor `Vehicle(std::string name)`, `const std::string& name() const`, a pure virtual `int wheels() const` and a virtual destructor. Add `Bike` (2 wheels) and `Car` (4 wheels), each with a constructor taking the name. Then write `class Roster` with `void add(std::unique_ptr<Vehicle> v)`, `int total_wheels() const` and `std::size_t size() const`."
+  starter={"#include <string>\n#include <memory>\n#include <vector>\nclass Vehicle {\npublic:\n    Vehicle(std::string name) {}\n    const std::string& name() const { static std::string s; return s; }\n    virtual int wheels() const { return 0; }\n    virtual ~Vehicle() = default;\n};\nclass Bike : public Vehicle { public: Bike(std::string n) : Vehicle(n) {} };\nclass Car : public Vehicle { public: Car(std::string n) : Vehicle(n) {} };\nclass Roster {\npublic:\n    void add(std::unique_ptr<Vehicle> v) {}\n    int total_wheels() const { return 0; }\n    std::size_t size() const { return 0; }\n};\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    Roster r;\n    r.add(std::make_unique<Bike>(\"BMX\"));\n    CHECK(r.size() == 1 && r.total_wheels() == 2);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\nint main() {\n    Roster r; CHECK(r.size() == 0 && r.total_wheels() == 0);\n    r.add(std::make_unique<Bike>(\"BMX\"));\n    r.add(std::make_unique<Car>(\"Greenwood\"));\n    r.add(std::make_unique<Car>(\"Savanna\"));\n    CHECK(r.size() == 3 && r.total_wheels() == 10);\n    Car c(\"Admiral\"); const Vehicle& v = c;\n    CHECK(v.name() == \"Admiral\" && v.wheels() == 4);\n    return 0;\n}\n"}
+  solution={"#include <string>\n#include <memory>\n#include <vector>\n#include <utility>\nclass Vehicle {\n    std::string name_;\npublic:\n    Vehicle(std::string name) : name_(std::move(name)) {}\n    const std::string& name() const { return name_; }\n    virtual int wheels() const = 0;\n    virtual ~Vehicle() = default;\n};\nclass Bike : public Vehicle {\npublic:\n    Bike(std::string n) : Vehicle(std::move(n)) {}\n    int wheels() const override { return 2; }\n};\nclass Car : public Vehicle {\npublic:\n    Car(std::string n) : Vehicle(std::move(n)) {}\n    int wheels() const override { return 4; }\n};\nclass Roster {\n    std::vector<std::unique_ptr<Vehicle>> v_;\npublic:\n    void add(std::unique_ptr<Vehicle> v) { v_.push_back(std::move(v)); }\n    int total_wheels() const { int t = 0; for (const auto& v : v_) t += v->wheels(); return t; }\n    std::size_t size() const { return v_.size(); }\n};\n"}
+  hints={["Vehicle stores the name. Derived constructors pass it up with `: Vehicle(n)`.", "Roster holds a std::vector<std::unique_ptr<Vehicle>>."]}
+  explanation="Abstract base, overrides, a virtual destructor and ownership through unique_ptr: that's the core of everyday OOP in C++."
+/>

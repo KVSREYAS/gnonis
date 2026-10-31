@@ -324,3 +324,30 @@ ax[1].bar(range(3),lg-lg.max(),color=GOLD); ax[1].set_title("minus max",fontweig
 p=np.exp(lg-lg.max()); p/=p.sum(); ax[2].bar(range(3),p,color=G); ax[2].set_title("softmax (max p = 0.665)",fontweight="bold")
 for x in ax: x.set_xticks(range(3),["t0","t1","t2"])
 f.suptitle("STABLE SOFTMAX",color=G,fontweight="bold",fontsize=15,x=0.1,ha="left"); save(f,"13-capstone/03-softmax-and-sampling")
+
+# ---------- oop (Class Act Garage)
+f,a=fig("A class: public door, private room",10,4.6); blank(a,(0,10),(0,4.4))
+a.add_patch(FancyBboxPatch((0.3,0.4),9.4,3.4,boxstyle="round,pad=0.02",fc=G+"10",ec=G,lw=2.5)); note(a,0.5,3.45,"class Safe",G,12,fontweight="bold")
+box(a,0.7,1.0,3.6,1.9,"public:\nopen(guess)\nvalue()",B,fc=B+"15"); box(a,5.6,1.0,3.6,1.9,"private:\nint code\n(locked room)",R,fc=R+"15")
+arrow(a,4.3,1.95,5.6,1.95,G); note(a,4.35,2.15,"methods\ncan reach",G,9)
+note(a,0.7,0.05,"outside code → only the public door. s.code is a compile error.",INK,10)
+save(f,"oop/01-classes-and-access")
+
+f,a=fig("An object's life",11,3.8); blank(a,(0,11),(0,3.4))
+for i,(t,c) in enumerate([("Car c('A');",GR),("constructor\n: name(n) init list",G),("use it\nconst methods read",B),("scope ends",GOLD),("~Car()\ncleanup",R)]):
+    box(a,0.2+i*2.2,1.3,1.9,1.2,t,c,fs=9)
+    if i: arrow(a,0.2+i*2.2-0.3,1.9,0.2+i*2.2,1.9)
+note(a,0.2,0.5,"destructors run automatically, in reverse order of construction",INK,10)
+save(f,"oop/02-constructors-and-destructors")
+
+f,a=fig("static: one counter for the whole class",10,4.4); blank(a,(0,10),(0,4.2))
+for i,n in enumerate("abc"): box(a,0.4+i*2.2,2.7,1.8,0.9,f"Car {n}\nfuel (own copy)",G,fs=9); arrow(a,1.3+i*2.2,2.7,4.4,1.45,GOLD)
+box(a,3.3,0.5,2.6,0.9,"Car::alive = 3",GOLD,fc=GOLD+"22"); note(a,7.0,0.9,"shared, lives with\nthe class",GOLD,10)
+save(f,"oop/03-static-operators-and-friends")
+
+f,a=fig("How a virtual call finds Truck::honk",11,4.6); blank(a,(0,11),(0,4.4))
+note(a,0.3,3.9,"Truck object",INK,11,fontweight="bold"); cell(a,0.3,2.8,2.4,0.7,"vptr (hidden)",P+"55",10); cell(a,0.3,2.1,2.4,0.7,"data members",GR+"44",10)
+note(a,4.0,3.9,"Truck's vtable",INK,11,fontweight="bold"); cell(a,4.0,2.8,2.8,0.7,"slot 0: honk",GOLD+"55",10); cell(a,4.0,2.1,2.8,0.7,"slot 1: ~Truck",GOLD+"55",10)
+arrow(a,2.7,3.15,4.0,3.15,P); box(a,8.0,2.8,2.7,0.7,"Truck::honk()",G,fs=10); arrow(a,6.8,3.15,8.0,3.15,G)
+note(a,0.3,1.0,"v.honk() on a Vehicle& → load vptr → load slot 0 → call it. Non-virtual kind() skips all this\nand uses the static type (Vehicle).",INK,10)
+save(f,"oop/04-inheritance-and-polymorphism")
