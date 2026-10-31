@@ -1,0 +1,60 @@
+---
+id: cpp-systems/oop/03-static-operators-and-friends
+title: "Static Members, Encapsulation, Operators and Friends"
+estMinutes: 8
+xp: 90
+missionIntro: "Static members belong to the class, not to any one object. Operator overloading lets your types use + and ==, and friends get a key to the private room."
+keyIdeas:
+  - "A static data member is shared by every object of the class. Access it as `Car::count`."
+  - "Encapsulation: keep data private and expose getters and setters that enforce the rules."
+  - "Overload operators like `+`, `==` and `<<` so your types read naturally. A friend function can see private members."
+---
+
+## Mission briefing
+
+The garage keeps one shared logbook for every car on the lot, and the cars want to be added together like numbers. Weird garage.
+
+**Mission:** make it happen.
+
+## Static members
+
+One copy for the whole class, however many objects you create.
+
+![Three car objects all pointing at one shared static counter owned by the class](/diagrams/cpp-systems/oop/03-static-operators-and-friends.png)
+
+<Trace
+  id="static-count"
+  prompt="Counting live objects."
+  code={"#include <cstdio>\nstruct Car {\n    static int alive;\n    Car() { ++alive; }\n    ~Car() { --alive; }\n};\nint Car::alive = 0;\nint main() {\n    Car a, b;\n    {\n        Car c;\n        std::printf(\"%d \", Car::alive);\n    }\n    std::printf(\"%d\", Car::alive);\n}"}
+  steps={[{"line": 9, "note": "two cars"}, {"line": 11, "note": "third car"}, {"line": 12, "note": "prints 3"}, {"line": 13, "note": "c destroyed"}, {"line": 14, "note": "prints 2"}]}
+  question="What does it print?"
+  answer="3 2"
+  explanation="All Car objects share the same `alive` counter."
+  devices={["phone", "desktop"]}
+/>
+
+<MCQ
+  id="setter"
+  prompt="Why use `setSpeed(int s)` instead of a public `speed` member?"
+  options={["Setters are faster", "The setter can enforce rules (e.g. clamp to 0..200) so the object never holds a bad value", "It's required by the compiler", "Public members can't be ints"]}
+  answer={1}
+  explanation="That's encapsulation: the class protects its own invariants."
+  devices={["phone", "desktop"]}
+/>
+
+## Operators and friends
+
+`a + b` on your type just calls `operator+(a, b)`. Declaring a function `friend` inside the class lets it read private members.
+
+<Code
+  id="money-ops"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `class Money` holding private `long cents_`, with constructor `Money(long cents)`, `long cents() const`, `operator+` and `operator==` (as members or friends), and a friend `std::ostream& operator<<(std::ostream&, const Money&)` printing like `$12.05`. Assume amounts are not negative."
+  starter={"#include <ostream>\nclass Money {\npublic:\n    Money(long cents) {}\n    long cents() const { return 0; }\n    Money operator+(const Money& o) const { return Money(0); }\n    bool operator==(const Money& o) const { return false; }\n    friend std::ostream& operator<<(std::ostream& os, const Money& m) { return os; }\n};\n"}
+  visibleTests={"#include \"check.h\"\n#include <sstream>\nint main() {\n    Money a(150), b(275);\n    CHECK((a + b).cents() == 425);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <sstream>\nint main() {\n    Money a(150), b(275);\n    CHECK((a + b).cents() == 425);\n    CHECK(a + b == Money(425) && !(a == b));\n    std::ostringstream s; s << Money(1205) << ' ' << Money(7) << ' ' << Money(300);\n    CHECK(s.str() == \"$12.05 $0.07 $3.00\");\n    return 0;\n}\n"}
+  solution={"#include <ostream>\n#include <iomanip>\nclass Money {\n    long cents_;\npublic:\n    Money(long cents) : cents_(cents) {}\n    long cents() const { return cents_; }\n    Money operator+(const Money& o) const { return Money(cents_ + o.cents_); }\n    bool operator==(const Money& o) const { return cents_ == o.cents_; }\n    friend std::ostream& operator<<(std::ostream& os, const Money& m) {\n        return os << '$' << m.cents_ / 100 << '.' << std::setw(2) << std::setfill('0') << m.cents_ % 100;\n    }\n};\n"}
+  hints={["`cents_ % 100` needs two digits: std::setw(2) and std::setfill('0').", "operator<< is a friend so it can read cents_."]}
+  explanation="Overload operators only where the meaning is obvious. Money + Money is obvious; Car * Car is not."
+/>

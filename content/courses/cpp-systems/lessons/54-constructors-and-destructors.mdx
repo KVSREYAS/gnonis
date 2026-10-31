@@ -1,0 +1,69 @@
+---
+id: cpp-systems/oop/02-constructors-and-destructors
+title: "Constructors, Destructors, this and const"
+estMinutes: 8
+xp: 90
+missionIntro: "Constructors set an object up and destructors clean it up. `this` points at the current object, and const methods promise not to change it."
+keyIdeas:
+  - "Use the member initialiser list `: a_(a), b_(b)` to initialise members directly."
+  - "The destructor `~T()` runs automatically when the object goes out of scope."
+  - "`this` is a pointer to the current object. A `const` method can be called on const objects and can't modify members."
+---
+
+## Mission briefing
+
+Every car rolls off the line fully assembled and gets scrapped properly at the end. No half-built Sabres on this lot.
+
+**Mission:** write the assembly line.
+
+## Birth and death
+
+Constructors run when the object is created. Destructors run in reverse order when it dies.
+
+![Object lifeline: constructor builds members from the init list, destructor runs at scope end](/diagrams/cpp-systems/oop/02-constructors-and-destructors.png)
+
+<Trace
+  id="ctor-dtor"
+  prompt="Watch the lifecycle."
+  code={"#include <cstdio>\nstruct Car {\n    char name;\n    Car(char n) : name(n) { std::printf(\"+%c \", name); }\n    ~Car() { std::printf(\"-%c \", name); }\n};\nint main() {\n    Car a('A');\n    {\n        Car b('B');\n    }\n    Car c('C');\n}"}
+  steps={[{"line": 8, "note": "A built"}, {"line": 10, "note": "B built inside the inner scope"}, {"line": 11, "note": "scope ends, so B is destroyed"}, {"line": 12, "note": "C built"}, {"line": 13, "note": "end of main: C then A"}]}
+  question="What does it print?"
+  answer="+A +B -B +C -C -A"
+  explanation="Destructors run in reverse order of construction."
+  devices={["phone", "desktop"]}
+/>
+
+<MCQ
+  id="init-list"
+  prompt={"Why prefer `Car(int f) : fuel_(f) {}` over assigning `fuel_ = f;` in the body?"}
+  options={["It's shorter, nothing more", "Members are initialised directly instead of default-built then assigned, and const or reference members can only be set this way", "It makes the class public", "It's required for every class"]}
+  answer={1}
+  explanation="The body runs after all members already exist."
+  devices={["phone", "desktop"]}
+/>
+
+## this and const
+
+Inside a method, `this->fuel_` and plain `fuel_` mean the same thing. Mark a method `const` when it only reads.
+
+<SpotBug
+  id="const-method"
+  prompt="Which line fails to compile?"
+  code={"class Car {\n    int fuel_ = 10;\npublic:\n    int fuel() const { return fuel_; }\n    void refill() const { fuel_ = 100; }\n};"}
+  bugLine={5}
+  explanation="A const method can't modify members. Drop the const from refill."
+  devices={["phone", "desktop"]}
+/>
+
+<Code
+  id="bank-account"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `class Account` with a constructor `Account(std::string owner, long balance)` using an initialiser list, `const std::string& owner() const`, `long balance() const`, and `bool withdraw(long amount)`. withdraw refuses (returns false) when the amount is more than the balance or negative."
+  starter={"#include <string>\nclass Account {\npublic:\n    Account(std::string owner, long balance) {}\n    const std::string& owner() const { static std::string s; return s; }\n    long balance() const { return 0; }\n    bool withdraw(long amount) { return false; }\n};\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    Account a(\"CJ\", 100);\n    CHECK(a.owner() == \"CJ\" && a.balance() == 100);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\nint main() {\n    Account a(\"CJ\", 100);\n    CHECK(a.owner() == \"CJ\" && a.balance() == 100);\n    CHECK(a.withdraw(30) && a.balance() == 70);\n    CHECK(!a.withdraw(71) && a.balance() == 70);\n    CHECK(!a.withdraw(-5) && a.balance() == 70);\n    CHECK(a.withdraw(70) && a.balance() == 0);\n    const Account b(\"Sweet\", 5);\n    CHECK(b.balance() == 5);\n    return 0;\n}\n"}
+  solution={"#include <string>\n#include <utility>\nclass Account {\n    std::string owner_;\n    long balance_;\npublic:\n    Account(std::string owner, long balance) : owner_(std::move(owner)), balance_(balance) {}\n    const std::string& owner() const { return owner_; }\n    long balance() const { return balance_; }\n    bool withdraw(long amount) {\n        if (amount < 0 || amount > balance_) return false;\n        balance_ -= amount;\n        return true;\n    }\n};\n"}
+  hints={["Store the owner and balance as private members.", "The hidden test calls balance() on a const object, so it must be a const method."]}
+  explanation="A class guards its own rules: no negative withdrawals, no overdrafts."
+/>
