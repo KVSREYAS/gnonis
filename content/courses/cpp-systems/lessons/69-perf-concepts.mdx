@@ -1,0 +1,70 @@
+---
+id: cpp-systems/11-perf/00-concepts
+title: "Concepts: Measuring Performance"
+estMinutes: 8
+xp: 40
+missionIntro: "How to time code correctly, how profilers find where time goes, and how to read the assembly the compiler produced."
+keyIdeas:
+  - "Measure before optimizing. Intuition about hot spots is often wrong."
+  - "Benchmarks must stop the compiler deleting work and must warm up and repeat."
+  - "A sampling profiler interrupts the program often and records where it was."
+  - "Reading assembly confirms what the compiler actually did."
+---
+## Benchmarking correctly
+
+A **benchmark** times a piece of code. Common errors:
+
+- **Dead code elimination**: if the result is unused, `-O2` may delete the computation, and you time nothing. Use the result, or use `benchmark::DoNotOptimize`.
+- **Constant folding**: if inputs are known at compile time, the answer may be computed during compilation.
+- **Cold start**: the first run pays for page faults and cold caches. Run warm-up iterations first.
+- **Noise**: other processes, CPU frequency changes. Repeat many times and report the median.
+- **Wrong clock**: use `std::chrono::steady_clock`, which never jumps backwards.
+
+```cpp
+auto t0 = std::chrono::steady_clock::now();
+for (int r = 0; r < reps; ++r) sink += work(data);
+auto t1 = std::chrono::steady_clock::now();
+```
+
+Always build benchmarks with the same flags as production.
+
+## Profilers
+
+A **profiler** tells you where time is spent across the whole program.
+
+A **sampling profiler** such as Linux `perf` interrupts the program thousands of times a second and records the current instruction and call stack. Functions that appear in many samples are where the time goes.
+
+```bash
+perf record -g ./app      # sample with call stacks
+perf report               # table of hottest functions
+```
+
+A **flame graph** draws those stacks: width is the share of samples, vertical stacking is the call chain. Look for the widest boxes near the top.
+
+`perf stat` reports hardware counters: cycles, instructions, cache misses, branch misses. **IPC** (instructions per cycle) below about 1 usually means the CPU is waiting on memory.
+
+![Flame graph showing call stacks by width](/diagrams/cpp-systems/11-perf/02-profilers-and-flamegraphs.png)
+
+## Reading assembly
+
+The compiler's output shows what it really did. Use `g++ -O2 -S file.cpp` or Compiler Explorer (godbolt.org).
+
+x86-64 basics:
+
+- registers: `rax`, `rdi`, `rsi`... (64-bit), `eax` (32-bit low half), `xmm0`... (SIMD)
+- arguments arrive in `rdi`, `rsi`, `rdx`, `rcx`; floats in `xmm0`, `xmm1`; return value in `rax` or `xmm0`
+- `mov` copies, `add`/`imul` do arithmetic, `cmp` + `jl` compare and jump, `call`/`ret` call and return
+
+What to look for:
+
+- `addps`/`mulps` (packed) means vectorized; `addss` (scalar single) means not
+- a `call` inside a hot loop means something was not inlined
+- unexpected `div` instructions, which are slow (20-40 cycles)
+
+<MCQ
+  id="concept-check"
+  prompt="Your benchmark loop computes `work(x)` and discards the result. It reports 0.3 ns per call. What is likely?"
+  options={["work is extremely fast", "The compiler removed the unused computation", "The clock is wrong", "The CPU cached the answer"]}
+  answer={1}
+  explanation="Dead code elimination: use the result or DoNotOptimize so the work is kept."
+/>

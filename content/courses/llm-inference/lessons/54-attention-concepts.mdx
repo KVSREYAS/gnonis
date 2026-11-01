@@ -1,0 +1,79 @@
+---
+id: llm-inference/02-attention/00-concepts
+title: "Concepts: Attention"
+estMinutes: 8
+xp: 40
+missionIntro: "How each position in a sequence reads information from earlier positions, and why the cost grows with length squared."
+keyIdeas:
+  - "Each position makes a query, a key and a value vector by multiplying by learned matrices."
+  - "Attention scores are query-key dot products. Softmax turns them into weights over values."
+  - "A causal mask stops positions from seeing later positions."
+  - "Multi-head attention runs several smaller attentions in parallel. GQA shares keys and values between heads."
+---
+## Why attention exists
+
+After embedding, each position's vector only knows its own token. To predict well, the model needs to combine information across positions, for example linking "it" to the noun it refers to.
+
+**Attention** is the operation that does this. For each position it computes a weighted average of information from other positions, where the weights are computed from the data itself. It is the only part of a transformer block where positions interact. The MLP part works on each position separately.
+
+## Queries, keys, values
+
+For every position t with vector x_t, three vectors are computed with learned weight matrices:
+
+- **query** q_t = x_t W_Q: what this position is looking for
+- **key** k_t = x_t W_K: what this position offers to be matched against
+- **value** v_t = x_t W_V: the information this position passes on
+
+Then for position t:
+
+1. score_s = (q_t dot k_s) / sqrt(d_head) for every position s
+2. weights = softmax(scores)
+3. output_t = sum over s of weight_s * v_s
+
+The division by sqrt(d_head) keeps scores from growing with vector length, which would make softmax pick one position almost exclusively.
+
+Tiny example: scores [2, 0] give weights [0.88, 0.12], so the output is 88% v_1 plus 12% v_2.
+
+![Q, K, V computed from inputs and combined](/diagrams/llm-inference/02-attention/01-queries-keys-values.png)
+
+## Causal masking
+
+A model that generates left to right must not use future tokens when predicting, because they do not exist yet at generation time.
+
+The **causal mask** sets score_s to minus infinity for every s greater than t before the softmax. exp(minus infinity) is 0, so those positions get weight 0.
+
+Laid out as a T by T score matrix, only the lower triangle (including the diagonal) is used.
+
+A useful result: because position t never looks forward, its keys and values never change when more tokens are added later. That is what makes the KV cache in the next module possible.
+
+![Lower-triangular causal mask](/diagrams/llm-inference/02-attention/02-causal-masking.png)
+
+## Heads, MHA and GQA
+
+**Multi-head attention (MHA)** splits d into h **heads** of size d_head = d / h (e.g. 4096 = 32 heads of 128). Each head has its own Q, K, V projections and runs attention independently. The outputs are concatenated and projected back to d. Different heads can learn different patterns.
+
+**Grouped-query attention (GQA)** keeps h query heads but uses fewer key/value heads, n_kv, shared by groups. Llama-3-8B: 32 query heads, 8 KV heads, so each KV head serves 4 query heads.
+
+Why it matters: stored keys and values shrink by h / n_kv, here 4 times, with little quality loss. **MQA** is the extreme case with n_kv = 1.
+
+## The quadratic cost
+
+For a sequence of T tokens, every position scores against up to T positions: about T squared scores per head per layer.
+
+| T | scores per head-layer |
+| --- | --- |
+| 1,000 | 1 million |
+| 8,000 | 64 million |
+| 32,000 | about 1 billion |
+
+Going from 8K to 32K context is 4 times longer but about 16 times more attention work in prefill. During decode, each new token scores against all T previous ones, so per-token cost grows linearly with context length.
+
+![Attention cost growing with T squared](/diagrams/llm-inference/02-attention/04-the-quadratic-bill.png)
+
+<MCQ
+  id="concept-check"
+  prompt="A model has 32 query heads and 8 KV heads. Compared with full MHA, how big is the stored K and V?"
+  options={["The same", "1/2", "1/4", "1/32"]}
+  answer={2}
+  explanation="K and V scale with the number of KV heads: 8/32 = 1/4."
+/>

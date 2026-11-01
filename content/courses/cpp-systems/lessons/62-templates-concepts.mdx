@@ -1,0 +1,108 @@
+---
+id: cpp-systems/04-templates/00-concepts
+title: "Concepts: Templates, Concepts and constexpr"
+estMinutes: 8
+xp: 40
+missionIntro: "How the compiler generates code from templates, how concepts restrict them, and what runs at compile time."
+keyIdeas:
+  - "A template is a pattern. The compiler creates a real function or class for each set of template arguments used."
+  - "Template argument deduction works out T from the call's argument types."
+  - "A concept is a named compile-time test on a type, used to reject bad arguments with a clear error."
+  - "constexpr functions can run during compilation when their inputs are known then."
+---
+## What a template is
+
+A **function template** is code with a placeholder type:
+
+```cpp
+template <class T>
+T max_of(T a, T b) { return a < b ? b : a; }
+```
+
+It is not a function yet. When you call `max_of(2, 5)`, the compiler:
+
+1. **Deduces** `T = int` from the argument types.
+2. **Instantiates** the template: it writes a real function `int max_of(int, int)` by substituting `int` for `T`.
+3. Compiles that function like any other.
+
+A call with `double` makes a second, separate function. Each instantiation is fully typed and can be inlined and optimized, so templates have no runtime cost. The price is compile time and code size.
+
+Templates must be visible where they are used, which is why they usually live in headers.
+
+## Deduction rules worth knowing
+
+For a parameter written `T x` (by value):
+
+- references and top-level `const` are dropped: passing a `const int&` gives `T = int`
+- arrays become pointers
+
+For `T& x`, constness is kept. For `T&& x` (a forwarding reference), an lvalue argument makes `T` an lvalue reference.
+
+If two arguments disagree, deduction fails:
+
+```cpp
+max_of(2, 3.5);          // error: T is int or double?
+max_of<double>(2, 3.5);  // fine: T given explicitly
+```
+
+Class templates such as `std::vector<int>` take explicit arguments, though C++17 **class template argument deduction** lets you write `std::vector v{1, 2, 3};`.
+
+![Deduction of T from different argument forms](/diagrams/cpp-systems/04-templates/01-templates-and-deduction.png)
+
+## Concepts: requirements on T
+
+Without limits, `max_of` accepts any type. If a type has no `<`, the error appears deep inside the template body and can be long.
+
+A **concept** is a named boolean test on types, checked at compile time:
+
+```cpp
+template <class T>
+concept Ordered = requires(T a, T b) {
+    { a < b } -> std::convertible_to<bool>;
+};
+
+template <Ordered T>
+T max_of(T a, T b) { return a < b ? b : a; }
+```
+
+Now `max_of(obj1, obj2)` with an unordered type fails at the call, with a message naming `Ordered`. Concepts also choose between overloads: the compiler prefers the overload whose constraints are more specific. The standard library provides many, such as `std::integral` and `std::floating_point`.
+
+## constexpr and consteval
+
+`constexpr` on a function means it **may** be evaluated by the compiler when all inputs are compile-time constants. Otherwise it runs at runtime like normal code.
+
+```cpp
+constexpr int sq(int x) { return x * x; }
+constexpr int k = sq(12);   // computed while compiling: 144
+int y = sq(read_int());     // computed at runtime
+static_assert(sq(3) == 9);  // checked while compiling
+```
+
+- `consteval` **must** run at compile time.
+- `if constexpr` discards the branch that does not apply, so it never has to compile for that `T`.
+
+Undefined behaviour is not allowed during compile-time evaluation, so the compiler reports it as an error. That makes `static_assert` with `constexpr` a cheap way to test small functions.
+
+## Variadic templates and CTAD
+
+A **variadic template** accepts any number of template arguments. `class... Ts` is a **template parameter pack**, `Ts... args` a **function parameter pack**:
+
+```cpp
+template <class... Ts>
+auto sum(Ts... xs) { return (xs + ... + 0); }   // fold expression
+sum(1, 2, 3);   // 6
+```
+
+`(xs + ... + 0)` is a **fold expression**: it expands to `1 + (2 + (3 + 0))`. `sizeof...(Ts)` gives the count. This is how `std::make_unique<T>(args...)` and `emplace_back(args...)` accept any constructor arguments, together with `std::forward<Ts>(args)...`.
+
+**CTAD** (class template argument deduction, C++17) deduces a class template's arguments from constructor arguments: `std::pair p{1, 2.0};` becomes `std::pair<int, double>`.
+
+`decltype(expr)` gives the type of an expression without evaluating it, used to name types that are hard to write.
+
+<MCQ
+  id="concept-check"
+  prompt="You call `max_of(2, 5)` and `max_of(1.0, 2.0)`. How many functions does the compiler generate from the template?"
+  options={["One, shared by both", "Two, one for int and one for double", "Zero, templates are interpreted", "It depends on optimization level"]}
+  answer={1}
+  explanation="Each distinct set of template arguments makes one instantiation."
+/>

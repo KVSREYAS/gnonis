@@ -9,6 +9,7 @@ prerequisites: []
 tagline: A short sample pack. Drop a folder in, and a course appears.
 level: intro
 lessons:
+  - number-formats-concepts
   - bytes-per-number
   - model-size-maths
   - field-kit
@@ -21,6 +22,7 @@ districts:
     art: pier
     status: ready
     lessons:
+      - number-formats-concepts
       - bytes-per-number
       - model-size-maths
       - field-kit

@@ -10,54 +10,66 @@ prerequisites: []
 tagline: From one token to a serving fleet.
 level: intermediate
 lessons:
+  - tokens-concepts
   - what-is-a-token
   - the-forward-pass
   - logits-to-tokens
   - prefill-and-decode
   - boss-the-forward-pass
+  - attention-concepts
   - queries-keys-values
   - causal-masking
   - heads-mha-gqa
   - the-quadratic-bill
   - boss-attention
+  - kv-cache-concepts
   - why-cache
   - sizing-the-cache
   - the-memory-budget
   - boss-cache-docks
+  - roofline-concepts
   - memory-hierarchy
   - arithmetic-intensity
   - the-roofline
   - decode-speed-limit
   - boss-roofline-ridge
+  - batching-concepts
   - continuous-batching
   - batch-size-vs-latency
   - chunked-prefill
   - boss-batch-boulevard
+  - paged-concepts
   - kv-as-virtual-memory
   - block-tables-and-copy-on-write
   - preemption-and-swapping
   - boss-paged-pier
+  - quant-concepts
   - fewer-bytes-faster-tokens
   - scales-and-groups
   - activation-outliers-smoothquant
   - kv-cache-quantization
   - boss-quant-quarter
+  - flash-concepts
   - the-hbm-bottleneck
   - online-softmax
   - tiling-in-sram
   - boss-flash-gardens
+  - spec-concepts
   - draft-and-verify
   - acceptance-and-speedup
   - medusa-eagle-and-lookup
   - boss-draft-row
+  - parallel-concepts
   - tensor-parallelism
   - pipeline-parallelism
   - moe-and-expert-parallelism
   - boss-shard-city
+  - serving-concepts
   - ttft-tpot-and-prefix-caching
   - engines-tour
   - disaggregated-prefill-decode
   - boss-server-strip
+  - capstone-concepts
   - server-architecture
   - build-the-scheduler
   - benchmark-and-profile
@@ -73,6 +85,7 @@ districts:
     art: skyline
     status: ready
     lessons:
+      - tokens-concepts
       - what-is-a-token
       - the-forward-pass
       - logits-to-tokens
@@ -88,6 +101,7 @@ districts:
     art: tower
     status: ready
     lessons:
+      - attention-concepts
       - queries-keys-values
       - causal-masking
       - heads-mha-gqa
@@ -104,6 +118,7 @@ districts:
     art: docks
     status: ready
     lessons:
+      - kv-cache-concepts
       - why-cache
       - sizing-the-cache
       - the-memory-budget
@@ -118,6 +133,7 @@ districts:
     art: hills
     status: ready
     lessons:
+      - roofline-concepts
       - memory-hierarchy
       - arithmetic-intensity
       - the-roofline
@@ -133,6 +149,7 @@ districts:
     art: grid
     status: ready
     lessons:
+      - batching-concepts
       - continuous-batching
       - batch-size-vs-latency
       - chunked-prefill
@@ -146,6 +163,7 @@ districts:
     art: pier
     status: ready
     lessons:
+      - paged-concepts
       - kv-as-virtual-memory
       - block-tables-and-copy-on-write
       - preemption-and-swapping
@@ -159,6 +177,7 @@ districts:
     art: grid
     status: ready
     lessons:
+      - quant-concepts
       - fewer-bytes-faster-tokens
       - scales-and-groups
       - activation-outliers-smoothquant
@@ -175,6 +194,7 @@ districts:
     art: hills
     status: ready
     lessons:
+      - flash-concepts
       - the-hbm-bottleneck
       - online-softmax
       - tiling-in-sram
@@ -188,6 +208,7 @@ districts:
     art: desert
     status: ready
     lessons:
+      - spec-concepts
       - draft-and-verify
       - acceptance-and-speedup
       - medusa-eagle-and-lookup
@@ -201,6 +222,7 @@ districts:
     art: bridge
     status: ready
     lessons:
+      - parallel-concepts
       - tensor-parallelism
       - pipeline-parallelism
       - moe-and-expert-parallelism
@@ -214,6 +236,7 @@ districts:
     art: skyline
     status: ready
     lessons:
+      - serving-concepts
       - ttft-tpot-and-prefix-caching
       - engines-tour
       - disaggregated-prefill-decode
@@ -228,6 +251,7 @@ districts:
     art: tower
     status: ready
     lessons:
+      - capstone-concepts
       - server-architecture
       - build-the-scheduler
       - benchmark-and-profile

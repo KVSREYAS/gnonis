@@ -1,0 +1,66 @@
+---
+id: llm-inference/09-speculative-decoding/00-concepts
+title: "Concepts: Speculative Decoding"
+estMinutes: 8
+xp: 40
+missionIntro: "Use a cheap guess for several tokens, then check them all in one pass of the big model."
+keyIdeas:
+  - "A draft (small model or heuristic) proposes k tokens."
+  - "The target model checks all k in one forward pass, which costs about the same as one decode step."
+  - "Accepted tokens are kept, the first rejected one is replaced, and the output distribution is unchanged."
+  - "Speedup depends on acceptance rate and draft cost."
+---
+## The idea
+
+Decode is memory-bound: one step for 1 token costs about the same as one step that processes 5 tokens, because the weights are read once either way.
+
+**Speculative decoding** uses that spare compute:
+
+1. A **draft** method cheaply proposes the next k tokens, e.g. k = 4.
+2. The **target** (the real, big model) runs one forward pass over the current sequence plus those 4 tokens. This gives its own predictions at every one of those positions at once.
+3. Compare position by position. Keep drafted tokens while they pass the check. At the first failure, use the target's token instead and discard the rest.
+
+Each target pass therefore yields between 1 and k + 1 tokens.
+
+![Draft proposes, target verifies in one pass](/diagrams/llm-inference/09-speculative-decoding/01-draft-and-verify.png)
+
+## Why the output is unchanged
+
+For greedy decoding, the rule is simple: accept a draft token if it equals the target's top choice.
+
+For sampling, **speculative sampling** accepts draft token x with probability min(1, p(x) / q(x)), where p is the target's probability and q the draft's. On rejection, it samples from the leftover distribution max(0, p - q), normalized.
+
+This rule is proven to give exactly the target model's output distribution. Quality is identical to running the big model alone. Only speed changes.
+
+## Expected speedup
+
+Let a be the chance each draft token is accepted, and assume independence. Expected tokens per target pass with k drafts:
+
+(1 - a^(k+1)) / (1 - a)
+
+| a | k = 4 |
+| --- | --- |
+| 0.6 | 2.3 tokens |
+| 0.8 | 3.4 tokens |
+| 0.9 | 4.1 tokens |
+
+Real speedup is lower, because the draft costs time and the verify pass is slightly slower than a single step. Typical wins are 2-3 times. Batching reduces the benefit, since large batches already use the spare compute.
+
+![Expected accepted tokens vs acceptance rate](/diagrams/llm-inference/09-speculative-decoding/02-acceptance-and-speedup.png)
+
+## Kinds of drafts
+
+- **Separate draft model**: a small model of the same family, e.g. 1B drafting for 70B. Needs the same tokenizer.
+- **Medusa**: extra small heads on the target model that each predict a token further ahead.
+- **EAGLE**: a light layer that drafts from the target's own hidden features, often with higher acceptance.
+- **Prompt lookup / n-gram**: copy a continuation from text already in the prompt. Free, and very effective for editing or summarizing tasks where output repeats input.
+
+Several of these propose a **tree** of candidates, verified in one pass with a special attention mask.
+
+<MCQ
+  id="concept-check"
+  prompt="Speculative sampling with the correct accept/reject rule changes the output distribution how?"
+  options={["Makes it match the draft model", "Not at all: it equals the target model's distribution", "Makes it greedier", "Adds noise"]}
+  answer={1}
+  explanation="The min(1, p/q) acceptance plus residual sampling is provably exact."
+/>

@@ -1,0 +1,90 @@
+---
+id: cpp-systems/06-layout/00-concepts
+title: "Concepts: Memory Layout and Caches"
+estMinutes: 8
+xp: 40
+missionIntro: "How objects are laid out in bytes, why padding exists, and how CPU caches decide what is fast."
+keyIdeas:
+  - "Alignment: a type of size N usually must start at an address that is a multiple of N."
+  - "The compiler adds padding bytes between members to meet alignment."
+  - "The CPU loads memory in 64-byte cache lines. Touching nearby data is cheap, far data is expensive."
+  - "alignas and aligned new give stricter alignment when SIMD or cache lines need it."
+---
+## Alignment and padding
+
+Every type has a **size** (`sizeof`) and an **alignment** (`alignof`). Alignment is the number the object's address must be a multiple of. On x86-64: `char` 1, `int` 4, `double` 8, pointers 8.
+
+To meet alignment the compiler inserts **padding**: unused bytes.
+
+```cpp
+struct A { char c; double d; int i; };
+// c at 0, 7 padding, d at 8, i at 16, 4 padding
+// sizeof(A) == 24
+struct B { double d; int i; char c; };
+// d at 0, i at 8, c at 12, 3 padding
+// sizeof(B) == 16
+```
+
+The struct's size is rounded up to a multiple of its largest member's alignment, so arrays of it stay aligned. Ordering members from largest to smallest alignment usually removes most padding.
+
+![Byte map of struct members with padding](/diagrams/cpp-systems/06-layout/01-sizeof-padding-alignment.png)
+
+## The memory hierarchy
+
+Main memory (DRAM) is slow compared with the CPU. A load that misses every cache can cost around 100 nanoseconds, hundreds of instructions' worth of time. So CPUs keep small fast copies:
+
+| level | typical size | typical latency |
+| --- | --- | --- |
+| L1 | 32-48 KB per core | about 1 ns |
+| L2 | 1-2 MB per core | about 4 ns |
+| L3 | tens of MB shared | about 15 ns |
+| DRAM | GBs | about 80-100 ns |
+
+Data moves between these in **cache lines** of 64 bytes. Reading one `int` brings in the 64 bytes around it.
+
+Hardware **prefetchers** notice sequential access patterns and load the next lines before you ask. That is why a straight loop over an array is fast and following random pointers is slow.
+
+## Locality in practice
+
+**Spatial locality**: using data that is close in memory. **Temporal locality**: reusing the same data soon.
+
+Example with a 2D array stored row by row (row-major):
+
+```cpp
+float m[1024][1024];
+for (int i = 0; i < 1024; ++i)      // fast: walks along rows
+    for (int j = 0; j < 1024; ++j) s += m[i][j];
+for (int j = 0; j < 1024; ++j)      // slow: jumps 4 KB each step
+    for (int i = 0; i < 1024; ++i) s += m[i][j];
+```
+
+Both loops do the same arithmetic. The first uses all 16 floats in each cache line. The second uses one float per line, then moves on, so it can be several times slower.
+
+![Row-major walk vs column walk across cache lines](/diagrams/cpp-systems/06-layout/02-cache-lines-and-locality.png)
+
+## Asking for more alignment
+
+Sometimes you need stricter alignment than the default:
+
+- SIMD loads such as `_mm_load_ps` need 16-byte aligned addresses
+- data used by different threads should sit on separate cache lines (64-byte aligned)
+
+Tools:
+
+```cpp
+struct alignas(64) Slot { std::atomic<int> v; };   // whole type
+alignas(32) float buf[8];                           // one variable
+float* p = static_cast<float*>(
+    std::aligned_alloc(64, 4096));  // size must be a multiple of 64
+std::free(p);
+```
+
+Since C++17, `new` respects `alignas` on the type automatically. `std::aligned_alloc` memory must be released with `std::free`, not `delete`.
+
+<MCQ
+  id="concept-check"
+  prompt="`struct S { char a; int b; char c; };` on x86-64. What is `sizeof(S)`?"
+  options={["6", "8", "12", "16"]}
+  answer={2}
+  explanation="a at 0, 3 padding, b at 4, c at 8, then 3 padding to round up to a multiple of 4: 12."
+/>

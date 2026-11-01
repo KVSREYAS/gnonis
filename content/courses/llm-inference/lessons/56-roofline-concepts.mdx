@@ -1,0 +1,87 @@
+---
+id: llm-inference/04-gpu-memory-roofline/00-concepts
+title: "Concepts: GPU Memory and the Roofline"
+estMinutes: 8
+xp: 40
+missionIntro: "How to tell if a kernel is limited by arithmetic or by memory, using two hardware numbers and one ratio."
+keyIdeas:
+  - "A GPU has fast small on-chip memory (SRAM) and large slower HBM."
+  - "Arithmetic intensity = FLOPs done / bytes moved from memory."
+  - "Ridge point = peak FLOP/s / bandwidth. Below it you are memory-bound, above it compute-bound."
+  - "Decode at batch 1 is deep in the memory-bound region: tokens/s is about bandwidth / weight bytes."
+---
+## Memory hierarchy on a GPU
+
+| level | size (H100) | bandwidth |
+| --- | --- | --- |
+| registers | per thread | fastest |
+| SRAM (shared memory / L1) | about 228 KB per SM, ~30 MB total | ~tens of TB/s |
+| L2 cache | 50 MB | several TB/s |
+| HBM (main GPU memory) | 80 GB | about 3.35 TB/s |
+
+An **SM** (streaming multiprocessor) is one of the GPU's ~132 compute units. Weights and the KV cache live in HBM, because they are far too big for anything else. Every time a kernel needs them, they are streamed from HBM through the caches to the SMs.
+
+A **kernel** is one function launched on the GPU, such as one matrix multiply.
+
+![GPU memory levels by size and speed](/diagrams/llm-inference/04-gpu-memory-roofline/01-memory-hierarchy.png)
+
+## Arithmetic intensity
+
+**FLOP** = one floating-point operation (a multiply-add counts as 2).
+
+**Arithmetic intensity (AI)** = FLOPs performed / bytes read and written to HBM.
+
+Matrix-vector product, weight matrix d by d in FP16, one input vector:
+- FLOPs: 2 x d x d
+- bytes: about 2 x d x d (the weights)
+- AI is about **1 FLOP/byte**
+
+Matrix-matrix with a batch of B vectors: FLOPs grow to 2 x d x d x B, bytes stay about the same, so AI is about **B FLOP/byte**.
+
+Batching raises intensity because the same weights are reused for every vector in the batch.
+
+![FLOPs and bytes for matvec vs matmul](/diagrams/llm-inference/04-gpu-memory-roofline/02-arithmetic-intensity.png)
+
+## The roofline
+
+A kernel's speed is capped by two limits:
+
+attainable FLOP/s = min(peak FLOP/s, AI x bandwidth)
+
+The **ridge point** is where the two meet: peak / bandwidth.
+
+H100 SXM: about 989 TFLOP/s dense FP16, 3.35 TB/s. Ridge = 989 / 3.35, about **295 FLOP/byte**.
+
+- AI below 295: **memory-bound**. Faster arithmetic would not help, fewer bytes would.
+- AI above 295: **compute-bound**. Only fewer FLOPs or better hardware use helps.
+
+Plotted on log-log axes the limit looks like a sloped line that flattens into a horizontal one, which is where the name comes from.
+
+![Roofline with memory slope and compute ceiling](/diagrams/llm-inference/04-gpu-memory-roofline/03-the-roofline.png)
+
+## The decode speed limit
+
+At batch size 1, each decode step must read every weight once. AI is about 1, far below 295, so decode is memory-bound and:
+
+max tokens/s = bandwidth / bytes of weights
+
+Llama-3-8B in FP16 = 16 GB. On H100: 3,350 / 16 = about **209 tokens/s** at best, before counting KV reads.
+
+Two ways out, both covered later:
+
+- **Batching**: B requests share one weight read, so aggregate throughput rises nearly B times while still memory-bound.
+- **Quantization**: 4-bit weights are 4 GB, so the ceiling rises to about 840 tokens/s.
+
+## Tensor cores, warps and MFU
+
+- **Tensor cores** are units inside each SM that do small matrix multiply-adds in one instruction (for example 16 x 16 tiles in FP16 or FP8). Nearly all the GPU's advertised FLOP/s come from them. Normal (CUDA core) arithmetic is many times slower.
+- A **warp** is a group of 32 GPU threads that execute the same instruction together. Kernels are written per thread but scheduled per warp.
+- **MFU** (model FLOP utilization) = FLOP/s your workload achieves / peak FLOP/s. Prefill on a good engine may reach 40-60%. Decode at small batch is often under 5%, which is expected when memory-bound, not a bug.
+
+<MCQ
+  id="concept-check"
+  prompt="A GPU has 1,000 TFLOP/s and 4 TB/s. A kernel has intensity 50 FLOP/byte. What limits it?"
+  options={["Compute", "Memory bandwidth", "Neither", "Kernel launch overhead"]}
+  answer={1}
+  explanation="Ridge = 1000/4 = 250. 50 is below it, so the kernel is memory-bound at 50 x 4 = 200 TFLOP/s."
+/>

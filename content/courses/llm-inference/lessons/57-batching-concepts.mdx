@@ -1,0 +1,78 @@
+---
+id: llm-inference/05-batching/00-concepts
+title: "Concepts: Batching Requests"
+estMinutes: 8
+xp: 40
+missionIntro: "How a server runs many users' requests together, why it helps, and what it costs each user."
+keyIdeas:
+  - "Batching runs several sequences through one forward pass, sharing each weight read."
+  - "Static batching waits for the whole batch to finish. Continuous batching swaps sequences in and out every step."
+  - "Bigger batches raise total throughput but slow each user's tokens."
+  - "Chunked prefill splits long prompts so they do not stall ongoing decodes."
+---
+## Why batch
+
+From the roofline module: decode at batch 1 spends nearly all its time reading weights. If 32 requests decode together, the weights are read once per step and used 32 times. The step takes only a little longer, but produces 32 tokens instead of 1.
+
+Terms:
+
+- **batch size**: number of sequences in one forward pass
+- **throughput**: total tokens per second across all users
+- **latency**: how long one user waits
+
+Batching mainly trades a little latency for a lot of throughput.
+
+## Static vs continuous batching
+
+**Static batching**: collect N requests, run them together until **all** finish, then start the next batch.
+
+Problem: outputs have different lengths. If one request needs 500 tokens and the rest need 20, most slots sit idle for 480 steps, and new requests wait in the queue the whole time.
+
+**Continuous batching** (also called in-flight or iteration-level batching) makes scheduling decisions every decode step:
+
+1. Remove sequences that just produced an end token.
+2. Add waiting requests into the freed slots.
+3. Run one forward pass for the current set.
+
+No slot waits for another sequence to finish. vLLM, TGI, TensorRT-LLM and SGLang all use it. Reported throughput gains over static batching are often several times.
+
+![Static batch with idle slots vs continuous batch refilling](/diagrams/llm-inference/05-batching/01-continuous-batching.png)
+
+## Batch size vs latency
+
+Per-step time stays roughly flat while the step is memory-bound, then rises once the batch is large enough that compute or KV reads dominate.
+
+Illustrative numbers for one GPU:
+
+| batch | step time | tokens/s total | tokens/s per user |
+| --- | --- | --- | --- |
+| 1 | 10 ms | 100 | 100 |
+| 16 | 12 ms | 1,333 | 83 |
+| 64 | 20 ms | 3,200 | 50 |
+| 256 | 60 ms | 4,267 | 17 |
+
+Throughput keeps climbing with diminishing returns. Each user's speed keeps falling. A service picks a batch limit that meets its per-user speed target. KV memory also caps the batch, as computed in module 3.
+
+![Throughput and per-user speed vs batch size](/diagrams/llm-inference/05-batching/02-batch-size-vs-latency.png)
+
+## Chunked prefill
+
+A new request with a 16,000-token prompt needs a large prefill. If the server runs it as one step, every decoding user waits for that step, and their token stream pauses visibly.
+
+**Chunked prefill** splits the prompt into chunks (e.g. 512 tokens) and runs one chunk per step, **mixed with** the decode tokens of other sequences. Each step has a **token budget**, such as 2,048 tokens total: decodes take 1 each, and the remainder goes to prefill chunks.
+
+Effects:
+
+- decode users see steady token timing
+- the long prompt's first token arrives a bit later
+- mixed steps use the GPU better, since prefill adds compute to memory-bound decode steps
+
+![Prefill split into chunks mixed with decode tokens](/diagrams/llm-inference/05-batching/03-chunked-prefill.png)
+
+<MCQ
+  id="concept-check"
+  prompt="In continuous batching, when can a new request join the running batch?"
+  options={["Only after every current request finishes", "At the next decode step, once a slot is free", "Only at the start of each minute", "Never; it gets its own GPU"]}
+  answer={1}
+  explanation="The scheduler revisits the batch every step, so finished sequences are replaced immediately."
+/>

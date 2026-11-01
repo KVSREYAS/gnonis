@@ -1,0 +1,137 @@
+---
+id: cpp-systems/02-move/00-concepts
+title: "Concepts: Value Categories and Move Semantics"
+estMinutes: 8
+xp: 40
+missionIntro: "What lvalues and rvalues are, what moving actually does to memory, and why noexcept and std::forward exist."
+keyIdeas:
+  - "An lvalue has a name and an address you can take. An rvalue is a temporary or something marked as expiring."
+  - "Moving transfers an object's internal resources instead of duplicating them."
+  - "std::move does not move. It is a cast to an rvalue reference."
+  - "std::vector only moves elements during growth if the move constructor is noexcept."
+---
+## Why moving exists
+
+Copying a `std::vector<int>` of one million elements allocates new memory and copies four million bytes. Often the source is about to be destroyed anyway, for example a temporary returned from a function. Copying it is wasted work.
+
+A **move** takes the source's internal pointer and size, gives them to the destination, and leaves the source empty but valid. For a vector that is three pointer-sized writes instead of a full copy.
+
+To make this safe, the language needs a way to tell "this object is still needed" from "this object is about to go away". That is what **value categories** are for.
+
+## lvalues and rvalues
+
+Every expression has a **value category**. The two you need:
+
+- **lvalue**: refers to an object with an identity you can name again, such as a variable `x`, `v[3]`, or `*p`. You can take its address.
+- **rvalue**: a temporary value or an object marked as expiring, such as `42`, `a + b`, `make_vec()`, or `std::move(x)`.
+
+References bind according to category:
+
+```cpp
+int x = 1;
+int&       r1 = x;      // lvalue ref: binds to lvalues
+int&&      r2 = 5;      // rvalue ref: binds to rvalues
+const int& r3 = 5;      // const lvalue ref: binds to both
+```
+
+Overload resolution uses this. When a class has both `T(const T&)` and `T(T&&)`, an rvalue argument picks the `T&&` version, which is the move constructor.
+
+![Expression categories: lvalue, xvalue, prvalue](/diagrams/cpp-systems/02-move/01-value-categories.png)
+
+## What a move constructor does
+
+```cpp
+class Buf {
+    int* data_; size_t n_;
+public:
+    Buf(Buf&& o) noexcept : data_(o.data_), n_(o.n_) {
+        o.data_ = nullptr;   // source gives up ownership
+        o.n_ = 0;
+    }
+    ~Buf() { delete[] data_; }
+};
+```
+
+Step by step:
+
+1. Copy the source's pointer and size into the new object.
+2. Set the source's pointer to `nullptr`, so its destructor frees nothing.
+3. No allocation, no element copies.
+
+After a move, the source is in a **valid but unspecified state**. You may destroy it or assign a new value to it. Do not read its contents and expect anything particular.
+
+`std::move(x)` only casts `x` to `T&&`. It is the constructor or assignment that receives the cast value that does the moving.
+
+## Why noexcept matters
+
+When a `std::vector` runs out of capacity, it allocates a bigger block and transfers the old elements into it.
+
+If it moves elements and the fifth move throws an exception, the first four old elements are already empty. The vector cannot restore its old state. To keep its **strong exception guarantee** (on failure, nothing changed), it uses `std::move_if_noexcept`:
+
+- move constructor marked `noexcept`: elements are moved (fast)
+- not marked: elements are copied (slow but recoverable)
+
+So forgetting `noexcept` on a move constructor can quietly turn every growth step into a full copy. Defaulted move constructors (`= default`) are `noexcept` automatically when all members' moves are.
+
+## Forwarding references and std::forward
+
+In a template, `T&&` where `T` is deduced is a **forwarding reference**. It binds to both lvalues and rvalues, and `T` records which one it got:
+
+- passed an lvalue `int`: `T` is `int&`
+- passed an rvalue `int`: `T` is `int`
+
+Inside the function the parameter has a name, so it is an lvalue. `std::forward<T>(arg)` casts it back to an rvalue only if the caller passed an rvalue.
+
+```cpp
+template <class T>
+void wrap(T&& arg) {
+    target(std::forward<T>(arg)); // keeps the caller's category
+}
+```
+
+This is how `emplace_back` and `std::make_unique` pass arguments through without extra copies.
+
+## prvalue, xvalue and copy elision
+
+C++ splits rvalues further:
+
+- **prvalue** (pure rvalue): a value with no object yet, such as `42` or `make_buf()`.
+- **xvalue** (expiring value): an existing object marked as movable, such as `std::move(x)`.
+- **glvalue**: lvalue or xvalue, anything with an identity.
+
+**Copy elision** means the compiler builds an object directly in its final place, so no copy or move runs at all. Since C++17 it is **guaranteed** when you initialize from a prvalue of the same type:
+
+```cpp
+Buf make() { return Buf(1024); }   // guaranteed: built in the caller
+Buf b = make();                    // no move constructor call
+```
+
+**NRVO** (named return value optimization) is the same for a named local, `Buf r; ... return r;`. It is allowed but not guaranteed. If it does not happen, the return uses a move automatically. So never write `return std::move(r);`: it blocks NRVO.
+
+## Reference collapsing
+
+`std::forward` works because of **reference collapsing**. When templates or aliases produce a reference to a reference, the compiler reduces it:
+
+| written | becomes |
+| --- | --- |
+| `T& &` | `T&` |
+| `T& &&` | `T&` |
+| `T&& &` | `T&` |
+| `T&& &&` | `T&&` |
+
+Any `&` wins. So with `template <class T> void f(T&& x)`:
+
+- call with an lvalue `int`: `T = int&`, parameter type `int& &&`, collapses to `int&`
+- call with an rvalue `int`: `T = int`, parameter type `int&&`
+
+`std::forward<T>(x)` is essentially `static_cast<T&&>(x)`, which by the same table gives `int&` in the first case and `int&&` in the second.
+
+`std::exchange(obj, new_value)` is a small helper used in move operations: it assigns `new_value` to `obj` and returns the old value.
+
+<MCQ
+  id="concept-check"
+  prompt="What does `std::move(v)` do by itself, with no assignment or construction?"
+  options={["Moves v's buffer into a hidden temporary", "Empties v", "Nothing at runtime: it only casts v to an rvalue reference", "Calls v's move constructor"]}
+  answer={2}
+  explanation="std::move is a cast. Something must receive the rvalue, such as a move constructor, for a move to happen."
+/>

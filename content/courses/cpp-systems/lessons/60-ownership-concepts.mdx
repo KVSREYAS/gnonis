@@ -1,0 +1,88 @@
+---
+id: cpp-systems/03-ownership/00-concepts
+title: "Concepts: Ownership and Smart Pointers"
+estMinutes: 8
+xp: 40
+missionIntro: "Who frees heap memory, and how unique_ptr, shared_ptr and weak_ptr encode that answer in the type."
+keyIdeas:
+  - "The owner of a heap object is the code responsible for deleting it."
+  - "unique_ptr: exactly one owner, no runtime cost over a raw pointer."
+  - "shared_ptr: many owners, a reference count in a control block, delete when the count hits zero."
+  - "weak_ptr observes a shared object without keeping it alive, which breaks reference cycles."
+---
+## The ownership question
+
+Memory from `new` lives on the **heap** until someone calls `delete`. A raw pointer `T*` does not say who that someone is. Three bugs follow:
+
+- nobody deletes: a **leak**
+- two places delete: a **double free**
+- one place deletes while another still uses it: **use after free**
+
+The **owner** of an object is the piece of code that is responsible for destroying it. Smart pointers are RAII classes that make the owner explicit in the type. Their destructor does the delete.
+
+Rule used in modern C++: raw pointers and references may observe, smart pointers own.
+
+## std::unique_ptr: one owner
+
+`std::unique_ptr<T>` holds one pointer. Its destructor deletes the object.
+
+- It cannot be copied (that would create two owners).
+- It can be moved, which transfers ownership and leaves the source null.
+- It is the same size as a raw pointer when the deleter is the default, so it costs nothing extra.
+
+```cpp
+auto p = std::make_unique<Widget>(3);
+auto q = std::move(p);   // q owns, p is now nullptr
+// q's destructor deletes the Widget
+```
+
+A **custom deleter** lets it manage non-memory resources:
+
+```cpp
+std::unique_ptr<FILE, decltype(&fclose)> f(fopen("a", "r"), &fclose);
+```
+
+Use `unique_ptr` by default. Reach for shared ownership only when lifetimes genuinely cannot be ordered.
+
+## std::shared_ptr: counted owners
+
+`std::shared_ptr<T>` lets several pointers own one object. Mechanism:
+
+1. A separate heap block, the **control block**, stores a **strong count** (number of `shared_ptr`s), a **weak count**, and the deleter.
+2. Copying a `shared_ptr` increments the strong count. This is an atomic operation, so it is thread safe and slower than a plain add.
+3. Destroying one decrements it. When the strong count reaches 0, the object is deleted.
+4. When the weak count also reaches 0, the control block is freed.
+
+`std::make_shared<T>()` allocates the object and the control block in one allocation, which saves a heap call.
+
+![shared_ptr pointing to object and control block with counts](/diagrams/cpp-systems/03-ownership/02-shared-ptr-control-block.png)
+
+## Cycles and std::weak_ptr
+
+If object A holds a `shared_ptr` to B and B holds one to A, each keeps the other's strong count at least 1. When outside pointers go away, both counts stay at 1 and neither is deleted. That is a leak called a **reference cycle**.
+
+`std::weak_ptr<T>` points at the control block but only increments the weak count. It does not keep the object alive. To use the object, call `lock()`:
+
+```cpp
+std::weak_ptr<Node> parent;
+if (auto p = parent.lock()) {   // shared_ptr, or empty if gone
+    p->visit();
+}
+```
+
+Usual pattern: parents own children with `shared_ptr` (or `unique_ptr`), children refer back to parents with `weak_ptr`.
+
+## More shared_ptr details
+
+- **make_shared vs new**: `std::shared_ptr<T>(new T)` makes two allocations (object, control block). `std::make_shared<T>()` makes one. The downside: with `make_shared`, the object's memory is only returned when the weak count also reaches zero, because both live in one block.
+- **Aliasing constructor**: `std::shared_ptr<int> p(owner, &owner->field);` shares `owner`'s control block (keeps the whole object alive) but points at one member.
+- **Thread safety**: the counts are atomic, so copying `shared_ptr`s in different threads is safe. Accessing the pointed-to object from several threads still needs your own synchronization.
+- **Passing**: pass `const std::shared_ptr<T>&` or plain `T&` when the function does not keep ownership. Passing by value costs an atomic increment and decrement.
+
+<MCQ
+  id="concept-check"
+  prompt="Two nodes hold `shared_ptr`s to each other and nothing else points to them. What happens?"
+  options={["Both are deleted at the end of scope", "Both leak, because each strong count stays at 1", "The program crashes on exit", "Only one is deleted"]}
+  answer={1}
+  explanation="Each keeps the other's strong count above zero. Make one of the links a weak_ptr."
+/>

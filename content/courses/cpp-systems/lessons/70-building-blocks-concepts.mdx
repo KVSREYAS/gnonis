@@ -1,0 +1,68 @@
+---
+id: cpp-systems/12-building-blocks/00-concepts
+title: "Concepts: Arenas, Ring Buffers and Thread Pools"
+estMinutes: 8
+xp: 40
+missionIntro: "The three infrastructure pieces inside fast servers, explained by how their memory and indices work."
+keyIdeas:
+  - "An arena allocates by bumping an offset and frees everything at once."
+  - "An SPSC ring buffer passes items between one producer and one consumer with two atomic indices."
+  - "A thread pool keeps worker threads alive and feeds them tasks from a queue."
+  - "Each one removes a cost: malloc calls, locks, or thread creation."
+---
+## Arena allocator
+
+`malloc`/`new` must handle any size and any free order, so each call does bookkeeping. When many objects share one lifetime (for example, everything for one request), an **arena** is simpler:
+
+1. Reserve one large block.
+2. Keep an **offset**, the first unused byte.
+3. To allocate n bytes: round the offset up to the required alignment, return that address, add n.
+4. Never free single objects. **Reset** the offset to 0 to free everything at once.
+
+```cpp
+void* alloc(size_t n, size_t align) {
+    size_t p = (off_ + align - 1) & ~(align - 1);   // round up
+    if (p + n > cap_) return nullptr;
+    off_ = p + n;
+    return buf_ + p;
+}
+```
+
+Allocation is a few instructions, and objects are contiguous, which helps the cache. Destructors are not run, so store only trivially destructible types or call them yourself.
+
+## SPSC ring buffer
+
+A **ring buffer** is a fixed array used in a circle. **SPSC** means single producer, single consumer: exactly one thread pushes and one thread pops.
+
+State: `head` (next slot to read, written only by the consumer) and `tail` (next slot to write, written only by the producer). Both are `std::atomic<size_t>`.
+
+- push: if `tail - head == capacity`, full. Else write `buf[tail % cap]`, then store `tail + 1` with **release**.
+- pop: if `head == tail` (loaded with **acquire**), empty. Else read `buf[head % cap]`, then store `head + 1` with release.
+
+Release/acquire guarantees the consumer sees the item's data before it sees the new `tail`. No mutex is needed because each index has only one writer. With a power-of-two capacity, `% cap` becomes `& (cap - 1)`.
+
+![Ring buffer with head and tail indices](/diagrams/cpp-systems/12-building-blocks/02-spsc-ring-buffer.png)
+
+## Thread pool
+
+Creating a thread per task costs tens of microseconds. A **thread pool** creates N workers once and reuses them.
+
+Parts:
+
+1. A queue of tasks (`std::function<void()>`), protected by a mutex.
+2. A `std::condition_variable` that sleeping workers wait on.
+3. Worker loop: lock, wait until the queue is non-empty or `stop` is set, pop a task, unlock, run it.
+4. `submit(task)`: lock, push, unlock, `notify_one()`.
+5. Shutdown: set `stop`, `notify_all()`, join every worker.
+
+To return a result, wrap the task in `std::packaged_task` and hand the caller a `std::future`.
+
+N is usually the number of hardware threads (`std::thread::hardware_concurrency()`). More workers than cores adds switching cost without extra speed for CPU-bound work.
+
+<MCQ
+  id="concept-check"
+  prompt="In an SPSC ring buffer, why is no mutex needed?"
+  options={["Because the buffer is small", "Each index has exactly one writer thread, and release/acquire orders the data", "Because atomics are always locked", "It is actually needed"]}
+  answer={1}
+  explanation="Producer alone writes tail, consumer alone writes head. Acquire/release makes the data visible in order."
+/>

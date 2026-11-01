@@ -1,0 +1,86 @@
+---
+id: llm-inference/11-serving-systems/00-concepts
+title: "Concepts: Serving Metrics and Engines"
+estMinutes: 8
+xp: 40
+missionIntro: "The latency numbers users feel, how prefix caching and disaggregation improve them, and what real engines do."
+keyIdeas:
+  - "TTFT: time to first token. Dominated by queueing and prefill."
+  - "TPOT (or ITL): time per output token after the first. Dominated by decode."
+  - "Prefix caching reuses KV for prompt starts that were already processed."
+  - "Disaggregation runs prefill and decode on separate GPU pools."
+---
+## The latency metrics
+
+For one request:
+
+- **TTFT** (time to first token): from arrival to the first output token. Includes waiting in the queue plus prefill.
+- **TPOT** (time per output token), also **ITL** (inter-token latency): average gap between later tokens.
+- **E2E latency** = TTFT + TPOT x (output tokens - 1).
+
+Example: TTFT 300 ms, TPOT 25 ms, 200 output tokens: 0.3 + 0.025 x 199 = about 5.3 s.
+
+Services set targets as percentiles, such as "p99 TTFT under 1 s". **p99** means 99% of requests are at least this fast. **Goodput** is the request rate the system can handle while still meeting those targets.
+
+![TTFT and TPOT on a request timeline](/diagrams/llm-inference/11-serving-systems/01-ttft-tpot-and-prefix-caching.png)
+
+## Prefix caching
+
+Many requests start with the same tokens: a long system prompt, a shared document, earlier turns of a chat.
+
+**Prefix caching** keeps KV blocks after a request ends, indexed by a hash of the tokens they hold (and all tokens before them). When a new request arrives:
+
+1. Hash its prompt block by block.
+2. Find the longest run of blocks that already exist.
+3. Reuse those blocks, and prefill only the remaining tokens.
+
+A 4,000-token system prompt plus a 50-token question then costs about 50 tokens of prefill. TTFT falls sharply. Cached blocks are evicted least-recently-used when memory is needed. vLLM calls this automatic prefix caching. SGLang uses a radix tree (RadixAttention).
+
+## Engines
+
+An **inference engine** is the server software that runs all these techniques together:
+
+- **vLLM**: paged attention, continuous batching, prefix caching. Wide model support.
+- **SGLang**: RadixAttention prefix sharing, fast scheduling, structured output.
+- **TensorRT-LLM**: NVIDIA's compiled kernels, high single-GPU efficiency.
+- **TGI** (Hugging Face) and **llama.cpp** (CPU and consumer GPUs, GGUF quantized files).
+
+All expose an OpenAI-compatible HTTP API and stream tokens. They differ in kernels, schedulers and which features are enabled by default.
+
+![Engines compared by feature](/diagrams/llm-inference/11-serving-systems/02-engines-tour.png)
+
+## Disaggregated prefill and decode
+
+Prefill is compute-bound and bursty. Decode is memory-bound and steady. On one GPU they interfere: a big prefill delays everyone's next token.
+
+**Disaggregation** uses two pools of GPUs:
+
+1. A prefill worker processes the prompt and produces the KV cache and first token.
+2. The KV cache is transferred over a fast network (NVLink, InfiniBand, RDMA) to a decode worker.
+3. The decode worker generates the remaining tokens.
+
+Each pool can use its own batch size and parallelism, and the pools can be sized separately to meet TTFT and TPOT targets. The cost is the KV transfer: 1 GiB for an 8K-token Llama-3-8B request at the size from module 3.
+
+![Prefill pool sending KV to decode pool](/diagrams/llm-inference/11-serving-systems/03-disaggregated-prefill-decode.png)
+
+## SLOs and Little's law
+
+An **SLO** (service level objective) is a target the service promises to meet, such as "p99 TTFT under 1 s and p50 TPOT under 50 ms".
+
+**Little's law** connects traffic to concurrency for any stable system:
+
+L = lambda x W
+
+- L: average number of requests in the system at once
+- lambda: arrival rate (requests per second)
+- W: average time each request spends in the system (seconds)
+
+Example: 5 requests/s, each taking 10 s end to end, gives L = 50 requests running at once on average. Multiply by tokens per request and KV bytes per token (module 3) to get the KV memory you need.
+
+<MCQ
+  id="concept-check"
+  prompt="TTFT is 400 ms and TPOT is 20 ms. Roughly how long does a 101-token answer take end to end?"
+  options={["2.0 s", "2.4 s", "4.4 s", "0.42 s"]}
+  answer={1}
+  explanation="0.4 + 0.02 x 100 = 2.4 s."
+/>

@@ -1,0 +1,87 @@
+---
+id: cpp-systems/07-dod/00-concepts
+title: "Concepts: Data-Oriented Design"
+estMinutes: 8
+xp: 40
+missionIntro: "Organise data by how it is processed, so the CPU loads only bytes it uses and branches predictably."
+keyIdeas:
+  - "Data-oriented design picks a memory layout based on which fields each loop reads."
+  - "AoS stores whole objects together. SoA stores each field in its own array."
+  - "Hot/cold splitting moves rarely used fields out of the frequently scanned data."
+  - "A mispredicted branch costs about 15-20 cycles. Predictable or branchless code avoids it."
+---
+## The idea
+
+Object-oriented code groups data by what it **is**: one `Particle` object with every field. **Data-oriented design** groups data by what the code **does** with it.
+
+The reason is the cache line. When a loop reads only `x` from each particle, every other field in the line is loaded too and then ignored. Those bytes still cost memory bandwidth.
+
+The method:
+
+1. List the hot loops (where time goes).
+2. For each, list the fields it reads and writes.
+3. Lay out memory so that those fields are packed together and nothing else is in between.
+
+## AoS and SoA
+
+**Array of Structures (AoS)**:
+
+```cpp
+struct P { float x, y, z, mass; int id; char name[44]; };  // 64 bytes
+std::vector<P> ps;
+for (auto& p : ps) p.x += 1.0f;  // uses 4 of every 64 bytes
+```
+
+**Structure of Arrays (SoA)**:
+
+```cpp
+struct Ps { std::vector<float> x, y, z, mass; std::vector<int> id; };
+for (float& x : ps.x) x += 1.0f;  // uses 64 of every 64 bytes
+```
+
+The SoA loop reads 16 times less memory for this update and is easy for the compiler to turn into SIMD instructions.
+
+AoS is still better when every access needs all fields of one item, such as looking up one record by index.
+
+![AoS vs SoA memory layout](/diagrams/cpp-systems/07-dod/01-aos-vs-soa.png)
+
+## Hot and cold fields
+
+A **hot** field is read in the frequent loop. A **cold** field is read rarely, such as a debug name or creation time.
+
+**Hot/cold splitting** keeps hot fields in a compact struct and moves cold ones to a separate array, linked by index:
+
+```cpp
+struct OrderHot  { uint32_t price; uint32_t qty; };   // 8 bytes
+struct OrderCold { std::string client; std::string note; };
+std::vector<OrderHot>  hot;   // scanned every tick
+std::vector<OrderCold> cold;  // cold[i] matches hot[i]
+```
+
+Now eight orders fit in one cache line instead of perhaps one.
+
+## Branches and prediction
+
+A CPU runs many instructions ahead before it knows which way an `if` goes. The **branch predictor** guesses from past behaviour. A correct guess is free. A wrong guess throws away the speculative work, costing roughly 15-20 cycles.
+
+- A branch that is almost always the same way is predicted well.
+- A branch on random data (50/50) is mispredicted about half the time.
+
+Classic example: summing values above 128 is much faster on sorted input than on shuffled input, though the arithmetic is identical.
+
+Fixes:
+
+```cpp
+sum += (v >= 128) ? v : 0;     // often becomes a conditional move
+sum += v & -(v >= 128);        // explicit branchless mask
+```
+
+Or sort or partition the data first so the branch becomes predictable.
+
+<MCQ
+  id="concept-check"
+  prompt="A loop reads only `x` from a 64-byte AoS struct. Roughly how much of each loaded cache line is used?"
+  options={["All of it", "Half", "About 1/16 (4 of 64 bytes)", "None"]}
+  answer={2}
+  explanation="One 4-byte float per 64-byte line. SoA would use the whole line."
+/>
