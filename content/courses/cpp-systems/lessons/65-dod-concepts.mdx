@@ -36,6 +36,7 @@ for (auto& p : ps) p.x += 1.0f;  // uses 4 of every 64 bytes
 
 ```cpp
 struct Ps { std::vector<float> x, y, z, mass; std::vector<int> id; };
+Ps ps;
 for (float& x : ps.x) x += 1.0f;  // uses 64 of every 64 bytes
 ```
 

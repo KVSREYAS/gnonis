@@ -11,7 +11,14 @@ test("the courses index lists every pack and opens its map", async ({ page }) =>
   await expect(page).toHaveURL(/\/courses\/sample-bits-bytes$/);
   await expect(page.getByTestId("district-01-number-formats")).toBeVisible();
   const lesson = page.getByTestId("next-blip");
-  await expect(lesson).toHaveAttribute("href", "/courses/sample-bits-bytes/01-number-formats/01-bytes-per-number");
+  await expect(lesson).toHaveAttribute("href", "/courses/sample-bits-bytes/01-number-formats/00-concepts");
+  await expect(lesson).toHaveAttribute("aria-label", /Concepts: Bits, Bytes and Number Formats, next up/);
+  const district = page.getByTestId("district-01-number-formats");
+  await expect(district.getByRole("link", { name: "Bytes per number, not started" })).toHaveAttribute(
+    "href",
+    "/courses/sample-bits-bytes/01-number-formats/01-bytes-per-number",
+  );
   await lesson.click();
-  await expect(page).toHaveURL(/\/courses\/sample-bits-bytes\/01-number-formats\/01-bytes-per-number$/);
+  await expect(page).toHaveURL(/\/courses\/sample-bits-bytes\/01-number-formats\/00-concepts$/);
+  await expect(page.getByTestId("lesson-card")).toContainText("Bits and bytes");
 });

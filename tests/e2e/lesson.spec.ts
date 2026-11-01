@@ -67,9 +67,12 @@ test("skip and already-known unlock the next lesson and can be retried", async (
   await page.goto("/courses/sample-bits-bytes");
   await expect(page.getByTestId("blip-skipped-01-bytes-per-number")).toBeVisible();
   await expect(page.getByTestId("respect-skipped")).toContainText("2 skipped");
-  await expect(page.getByRole("progressbar", { name: /Respect/ })).toHaveAttribute("aria-valuenow", "17");
-  await expect(page.getByTestId("next-blip")).toHaveAttribute("aria-label", /Model-size maths, next up/);
+  await expect(page.getByRole("progressbar", { name: /Respect/ })).toHaveAttribute("aria-valuenow", "13");
+  await expect(page.getByTestId("next-blip")).toHaveAttribute("aria-label", /Concepts: Bits, Bytes and Number Formats, next up/);
   await page.goto("/courses/sample-bits-bytes/01-number-formats");
+  const missions = page.getByRole("list", { name: "Missions in this district" });
+  await expect(missions.getByRole("link").nth(0)).toHaveAttribute("href", /\/00-concepts$/);
+  await expect(missions.getByRole("link").nth(1)).toHaveAttribute("href", /\/01-bytes-per-number$/);
   await expect(page.getByTestId("lesson-skipped-01-bytes-per-number")).toContainText("2 skipped");
 
   await page.goto(LESSON);

@@ -107,16 +107,22 @@ A **friend** function is declared inside the class with `friend`. It is not a me
 A **virtual** function can be replaced (**overridden**) in a derived class. When you call it through a base pointer or reference, the program checks the object's actual type at runtime and calls that type's version. This is **dynamic dispatch**.
 
 ```cpp
+#include <memory>
+
 struct Shape {
     virtual double area() const = 0;  // pure virtual
     virtual ~Shape() = default;       // needed!
 };
 struct Sq : Shape {
     double s;
+    explicit Sq(double side) : s(side) {}
     double area() const override { return s * s; }
 };
-std::unique_ptr<Shape> p = std::make_unique<Sq>(Sq{{}, 2});
-p->area();   // 4, Sq's version
+
+double shown() {
+    std::unique_ptr<Shape> p = std::make_unique<Sq>(2);
+    return p->area();   // 4, Sq's version
+}
 ```
 
 `= 0` makes the class **abstract**: you cannot create a plain `Shape`. `override` asks the compiler to check that you really override something. The base destructor must be virtual so deleting through a base pointer runs the derived destructor.
