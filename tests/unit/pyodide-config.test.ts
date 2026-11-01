@@ -47,6 +47,8 @@ describe("pyodide config", () => {
     expect(policy).toContain("script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com");
     expect(policy).toContain("worker-src 'self' blob: https://cdn.jsdelivr.net https://unpkg.com");
     expect(policy).toContain("connect-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://example.supabase.co wss://example.supabase.co");
+    expect(policy).toContain("http://127.0.0.1:*");
+    expect(policy).toContain("http://localhost:*");
     const dev = contentSecurityPolicy({ dev: true });
     expect(dev).toContain("'unsafe-eval'");
     expect(dev).toContain("ws://localhost:*");

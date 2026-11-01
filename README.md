@@ -16,6 +16,8 @@ Atkinson Hyperlegible at 18px, 1.6 line height, 68ch measure, with reader mode, 
 - **Progress is local-first** (localStorage), behind a `ProgressStore` interface. With Supabase configured, players can
   **sign in** (Google, or email and password) and their progress syncs between PC and phone. Guests keep playing with
   localStorage only, and without the Supabase env vars the app runs local-only, exactly as before.
+- **Skip** and **I already know this** sit on every exercise. Both mark it skipped, which is not the same as solved.
+  You can continue, the next lesson still unlocks, and you can try the exercise later. Respect counts a skip as half a solve.
 - **Python runs in the browser** via Pyodide in a Web Worker, loaded only when you reach a code exercise.
 
 ## Run it locally
@@ -63,6 +65,7 @@ src/lib/calc/                      safe expression parser for the side-panel cal
 src/lib/supabase/                  env detection, browser / server / proxy clients
 supabase/migrations/               SQL to apply in the Supabase project (chat usage)
 src/lib/runner/                    CodeRunner interface, Pyodide runner, Piston stub, shared Python harness
+local-runner/gnosis-runner.mjs     optional C++ compiler on 127.0.0.1 (no npm dependencies)
 public/workers/pyodide-worker.js   the Web Worker that hosts Pyodide
 scripts/validate-content.ts        the content linter used in CI
 ```
@@ -191,6 +194,25 @@ When two saves meet (phone and PC, or guest progress joining an account), `merge
 The merge gives the same result in either order, and merging a save with itself changes nothing, so retries and
 repeated syncs are safe.
 
+### Skipping an exercise
+
+Every exercise (quiz, code, fill, boss, and the rest) has **Skip** and **I already know this** while it is still unsolved. Both write the exercise as skipped. `correct` stays false, so it is not a solve and it does not pay the first-try bonus. **Skip** stores `skipReason: "skip"`. **I already know this** stores `skipReason: "know"`. `skippedAt` is the time of that choice.
+
+You move on immediately. Open the exercise again and **Try it** clears the skip so you can answer it. A later correct submit clears the skip for good and counts as a solve. Desktop missions you pass over on a phone are still the older "pending desktop" list, not this skip.
+
+Skipped exercises do not block the next lesson. Finishing the lesson writes the lesson record either way, and the map's next mission is the first lesson that has no record. A lesson you finished by skipping still unlocks the one after it.
+
+**Respect** (the course percent) treats a skip as done-but-not-mastered:
+
+- A finished lesson is worth one full share, the same as before.
+- Each exercise that is still skipped removes half of its share. A lesson with two exercises, both skipped, is worth half a lesson. One skipped out of two is worth three quarters.
+- Pending desktop missions keep their existing half-share penalty. The two penalties add, and the lesson share never goes below zero.
+- Solving the exercise removes the skip penalty. Older saves have no skip fields, so their percent does not change.
+
+The lesson rail draws a skipped step in gold outline instead of the green done mark. The district list and the map blip show a skip mark, separate from the desktop-mission monitor icon.
+
+No SQL migration. Progress is still the `ProgressState` jsonb on `public.progress` (`user_id`, `data`, `updated_at`). The new optional fields live on `data.exercises[key]`: `skipped`, `skipReason`, `skippedAt`. Guests keep them in localStorage under the same key as the rest of the save. Signed-in sync merges them with the rule above: a solve beats a skip, and otherwise the later `skippedAt` wins. Apply nothing in the Supabase SQL editor for this.
+
 ### Supabase dashboard setup
 
 **Authentication → URL Configuration**
@@ -276,6 +298,81 @@ npx tsx scripts/cpp-sandbox-snapshot.ts
 ```
 
 Set the printed id as `CPP_SANDBOX_SNAPSHOT_ID` on the Vercel project (Production and Preview). `CPP_SANDBOX_INSTALL=1` installs `gcc-c++` on every run instead. That path is slower and can hit the function time limit, so the snapshot is the one to use.
+
+### Run C++ on your PC
+
+The same Run samples, Run input, and Submit buttons can compile on your machine instead of the Vercel sandbox. Nothing is counted against the daily cap. The switch is **Run on my PC** on a C++ exercise. The port and pairing token are saved in this browser (`localStorage` key `gnosis:cpp-local-runner:v1`). A health check shows **Connected** or **Not connected**. While the switch is on, those three actions go to the local runner. While it is off, they use `/api/code/cpp` as before. You do not need to be signed in for the local runner.
+
+`local-runner/gnosis-runner.mjs` is a zero-dependency Node script (Node 20.9+; CI uses 22). It listens only on `127.0.0.1`, port **8787** unless you pass `--port`. On startup it prints a random pairing token. The page sends that token in the `X-Gnosis-Runner-Token` header. CORS allows `https://gnonis.vercel.app` and localhost dev origins (`http://localhost:<port>`, `http://127.0.0.1:<port>`). The preflight answers Chrome's private-network check (`Access-Control-Allow-Private-Network: true`) so the public site can call the loopback runner.
+
+The body is the same one `/api/code/cpp` accepts: `action` (`run` or `submit`), `runKind` (`samples` or `stdin`), `code`, `lessonId`, `exerciseId`, and `stdin` for custom input. `mode` (`samples`, `stdin`, `submit`) is accepted as another spelling of those three runs. Run samples may also include `tests`, the check.h sample file already on screen. Submit does not send hidden tests. The runner reads them from `content/` in this repo, so start it from a checkout of the course you are playing. It compiles with `g++ -std=c++20 -O2` (`clang++` if `g++` is not on `PATH`), in a temp directory, with a 10 second compile limit, a 3 second run limit, and the same output cap as the sandbox. The compiler must be x86-64 (`g++ -dumpmachine` starts with `x86_64`) because exercises use SSE2.
+
+The result JSON matches the sandbox route (`error`, `stdout`, `stderr`, `tests`, `passed`, `total`, `failure`), which is what the exercise UI already renders. The page's Content-Security-Policy allows `connect-src` to `http://127.0.0.1:*` and `http://localhost:*` so the public site can call the loopback runner.
+
+#### Windows 11 setup
+
+The machine this was written for is Windows 11 with an RTX 3060 Ti. The runner does not use the GPU. `g++ -O2` is a CPU compile.
+
+1. Install Node.js 22 if `node -v` fails (20.9 or newer is enough). Open a new terminal after this:
+
+   ```powershell
+   winget install OpenJS.NodeJS.LTS
+   ```
+
+2. Install an x86-64 compiler, either MSYS2 or WSL.
+
+   **MSYS2, so `g++` is on the Windows PATH**
+
+   ```powershell
+   winget install MSYS2.MSYS2
+   ```
+
+   Open **MSYS2 MINGW64** from the Start menu. If `pacman -Syu` closes the window, open it again and run the second command.
+
+   ```bash
+   pacman -Syu
+   pacman -S --needed mingw-w64-x86_64-gcc
+   ```
+
+   Add `C:\msys64\mingw64\bin` to your user PATH: Settings → System → About → Advanced system settings → Environment Variables → User variables → Path → New → `C:\msys64\mingw64\bin`.
+
+   Open a new PowerShell window:
+
+   ```powershell
+   g++ --version
+   g++ -dumpmachine
+   ```
+
+   `-dumpmachine` must start with `x86_64`.
+
+   **WSL, so `g++` is on the Ubuntu PATH**
+
+   ```powershell
+   wsl --install
+   ```
+
+   Restart if Windows asks, then open Ubuntu:
+
+   ```bash
+   sudo apt update
+   sudo apt install -y g++
+   g++ --version
+   g++ -dumpmachine
+   ```
+
+   `-dumpmachine` must start with `x86_64`. Run the runner from that Ubuntu shell. If you run it from PowerShell and Windows `PATH` has no `g++`, the runner tries `wsl.exe g++` and then `wsl.exe clang++`.
+
+3. From the Gnosis repo:
+
+   ```bash
+   node local-runner/gnosis-runner.mjs
+   ```
+
+   `npx` is not required. The script uses only Node. Leave the window open. It prints a line like `Listening on http://127.0.0.1:8787` and `Pairing token:` followed by the token. If Windows Firewall asks, allow Node.js on private networks. The socket is bound to `127.0.0.1` only.
+
+4. On https://gnonis.vercel.app, or on http://localhost:4317 while `npm run dev` is running, open a C++ exercise. Turn on **Run on my PC**. Port `8787`. Paste the pairing token. The status line should say **Connected**.
+
+5. **Run samples**, **Run input**, and **Submit** now compile on this PC. Turn **Run on my PC** off to use the server sandbox again.
 
 | Variable | Default | What it does |
 | --- | --- | --- |

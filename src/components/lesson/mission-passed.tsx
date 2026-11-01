@@ -34,6 +34,8 @@ export type MissionPassedProps = {
   keyIdeas: string[];
   firstCompletion: boolean;
   pendingDesktop: number;
+  /** Exercises left skipped when the lesson was finished. */
+  skipped?: number;
   nextHref: string;
   nextLabel: string;
   mapHref: string;
@@ -114,6 +116,12 @@ export function MissionPassed(p: MissionPassedProps) {
             </li>
           ))}
         </ol>
+
+        {(p.skipped ?? 0) > 0 && (
+          <p className="mt-4 rounded-lg border border-gold/60 bg-ink p-3 text-base text-foreground" data-testid="mission-skipped">
+            {p.skipped} exercise{(p.skipped ?? 0) === 1 ? "" : "s"} skipped. They count as half a solve toward respect until you come back and solve them.
+          </p>
+        )}
 
         {p.pendingDesktop > 0 && (
           <p className="mt-4 flex items-start gap-2 rounded-lg border border-border bg-ink p-3 text-base">

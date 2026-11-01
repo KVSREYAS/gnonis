@@ -64,10 +64,10 @@ function supabaseConnectSources(supabaseUrl?: string | null): string[] {
 export function contentSecurityPolicy(options?: { dev?: boolean; supabaseUrl?: string | null }): string {
   const origins = pyodideCspOrigins();
   const script = ["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'", ...origins];
-  const connect = ["'self'", ...origins, ...supabaseConnectSources(options?.supabaseUrl)];
+  const connect = ["'self'", ...origins, ...supabaseConnectSources(options?.supabaseUrl), "http://127.0.0.1:*", "http://localhost:*"];
   if (options?.dev) {
     script.push("'unsafe-eval'");
-    connect.push("ws:", "http://localhost:*", "http://127.0.0.1:*", "ws://localhost:*", "ws://127.0.0.1:*");
+    connect.push("ws:", "ws://localhost:*", "ws://127.0.0.1:*");
   }
   return [
     "default-src 'self'",

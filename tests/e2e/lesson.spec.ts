@@ -45,6 +45,49 @@ test("wrong answers get instant feedback and a retry", async ({ page }) => {
   await expect(page.getByTestId("feedback")).toHaveCount(0);
 });
 
+test("skip and already-known unlock the next lesson and can be retried", async ({ page }) => {
+  await page.goto(LESSON);
+  const action = page.getByTestId("primary-action");
+  await action.click();
+  await page.getByTestId("know-exercise").click();
+  await expect(page.getByTestId("lesson-card")).toContainText("Why it matters");
+  await expect(page.getByTestId("lesson-skipped-count")).toHaveText("1 skipped");
+  await action.click();
+  await page.getByTestId("skip-exercise").click();
+  await expect(page.getByTestId("mission-passed")).toBeVisible({ timeout: 8_000 });
+  await expect(page.getByTestId("mission-skipped")).toContainText("2 exercises skipped");
+  await expect(page.getByTestId("hud-xp")).toHaveText("$00000030");
+
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("inference-academy:progress:v1") || "{}"));
+  const lessonKey = "sample-bits-bytes/01-number-formats/01-bytes-per-number";
+  expect(saved.exercises[`${lessonKey}#bf16-size`]).toMatchObject({ correct: false, skipped: true, skipReason: "know" });
+  expect(saved.exercises[`${lessonKey}#sizes-fill`]).toMatchObject({ correct: false, skipped: true, skipReason: "skip" });
+  expect(saved.lessons[lessonKey]).toBeTruthy();
+
+  await page.goto("/courses/sample-bits-bytes");
+  await expect(page.getByTestId("blip-skipped-01-bytes-per-number")).toBeVisible();
+  await expect(page.getByTestId("respect-skipped")).toContainText("2 skipped");
+  await expect(page.getByRole("progressbar", { name: /Respect/ })).toHaveAttribute("aria-valuenow", "17");
+  await expect(page.getByTestId("next-blip")).toHaveAttribute("aria-label", /Model-size maths, next up/);
+  await page.goto("/courses/sample-bits-bytes/01-number-formats");
+  await expect(page.getByTestId("lesson-skipped-01-bytes-per-number")).toContainText("2 skipped");
+
+  await page.goto(LESSON);
+  await action.click();
+  await expect(page.getByTestId("exercise-skipped")).toHaveAttribute("data-reason", "know");
+  await page.getByTestId("unskip-exercise").click();
+  await expect(page.getByTestId("exercise-skipped")).toHaveCount(0);
+  await expect(page.getByTestId("skip-exercise")).toBeVisible();
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const saved = JSON.parse(localStorage.getItem("inference-academy:progress:v1") || "{}");
+        return saved.exercises["sample-bits-bytes/01-number-formats/01-bytes-per-number#bf16-size"]?.skipped;
+      }),
+    )
+    .toBe(false);
+});
+
 test("desktop-only exercises are flagged in phone mode", async ({ page, isMobile }) => {
   test.skip(!isMobile, "phone-only behaviour");
   await page.goto("/courses/llm-inference/01-tokens-forward-pass");

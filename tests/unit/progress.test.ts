@@ -11,6 +11,9 @@ import {
   noteExerciseHash,
   recordExercise,
   respect,
+  skipExercise,
+  skippedExerciseCount,
+  unskipExercise,
   touchStreak,
   wantedStars,
   xpForLevel,
@@ -74,6 +77,25 @@ describe("exercise records", () => {
     expect(s.exercises["l#a"]).toMatchObject({ attempts: 2, correct: true, contentHash: "h1" });
     s = recordExercise(s, "l#a", true, "h2");
     expect(s.exercises["l#a"]).toMatchObject({ attempts: 3, correct: true, firstTry: true, contentHash: "h2" });
+  });
+
+  it("keeps a skip through migrate and drops a skip once the exercise is solved", () => {
+    const raw = {
+      exercises: {
+        "l#a": { attempts: 0, correct: false, firstTry: false, skipped: true, skipReason: "know", skippedAt: "2026-10-22T10:00:00.000Z", extra: true },
+        "l#b": { attempts: 1, correct: true, firstTry: true, skipped: true },
+      },
+    };
+    const next = migrate(raw);
+    expect(next.exercises["l#a"]).toEqual({
+      attempts: 0,
+      correct: false,
+      firstTry: false,
+      skipped: true,
+      skipReason: "know",
+      skippedAt: "2026-10-22T10:00:00.000Z",
+    });
+    expect(next.exercises["l#b"]).toEqual({ attempts: 1, correct: true, firstTry: true });
   });
 
   it("stamps a legacy record with the current hash and does not overwrite a mismatch", () => {
@@ -163,6 +185,37 @@ describe("levels, respect and next lesson", () => {
     const s = emptyProgress();
     s.lessons.a = { completedAt: "", xpEarned: 1, pendingDesktop: [] };
     expect(nextLessonKey(s, ["a", "b", "c"])).toBe("b");
+  });
+
+  it("counts a skipped exercise as half a solve and still unlocks the next lesson", () => {
+    const now = at("2026-10-22T12:00:00");
+    let s = skipExercise(emptyProgress(), "c/m/a#a", "skip", now);
+    s = skipExercise(s, "c/m/a#b", "know", at("2026-10-22T12:01:00"));
+    expect(s.exercises["c/m/a#a"]).toMatchObject({ correct: false, skipped: true, skipReason: "skip" });
+    expect(s.exercises["c/m/a#b"]).toMatchObject({ correct: false, skipped: true, skipReason: "know" });
+    expect(skippedExerciseCount(s, "c/m/a", ["a", "b"])).toBe(2);
+    const done = completeLesson(s, {
+      lessonKey: "c/m/a",
+      baseXp: 30,
+      exerciseKeys: ["c/m/a#a", "c/m/a#b"],
+      pendingDesktop: [],
+      now: at("2026-10-22T12:02:00"),
+    });
+    expect(done.xpGained).toBe(30);
+    expect(nextLessonKey(done.state, ["c/m/a", "c/m/b"])).toBe("c/m/b");
+    const lessons = [
+      { key: "c/m/a", exerciseCount: 2, exerciseIds: ["a", "b"] },
+      { key: "c/m/b", exerciseCount: 2, exerciseIds: ["a", "b"] },
+    ];
+    expect(respect(done.state, lessons)).toBe(25);
+    const solved = recordExercise(done.state, "c/m/a#a", true);
+    expect(solved.exercises["c/m/a#a"].correct).toBe(true);
+    expect(solved.exercises["c/m/a#a"].skipped).toBeUndefined();
+    expect(respect(solved, lessons)).toBe(38);
+    const retried = unskipExercise(done.state, "c/m/a#b", at("2026-10-22T13:00:00"));
+    expect(retried.exercises["c/m/a#b"].skipped).toBe(false);
+    expect(skippedExerciseCount(retried, "c/m/a", ["a", "b"])).toBe(1);
+    expect(skipExercise(solved, "c/m/a#a", "skip", now)).toBe(solved);
   });
 });
 
