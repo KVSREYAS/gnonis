@@ -1,0 +1,61 @@
+---
+id: llm-inference/03-kv-cache/00-concepts
+title: "Concepts: The KV Cache"
+estMinutes: 8
+xp: 40
+missionIntro: "Why inference servers store keys and values, how to calculate exactly how much memory that takes, and what it limits."
+keyIdeas:
+  - "Past tokens' keys and values never change under a causal mask, so they are computed once and stored."
+  - "KV bytes per token = 2 x layers x KV heads x head size x bytes per number."
+  - "The cache grows with every token of every active request."
+  - "GPU memory minus weights is the KV budget, which caps concurrency and context length."
+---
+## Why cache
+
+In decode step n, attention needs the keys and values of all n previous positions. Without a cache, the model would recompute them by running every previous token through every layer again: about n times the work for step n, and quadratic total work for a whole answer.
+
+Because of the causal mask, k and v for position s depend only on tokens 0..s. They are identical in every later step. So the server computes them once and keeps them in GPU memory: the **KV cache**.
+
+Each decode step then computes q, k, v for just the one new token, appends its k and v to the cache, and attends over the cache.
+
+![Recomputing vs reusing cached K and V](/diagrams/llm-inference/03-kv-cache/01-why-cache.png)
+
+## Sizing it exactly
+
+Per token, every layer stores one key and one value vector for each KV head:
+
+bytes per token = 2 x L x n_kv x d_head x bytes per number
+
+The 2 is for K and V.
+
+**Llama-3-8B** in FP16 (2 bytes): L = 32, n_kv = 8, d_head = 128.
+2 x 32 x 8 x 128 x 2 = 131,072 bytes = **128 KiB per token**.
+
+- one 8K-token request: 8,192 x 128 KiB = 1 GiB
+- 32 such requests: 32 GiB
+
+For comparison, the weights are about 16 GB. The cache can easily be larger than the model.
+
+![KV size formula with each factor](/diagrams/llm-inference/03-kv-cache/02-sizing-the-cache.png)
+
+## The memory budget
+
+A GPU's memory (HBM) holds three things:
+
+1. **weights**: fixed, e.g. 16 GB for 8B parameters in FP16
+2. **activations and workspace**: temporary buffers, a few GB
+3. **KV cache**: everything left
+
+On an 80 GB GPU: 80 - 16 - about 4 = about 60 GB for KV. At 128 KiB per token that is about 490,000 tokens of cache, shared by all active requests: 60 requests at 8K tokens, or 15 at 32K.
+
+That number sets the **maximum batch size**, and batch size sets throughput. So every technique that shrinks KV (GQA, KV quantization, paging to waste less) turns directly into more concurrent users.
+
+![HBM split into weights, activations and KV](/diagrams/llm-inference/03-kv-cache/03-the-memory-budget.png)
+
+<MCQ
+  id="concept-check"
+  prompt="A model has L = 40, n_kv = 8, d_head = 128, FP16. KV bytes per token?"
+  options={["80 KiB", "160 KiB", "320 KiB", "40 KiB"]}
+  answer={1}
+  explanation="2 x 40 x 8 x 128 x 2 = 163,840 bytes = 160 KiB."
+/>

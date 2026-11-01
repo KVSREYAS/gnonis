@@ -1,0 +1,104 @@
+---
+id: cpp-systems/09-concurrency/00-concepts
+title: "Concepts: Threads, Atomics and the Memory Model"
+estMinutes: 8
+xp: 40
+missionIntro: "How threads share memory, what a data race is, and what atomics and memory orders guarantee."
+keyIdeas:
+  - "A thread is an independent sequence of execution that shares the process's memory."
+  - "A data race (unsynchronized access with at least one write) is undefined behaviour."
+  - "Atomics make single operations indivisible. Memory orders control what other writes become visible."
+  - "False sharing: separate variables on one cache line slow each other down."
+---
+## Threads
+
+A **thread** runs its own sequence of instructions with its own stack, but it shares heap and global memory with all other threads in the process. On a multi-core CPU, threads truly run at the same time.
+
+```cpp
+std::jthread t([] { work(); });   // starts immediately
+// t joins automatically in its destructor (C++20)
+```
+
+`join()` waits for a thread to finish. A plain `std::thread` that is destroyed while still joinable calls `std::terminate`, which is why `std::jthread` (joining thread) is safer. `jthread` also carries a **stop token** that the thread can check to exit cooperatively.
+
+Starting a thread costs tens of microseconds, so long-running workers are reused (see thread pools in module 12).
+
+## Data races and mutexes
+
+A **data race** happens when two threads access the same memory location at the same time, at least one access is a write, and nothing orders them. It is undefined behaviour.
+
+`counter++` is really three steps: load, add, store. Two threads can both load 5 and both store 6, losing one increment.
+
+A **mutex** (mutual exclusion) lets only one thread at a time into a **critical section**:
+
+```cpp
+std::mutex m;
+int counter = 0;
+void inc() {
+    std::lock_guard lock(m);   // lock now, unlock at scope end
+    ++counter;
+}
+```
+
+Mutexes are correct and simple, but a contended lock can cost microseconds while threads wait.
+
+## Atomics and memory order
+
+`std::atomic<T>` makes each operation on it **indivisible**: no thread sees half of it, and no update is lost.
+
+```cpp
+std::atomic<int> counter{0};
+counter.fetch_add(1);   // safe from any thread
+```
+
+The harder part is ordering. CPUs and compilers reorder independent memory operations for speed. **Memory orders** limit that:
+
+- `relaxed`: only the atomic itself is safe. No ordering of other data. Fine for counters.
+- `release` (on a store) + `acquire` (on a load that reads that value): everything written before the release is visible after the acquire. Used to publish data.
+- `seq_cst` (default): one global order all threads agree on. Simplest, sometimes slower.
+
+```cpp
+data = 42;                                   // plain write
+ready.store(true, std::memory_order_release);
+// other thread:
+while (!ready.load(std::memory_order_acquire)) {}
+assert(data == 42);                          // guaranteed
+```
+
+## False sharing
+
+Cores keep caches **coherent** at cache-line granularity. When a core writes to a line, other cores' copies of that whole 64-byte line become invalid and must be reloaded.
+
+If thread A updates `counts[0]` and thread B updates `counts[1]`, and both ints sit in one line, every write by one forces a reload by the other. They share no data, yet they slow each other down heavily. This is **false sharing**.
+
+Fix: give each thread's hot data its own line.
+
+```cpp
+struct alignas(64) Padded { std::atomic<long> n; };
+Padded counts[8];   // each on its own cache line
+```
+
+`std::hardware_destructive_interference_size` is the portable name for that 64.
+
+![Two cores fighting over one cache line](/diagrams/cpp-systems/09-concurrency/03-false-sharing.png)
+
+## Condition variables and compare-exchange
+
+A **condition variable** (`std::condition_variable`) lets a thread sleep until another thread says something changed. It always works with a mutex and a condition you check:
+
+```cpp
+std::unique_lock lk(m);
+cv.wait(lk, [&]{ return !queue.empty(); });  // unlocks while asleep
+```
+
+`wait` re-checks the condition after waking, because wake-ups can happen with no notify (**spurious wake-ups**). The other side changes the data under the lock, then calls `cv.notify_one()`.
+
+`compare_exchange_weak(expected, desired)` is the basic lock-free building block: if the atomic equals `expected`, set it to `desired` and return true; otherwise write the current value into `expected` and return false. It is used in loops to implement updates that `fetch_add` cannot express.
+
+<MCQ
+  id="concept-check"
+  prompt="Two threads run `x++` on a plain `int x` with no locks. What does the language say?"
+  options={["x ends up exactly 2 higher", "It is a data race, which is undefined behaviour", "It is fine on x86", "The second thread waits automatically"]}
+  answer={1}
+  explanation="Unsynchronized write/write on the same location is a data race: UB. Use a mutex or std::atomic."
+/>

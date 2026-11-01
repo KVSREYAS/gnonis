@@ -1,0 +1,60 @@
+---
+id: sample-bits-bytes/01-number-formats/00-concepts
+title: "Concepts: Bits, Bytes and Number Formats"
+estMinutes: 5
+xp: 40
+missionIntro: "How computers store numbers, and how to turn a parameter count into memory size."
+keyIdeas:
+  - "A bit is 0 or 1. A byte is 8 bits."
+  - "Integers use a fixed number of bits. Floats store a sign, an exponent and a mantissa."
+  - "FP32 is 4 bytes, FP16 and BF16 are 2, INT8 is 1, INT4 is half a byte."
+  - "Model weight memory = parameters x bytes per parameter."
+---
+## Bits and bytes
+
+A **bit** is one binary digit, 0 or 1. A **byte** is 8 bits and can hold 2^8 = 256 different values.
+
+An **integer** type uses a fixed number of bits:
+
+- INT8: 8 bits, values -128 to 127
+- INT32: 32 bits, about plus or minus 2.1 billion
+
+Size units used in this course: 1 KB = 1,000 bytes, 1 MB = 10^6, 1 GB = 10^9. Binary units (KiB, MiB, GiB) use powers of 1,024 instead; 1 GiB is about 1.074 GB.
+
+## Floating-point formats
+
+A **floating-point** number stores three fields:
+
+- **sign**: 1 bit, positive or negative
+- **exponent**: sets the scale (how large or small)
+- **mantissa**: sets the precision (how many significant digits)
+
+| format | bits | exponent | mantissa | note |
+| --- | --- | --- | --- | --- |
+| FP32 | 32 | 8 | 23 | training default |
+| FP16 | 16 | 5 | 10 | max about 65,504 |
+| BF16 | 16 | 8 | 7 | same range as FP32, less precision |
+| FP8 E4M3 | 8 | 4 | 3 | newest GPUs |
+
+More exponent bits mean a wider range. More mantissa bits mean finer steps between neighbouring values.
+
+## Model size in your head
+
+weight memory = number of parameters x bytes per parameter
+
+A **parameter** is one learned number in the model.
+
+| model | FP16 (2 B) | INT8 (1 B) | INT4 (0.5 B) |
+| --- | --- | --- | --- |
+| 7B | 14 GB | 7 GB | 3.5 GB |
+| 70B | 140 GB | 70 GB | 35 GB |
+
+This is weights only. Running the model also needs memory for the KV cache and temporary activations, which the inference course covers.
+
+<MCQ
+  id="concept-check"
+  prompt="How much memory do the weights of a 13B-parameter model take in BF16?"
+  options={["13 GB", "26 GB", "52 GB", "6.5 GB"]}
+  answer={1}
+  explanation="13 x 10^9 x 2 bytes = 26 GB."
+/>

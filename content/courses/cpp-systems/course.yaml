@@ -10,59 +10,73 @@ prerequisites: []
 tagline: From RAII to a forward pass.
 level: intermediate
 lessons:
+- lifetime-concepts
 - raii-scope-guards
 - rule-of-zero-three-five
 - lifetime-and-dangling
 - boss-lifetime-lane
+- move-concepts
 - value-categories
 - move-and-noexcept
 - perfect-forwarding
 - boss-move-motel
+- ownership-concepts
 - unique-ptr-and-deleters
 - shared-ptr-control-block
 - weak-ptr-and-cycles
 - boss-pointer-projects
+- oop-concepts
 - classes-and-access
 - constructors-and-destructors
 - static-operators-and-friends
 - inheritance-and-polymorphism
 - boss-class-act-garage
+- templates-concepts
 - templates-and-deduction
 - concepts-and-constraints
 - constexpr-and-compile-time
 - boss-template-town
+- stl-concepts
 - containers-and-invalidation
 - algorithms-and-ranges
 - views-span-and-string-view
 - boss-stl-strip
+- layout-concepts
 - sizeof-padding-alignment
 - cache-lines-and-locality
 - aligned-allocation
 - boss-layout-lofts
+- dod-concepts
 - aos-vs-soa
 - hot-cold-splitting
 - branches-and-predictability
 - boss-dod-docks
+- ub-concepts
 - ub-catalogue
 - aliasing-and-bit-cast
 - sanitizers
 - boss-ub-underground
+- concurrency-concepts
 - threads-and-jthread
 - atomics-and-memory-order
 - false-sharing
 - boss-concurrency-casino
+- simd-concepts
 - auto-vectorization
 - intrinsics-sse
 - reductions-and-accumulators
 - boss-simd-speedway
+- perf-concepts
 - benchmarking-pitfalls
 - profilers-and-flamegraphs
 - reading-assembly
 - boss-perf-pier
+- building-blocks-concepts
 - arena-allocator
 - spsc-ring-buffer
 - thread-pool
 - boss-builders-yard
+- capstone-concepts
 - tensors-and-strides
 - tiled-matmul
 - softmax-and-sampling
@@ -77,6 +91,7 @@ districts:
   art: skyline
   status: ready
   lessons:
+  - lifetime-concepts
   - raii-scope-guards
   - rule-of-zero-three-five
   - lifetime-and-dangling
@@ -90,6 +105,7 @@ districts:
   art: docks
   status: ready
   lessons:
+  - move-concepts
   - value-categories
   - move-and-noexcept
   - perfect-forwarding
@@ -103,6 +119,7 @@ districts:
   art: grid
   status: ready
   lessons:
+  - ownership-concepts
   - unique-ptr-and-deleters
   - shared-ptr-control-block
   - weak-ptr-and-cycles
@@ -115,6 +132,7 @@ districts:
   art: docks
   status: ready
   lessons:
+  - oop-concepts
   - classes-and-access
   - constructors-and-destructors
   - static-operators-and-friends
@@ -129,6 +147,7 @@ districts:
   art: tower
   status: ready
   lessons:
+  - templates-concepts
   - templates-and-deduction
   - concepts-and-constraints
   - constexpr-and-compile-time
@@ -142,6 +161,7 @@ districts:
   art: pier
   status: ready
   lessons:
+  - stl-concepts
   - containers-and-invalidation
   - algorithms-and-ranges
   - views-span-and-string-view
@@ -154,6 +174,7 @@ districts:
   art: bridge
   status: ready
   lessons:
+  - layout-concepts
   - sizeof-padding-alignment
   - cache-lines-and-locality
   - aligned-allocation
@@ -166,6 +187,7 @@ districts:
   art: docks
   status: ready
   lessons:
+  - dod-concepts
   - aos-vs-soa
   - hot-cold-splitting
   - branches-and-predictability
@@ -179,6 +201,7 @@ districts:
   art: desert
   status: ready
   lessons:
+  - ub-concepts
   - ub-catalogue
   - aliasing-and-bit-cast
   - sanitizers
@@ -191,6 +214,7 @@ districts:
   art: skyline
   status: ready
   lessons:
+  - concurrency-concepts
   - threads-and-jthread
   - atomics-and-memory-order
   - false-sharing
@@ -203,6 +227,7 @@ districts:
   art: hills
   status: ready
   lessons:
+  - simd-concepts
   - auto-vectorization
   - intrinsics-sse
   - reductions-and-accumulators
@@ -215,6 +240,7 @@ districts:
   art: pier
   status: ready
   lessons:
+  - perf-concepts
   - benchmarking-pitfalls
   - profilers-and-flamegraphs
   - reading-assembly
@@ -227,6 +253,7 @@ districts:
   art: grid
   status: ready
   lessons:
+  - building-blocks-concepts
   - arena-allocator
   - spsc-ring-buffer
   - thread-pool
@@ -239,6 +266,7 @@ districts:
   art: tower
   status: ready
   lessons:
+  - capstone-concepts
   - tensors-and-strides
   - tiled-matmul
   - softmax-and-sampling

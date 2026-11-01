@@ -1,0 +1,98 @@
+---
+id: cpp-systems/08-ub/00-concepts
+title: "Concepts: Undefined Behaviour"
+estMinutes: 8
+xp: 40
+missionIntro: "What undefined behaviour means, why the optimizer exploits it, and how to find it with sanitizers."
+keyIdeas:
+  - "Undefined behaviour (UB): the standard places no requirements on what the program does."
+  - "The optimizer assumes UB never happens and transforms code based on that assumption."
+  - "Strict aliasing: you may not read an object through a pointer to an unrelated type."
+  - "std::bit_cast and memcpy are the legal ways to reinterpret bytes."
+---
+## What UB is
+
+The C++ standard sorts program behaviour into kinds. The dangerous one is **undefined behaviour**: an operation for which the standard sets no rules at all. Anything may happen, including "works in debug, breaks in release".
+
+Common cases:
+
+- signed integer overflow: `INT_MAX + 1`
+- out-of-bounds array access
+- dereferencing a null or dangling pointer
+- reading an uninitialized variable
+- data race: two threads access the same memory, one writes, no synchronization
+- shifting by the bit width or more: `1 << 32` on a 32-bit int
+
+Unsigned overflow is **not** UB. It wraps modulo 2^N.
+
+## Why the optimizer makes it worse
+
+The compiler is allowed to assume your program has no UB. It uses that to remove checks and simplify code.
+
+```cpp
+bool will_overflow(int x) {
+    return x + 1 < x;    // signed overflow is UB...
+}
+// ...so the compiler may assume x + 1 > x and compile this to: return false;
+```
+
+Another:
+
+```cpp
+int f(int* p) {
+    int v = *p;          // if p were null this is UB
+    if (!p) return 0;    // so this check can be deleted
+    return v;
+}
+```
+
+The result is not a crash at the bad line. It is code that does something you never wrote, sometimes far from the cause. That is why UB must be prevented, not just tested for.
+
+![Catalogue of common UB cases](/diagrams/cpp-systems/08-ub/01-ub-catalogue.png)
+
+## Aliasing and bit_cast
+
+Two pointers **alias** when they refer to the same memory. The **strict aliasing rule** says you may access an object only through its own type, a `char`/`unsigned char`/`std::byte` pointer, or a few related types. So the compiler assumes a `float*` and an `int*` never point to the same bytes.
+
+```cpp
+float f = 1.0f;
+uint32_t bits = *reinterpret_cast<uint32_t*>(&f);  // UB
+```
+
+Legal ways to look at the bytes:
+
+```cpp
+uint32_t a = std::bit_cast<uint32_t>(f);   // C++20, same size required
+uint32_t b; std::memcpy(&b, &f, sizeof b); // compiles to one move
+```
+
+Both give `0x3F800000` for 1.0f and cost nothing at runtime.
+
+## Finding UB with sanitizers
+
+A **sanitizer** is a compiler mode that adds runtime checks to your program.
+
+- **AddressSanitizer** (`-fsanitize=address`): out-of-bounds, use after free, double free, leaks.
+- **UndefinedBehaviorSanitizer** (`-fsanitize=undefined`): signed overflow, bad shifts, null dereference, misaligned access.
+- **ThreadSanitizer** (`-fsanitize=thread`): data races. Cannot be combined with ASan.
+
+```bash
+g++ -std=c++20 -g -O1 -fsanitize=address,undefined app.cpp
+./a.out   # prints the exact line and a stack trace on the first error
+```
+
+They slow the program by roughly 2-15 times, so use them in tests and CI, not production. Note that this site's runner does not enable sanitizers, so run them locally.
+
+## Type punning and std::launder
+
+**Type punning** means reading the bytes of an object as a different type, such as the bits of a float as an integer. In C++ the legal methods are `std::memcpy`, `std::bit_cast`, and access through `char`, `unsigned char` or `std::byte`. Writing one member of a `union` and reading another is UB in C++ (GCC allows it as an extension, but do not rely on it).
+
+`std::launder(p)` is a rare tool: when you create a new object in storage that held an old object (with placement `new`) and the old object had `const` or reference members, `std::launder` gives a pointer the compiler must treat as pointing to the new object. You will meet it in custom allocators and containers, almost never elsewhere.
+
+<MCQ
+  id="concept-check"
+  prompt="Which of these is undefined behaviour?"
+  options={["unsigned u = 0; u - 1;", "int x = INT_MAX; x + 1;", "std::bit_cast<uint32_t>(1.0f)", "Reading a float through an unsigned char*"]}
+  answer={1}
+  explanation="Signed overflow is UB. Unsigned arithmetic wraps, bit_cast is legal, and char-type access is allowed."
+/>

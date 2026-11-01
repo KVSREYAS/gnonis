@@ -1,0 +1,71 @@
+---
+id: llm-inference/06-paged-attention/00-concepts
+title: "Concepts: Paged KV Cache"
+estMinutes: 8
+xp: 40
+missionIntro: "How vLLM-style servers store the KV cache in fixed-size blocks, and why that removes most memory waste."
+keyIdeas:
+  - "Contiguous per-request KV buffers waste memory through over-reservation and fragmentation."
+  - "Paged attention stores KV in fixed-size blocks (e.g. 16 tokens) placed anywhere in GPU memory."
+  - "A block table maps each sequence's logical block numbers to physical blocks."
+  - "Blocks can be shared between sequences, copied on write, or moved to CPU memory under pressure."
+---
+## The waste problem
+
+A simple server reserves one contiguous KV buffer per request, sized for the maximum possible length, because it cannot know the output length in advance.
+
+Three kinds of waste:
+
+- **reservation**: space for tokens that are not generated yet, maybe never
+- **internal fragmentation**: a request ends at 300 tokens in a 2,048-token slot
+- **external fragmentation**: free memory is split into gaps too small for a new contiguous buffer
+
+The vLLM paper measured that existing systems used only 20-38% of KV memory for actual tokens. Since KV memory sets batch size, that waste directly cut throughput.
+
+## Blocks and block tables
+
+**Paged attention** borrows the method operating systems use for RAM:
+
+1. Split KV memory into equal **physical blocks**, each holding K and V for a fixed number of tokens, say 16.
+2. Each sequence has a **block table**: a small array where entry i gives the physical block storing its tokens 16i to 16i + 15.
+3. When a sequence fills its last block, the server takes any free block from a **free list** and appends its number to the table.
+4. The attention kernel reads the table to find where each token's K and V are.
+
+Waste is now at most one partly filled block per sequence: under 16 tokens. Blocks do not need to be adjacent, so external fragmentation disappears.
+
+![Logical blocks mapped through a table to scattered physical blocks](/diagrams/llm-inference/06-paged-attention/01-kv-as-virtual-memory.png)
+
+## Sharing and copy-on-write
+
+Several sequences often begin with the same tokens: parallel samples of one prompt, or many chats with the same system prompt.
+
+With block tables they can point to the **same physical blocks** for that shared part. Each block has a **reference count**: how many tables point to it.
+
+When a sequence needs to write into a shared block whose count is above 1, the server first **copies** it to a new block, points only this sequence at the copy, and decrements the old count. This is **copy-on-write**. Full shared prefix blocks are never written, so they are never copied.
+
+Example: 4 samples of a 1,600-token prompt store 100 prompt blocks once instead of 400.
+
+![Two block tables sharing blocks, with a copy on write](/diagrams/llm-inference/06-paged-attention/02-block-tables-and-copy-on-write.png)
+
+## Preemption and swapping
+
+Sequences grow, and the server may run out of free blocks mid-generation. It must **preempt** (pause) some sequences to free their blocks. Two options:
+
+- **Swap**: copy the sequence's blocks to CPU memory over PCIe, and copy them back later. Costs transfer time, keeps the work.
+- **Recompute**: drop the blocks and later re-run prefill on prompt plus generated tokens. Costs compute, needs no CPU memory.
+
+Short sequences are often cheaper to recompute. Long ones are cheaper to swap. Schedulers usually preempt the most recently arrived requests first, so older requests finish.
+
+## Beam search
+
+**Beam search** is a decoding method that keeps the b most likely partial outputs (the **beams**) at every step instead of one. Each step, every beam is extended by its top candidate tokens, and only the b best sequences overall are kept.
+
+All beams share the prompt, and beams that split from the same parent share their earlier generated tokens. With block tables and copy-on-write those shared parts are stored once, which is why the vLLM paper reports its largest memory savings for beam search.
+
+<MCQ
+  id="concept-check"
+  prompt="With a block size of 16 tokens, what is the most KV memory one sequence can waste in its own blocks?"
+  options={["Its maximum length", "Less than one block (at most 15 token slots)", "Half its blocks", "Nothing ever"]}
+  answer={1}
+  explanation="Only the last block can be partly empty."
+/>

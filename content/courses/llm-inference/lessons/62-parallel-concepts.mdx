@@ -1,0 +1,66 @@
+---
+id: llm-inference/10-parallelism/00-concepts
+title: "Concepts: Splitting a Model Across GPUs"
+estMinutes: 8
+xp: 40
+missionIntro: "Tensor, pipeline and expert parallelism: what is split, what must be communicated, and when each is used."
+keyIdeas:
+  - "Tensor parallelism splits each weight matrix across GPUs, with an all-reduce per layer."
+  - "Pipeline parallelism gives each GPU a range of layers and passes activations along."
+  - "Mixture-of-experts models activate only a few expert MLPs per token."
+  - "Expert parallelism places experts on different GPUs and routes tokens with all-to-all."
+---
+## Why split
+
+A 70B model in FP16 has 140 GB of weights, more than one 80 GB GPU. Even when a model fits, splitting it can make each step faster, because several GPUs read their share of the weights at the same time, adding up bandwidth.
+
+The cost is **communication**: GPUs must exchange intermediate results. Within one server, GPUs are linked by **NVLink** (hundreds of GB/s per GPU). Between servers, links are usually much slower. Which split to use depends on how much data each needs to send and over which link.
+
+## Tensor parallelism
+
+**Tensor parallelism (TP)** splits each layer's matrices across N GPUs.
+
+For an MLP, Y = act(X A) B:
+
+1. Split A by **columns**: GPU i holds A_i and computes act(X A_i) for its slice. No communication needed, since the activation is applied per element.
+2. Split B by **rows**: GPU i computes a partial Y_i = act(X A_i) B_i.
+3. **All-reduce**: every GPU sums all partial Y_i and gets the full Y.
+
+Attention splits the same way by heads. So TP costs two all-reduces per transformer block, every step. That is fine over NVLink, so TP is typically used within one server (2-8 GPUs).
+
+![Column-split then row-split with all-reduce](/diagrams/llm-inference/10-parallelism/01-tensor-parallelism.png)
+
+## Pipeline parallelism
+
+**Pipeline parallelism (PP)** gives each GPU a contiguous range of layers: with 4 GPUs and 80 layers, GPU 0 has layers 0-19, and so on. Only the activation vector moves between stages, which is small, so PP works over slower links between servers.
+
+The problem is **bubbles**: with one batch, GPU 1 waits while GPU 0 works, and so on. The fix is to split work into **micro-batches** so that all stages work on different micro-batches at the same time.
+
+PP does not make a single token faster. It mainly lets a model that is too big fit, at good throughput.
+
+![Stages with micro-batches filling the pipeline](/diagrams/llm-inference/10-parallelism/02-pipeline-parallelism.png)
+
+## Mixture of experts and expert parallelism
+
+A **mixture-of-experts (MoE)** layer has many MLPs called **experts** (e.g. 64), and a small **router** that, for each token, picks the top k (e.g. 2) and combines their outputs.
+
+So total parameters are large, but each token uses only a fraction. Mixtral 8x7B has about 47B parameters but about 13B active per token.
+
+**Expert parallelism (EP)** places different experts on different GPUs:
+
+1. Each GPU routes its tokens.
+2. **All-to-all**: tokens are sent to the GPUs that hold their chosen experts.
+3. Experts compute.
+4. All-to-all again to send results back.
+
+Uneven routing creates **load imbalance**: a popular expert's GPU becomes the bottleneck.
+
+![Router sending tokens to experts across GPUs](/diagrams/llm-inference/10-parallelism/03-moe-and-expert-parallelism.png)
+
+<MCQ
+  id="concept-check"
+  prompt="Which split needs an all-reduce inside every transformer block?"
+  options={["Pipeline parallelism", "Tensor parallelism", "Data parallelism", "None of them"]}
+  answer={1}
+  explanation="TP's row-split matmuls produce partial sums that must be added across GPUs each block."
+/>

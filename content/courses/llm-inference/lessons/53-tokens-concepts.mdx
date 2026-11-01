@@ -1,0 +1,82 @@
+---
+id: llm-inference/01-tokens-forward-pass/00-concepts
+title: "Concepts: Tokens and the Forward Pass"
+estMinutes: 8
+xp: 40
+missionIntro: "What a language model actually computes, from text to token ids to one predicted next token."
+keyIdeas:
+  - "A token is a chunk of text with an integer id. Models read and write token ids, not characters."
+  - "A forward pass turns a sequence of token ids into one score (logit) per vocabulary entry for the next position."
+  - "Generation repeats the forward pass once per new token."
+  - "Prefill processes the whole prompt at once. Decode produces one token per step."
+---
+## Tokens
+
+A **tokenizer** splits text into pieces called **tokens** and maps each to an integer **id**. The set of all tokens is the **vocabulary**, typically 32,000 to 200,000 entries.
+
+Common words are one token. Rare words split into several. A rough rule for English: 1 token is about 4 characters, or 0.75 words.
+
+Example (ids illustrative): `"Inference is fun"` might become `[1179, 2251, 374, 2523]`, where "Inference" took two tokens.
+
+Every cost you will measure later (memory, time, money) is counted in tokens, so this is the unit for the whole course.
+
+![Text split into tokens with ids](/diagrams/llm-inference/01-tokens-forward-pass/01-what-is-a-token.png)
+
+## The forward pass, step by step
+
+A **forward pass** is one run of the model over a sequence of token ids. For a decoder-only transformer:
+
+1. **Embedding**: each id selects a row from a table, giving a vector of d numbers (d is the **hidden size**, e.g. 4096).
+2. **Layers**: the vectors go through L identical **transformer blocks** (e.g. 32). Each block has an **attention** part (positions read from earlier positions) and an **MLP** part (each position is transformed on its own). Both are mostly matrix multiplications with the model's **weights**, the learned numbers.
+3. **Output projection**: the last position's vector is multiplied by a d by V matrix, giving V numbers called **logits**, one per vocabulary token.
+
+The weights are the same for every request. Only the activations (the vectors flowing through) differ.
+
+![Embedding, L blocks, and output head](/diagrams/llm-inference/01-tokens-forward-pass/02-the-forward-pass.png)
+
+## From logits to a token
+
+A **logit** is an unnormalized score. Softmax converts them into probabilities:
+
+p_i = exp(z_i) / sum of exp(z_j)
+
+Example with three tokens, logits [2.0, 1.0, 0.0]: probabilities [0.665, 0.245, 0.090].
+
+Then a **sampling** rule picks one id: the largest (greedy), or a random draw shaped by **temperature** and **top-k / top-p** limits. The chosen id is turned back into text by the tokenizer.
+
+Generation is **autoregressive**: the new token is appended to the sequence and the model runs again to predict the one after it. A 500-token answer needs 500 steps.
+
+## Prefill and decode
+
+A request has two phases:
+
+- **Prefill**: process all prompt tokens in one forward pass. With 2,000 prompt tokens, the matrix multiplications have 2,000 rows, so the GPU's arithmetic units are kept busy. It ends by producing the first output token.
+- **Decode**: produce each later token, one forward pass per token, each with only 1 new row.
+
+Decode reads all the weights from memory to do very little arithmetic per step. For a 7B-parameter model in 16-bit, that is 14 GB read per token. So decode speed is mostly limited by **memory bandwidth**, and prefill by **compute**. Most of the course is about this difference.
+
+![Prefill as one wide pass, decode as many thin passes](/diagrams/llm-inference/01-tokens-forward-pass/04-prefill-and-decode.png)
+
+## Inside a block: norms, residuals and RoPE
+
+Three more pieces appear in every modern block:
+
+- **Residual connection**: each part's output is **added** to its input, `x = x + attention(norm(x))`, then `x = x + mlp(norm(x))`. The vector flowing through all layers is called the **residual stream**.
+- **RMSNorm** (or the older LayerNorm): rescales each vector so its root-mean-square is 1, then multiplies by learned per-dimension weights. This keeps values in a stable range across many layers.
+- **RoPE** (rotary position embedding): attention by itself does not know token order. RoPE rotates pairs of numbers in each query and key by an angle proportional to the token's position, so the q-k dot product depends on the distance between positions.
+
+The MLP is usually two or three matrices with an activation such as SwiGLU between them, and holds about two-thirds of the parameters.
+
+## The 2 FLOPs per parameter rule
+
+Each weight is used in one multiply and one add per token, so a forward pass costs about **2 x parameters FLOPs per token** (ignoring attention over the context, which matters at long lengths).
+
+Example: an 8B model processing a 1,000-token prompt: 2 x 8 x 10^9 x 1,000 = 1.6 x 10^13 FLOPs = 16 TFLOPs. On a GPU sustaining 400 TFLOP/s that is about 40 ms of prefill.
+
+<MCQ
+  id="concept-check"
+  prompt="A model must write a 200-token answer to a 1,000-token prompt. How many forward passes, roughly?"
+  options={["1", "200 (one prefill that yields token 1, then 199 decode steps)", "1,200", "1,000"]}
+  answer={1}
+  explanation="Prefill handles the whole prompt in one pass and produces the first token. Each further token needs one decode pass."
+/>

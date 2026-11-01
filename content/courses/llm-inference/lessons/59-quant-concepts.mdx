@@ -1,0 +1,67 @@
+---
+id: llm-inference/07-quantization/00-concepts
+title: "Concepts: Quantization"
+estMinutes: 8
+xp: 40
+missionIntro: "Storing weights, activations or KV in fewer bits: how the numbers are mapped, and why it speeds up decode."
+keyIdeas:
+  - "Quantization stores numbers with fewer bits plus a scale that maps them back to real values."
+  - "Fewer weight bytes means faster memory-bound decode and more room for KV."
+  - "Per-group scales (e.g. one per 128 weights) keep error low."
+  - "Activation outliers make activation quantization hard. SmoothQuant moves that difficulty into weights."
+---
+## What quantization does
+
+Models are trained in 16-bit floats (FP16 or BF16, 2 bytes each). **Quantization** stores values in fewer bits, such as 8-bit or 4-bit integers, plus extra numbers that convert them back.
+
+Common formats and weight size for an 8B model:
+
+| format | bytes per weight | weights |
+| --- | --- | --- |
+| FP16/BF16 | 2 | 16 GB |
+| INT8 / FP8 | 1 | 8 GB |
+| INT4 | 0.5 | 4 GB (plus scales) |
+
+Since decode is memory-bound, halving bytes nearly doubles the maximum decode speed. It also frees memory for KV, which raises batch size. The cost is some accuracy, which good methods keep small.
+
+![Bytes per weight and resulting speed](/diagrams/llm-inference/07-quantization/01-fewer-bytes-faster-tokens.png)
+
+## Scale and zero point
+
+**Symmetric INT8** for a group of values:
+
+1. scale = max(|x|) / 127
+2. q = round(x / scale), clipped to -127..127
+3. to use it: x' = q x scale
+
+Example: values [0.5, -1.27, 0.02]. max |x| = 1.27, scale = 0.01. q = [50, -127, 2]. Restored: [0.50, -1.27, 0.02].
+
+**Asymmetric** adds a **zero point** z so the integer range covers [min, max] when values are not centred on 0: x' = (q - z) x scale.
+
+The **rounding error** is at most half a step, scale / 2. A larger range means a larger step, so one big value makes every small value less precise.
+
+## Groups and outliers
+
+One scale for a whole matrix is coarse: a single large weight forces a large step for millions of small ones.
+
+**Per-channel** uses one scale per row. **Per-group** uses one scale per small block, such as 128 consecutive weights. The scales cost extra memory (one FP16 per 128 4-bit weights adds 0.125 bits per weight) but greatly reduce error. GPTQ and AWQ are 4-bit weight methods built on groups.
+
+**Activations** (the vectors flowing between layers) are harder. A few channels hold values 100 times larger than the rest. **SmoothQuant** divides those activation channels by a factor s and multiplies the matching weight rows by s. The product is unchanged, but activations become easy to quantize, and weights absorb a range they handle well.
+
+![Per-group scales over a weight row](/diagrams/llm-inference/07-quantization/02-scales-and-groups.png)
+
+## Quantizing the KV cache
+
+The KV cache can also be stored in 8 bits (FP8 or INT8), sometimes 4.
+
+Using the module 3 formula for Llama-3-8B: 128 KiB per token in FP16 becomes 64 KiB in FP8. The same memory now holds twice as many tokens, so twice the batch or twice the context.
+
+Keys tend to have outlier channels, so good KV schemes use per-channel scales for K and per-token scales for V. Values are dequantized inside the attention kernel as they are read, so the saving is in memory and bandwidth, not in arithmetic.
+
+<MCQ
+  id="concept-check"
+  prompt="Symmetric INT8 with max |x| = 2.54. What is the scale, and what integer stores 1.0?"
+  options={["scale 0.02, q = 50", "scale 0.01, q = 100", "scale 2.54, q = 1", "scale 0.02, q = 127"]}
+  answer={0}
+  explanation="scale = 2.54/127 = 0.02. q = round(1.0/0.02) = 50."
+/>

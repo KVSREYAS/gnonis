@@ -1,0 +1,107 @@
+---
+id: cpp-systems/05-stl/00-concepts
+title: "Concepts: Containers, Iterators and Views"
+estMinutes: 8
+xp: 40
+missionIntro: "How the standard containers store data, what iterators are, and what owning and non-owning views mean."
+keyIdeas:
+  - "A container owns a collection of elements and manages their memory."
+  - "An iterator is a position in a container. Invalidation means that position is no longer safe to use."
+  - "Algorithms work on iterator ranges, so one sort works on many containers."
+  - "span and string_view are views: a pointer and a length, owning nothing."
+---
+## Containers and their layout
+
+A **container** is a class that owns a group of elements. The layout decides what is fast:
+
+- `std::vector<T>`: one contiguous heap array, plus size and capacity. Fast index, fast iteration, cheap append at the end.
+- `std::deque<T>`: several fixed-size blocks. Cheap insert at both ends.
+- `std::list<T>`: separate heap node per element with prev/next pointers. Insert anywhere without moving others, but slow to iterate.
+- `std::map<K,V>`: balanced tree of nodes, sorted by key, O(log n) lookup.
+- `std::unordered_map<K,V>`: hash table with buckets, average O(1) lookup.
+
+**Size** is how many elements exist. **Capacity** (vector only) is how many fit before it must reallocate.
+
+For most code `std::vector` is the right default, because contiguous memory suits the CPU cache.
+
+## Iterators and invalidation
+
+An **iterator** is an object that refers to one element and can move to the next. For a vector it is basically a pointer. `begin()` points to the first element, `end()` points one past the last.
+
+An iterator, pointer or reference into a container is **invalidated** when the element it refers to moves or is destroyed. Using it afterwards is undefined behaviour.
+
+```cpp
+std::vector<int> v{1, 2, 3};
+int& first = v[0];
+v.push_back(4);   // may reallocate: all old addresses gone
+first = 9;        // undefined if it reallocated
+```
+
+Rules of thumb:
+
+- vector: any reallocation invalidates everything; insert/erase invalidates from that point on
+- list and map: only the erased element's iterators die
+
+![Vector reallocation leaving an old iterator pointing at freed memory](/diagrams/cpp-systems/05-stl/01-containers-and-invalidation.png)
+
+## Algorithms and ranges
+
+The `<algorithm>` header has functions such as `sort`, `find`, `count_if` and `transform`. They take a **range**, given as a begin and end iterator, so they do not care which container you have.
+
+```cpp
+std::sort(v.begin(), v.end());
+auto it = std::find(v.begin(), v.end(), 7);
+if (it != v.end()) { /* found */ }
+```
+
+C++20 **ranges** let you pass the container directly and chain lazy steps:
+
+```cpp
+std::ranges::sort(v);
+auto evens = v | std::views::filter([](int x){ return x % 2 == 0; })
+               | std::views::transform([](int x){ return x * x; });
+```
+
+`evens` stores no elements. It computes each value when you iterate. A **lambda** (the `[](int x){...}` part) is an unnamed function object written inline.
+
+## Views: span and string_view
+
+A **view** refers to data owned by something else. It does not allocate and does not free.
+
+- `std::string_view`: a `const char*` and a length.
+- `std::span<T>`: a `T*` and a length, for any contiguous array.
+
+```cpp
+double sum(std::span<const double> xs) {
+    double s = 0;
+    for (double x : xs) s += x;
+    return s;
+}
+sum(my_vector);   // no copy
+sum(my_array);    // same function
+```
+
+Views are cheap to pass by value (two words). The risk is lifetime: the view must not outlive the owner.
+
+```cpp
+std::string_view sv = std::string("temp");  // temporary dies at ;
+// sv now dangles
+```
+
+## Small string optimization
+
+`std::string` stores characters on the heap, but allocating for every short string would be slow. Major implementations use the **small string optimization (SSO)**: strings up to a small length (15 chars in libstdc++ and MSVC, 22 in libc++) are stored inside the `std::string` object itself, with no heap allocation.
+
+Consequences:
+
+- `sizeof(std::string)` is 32 bytes in libstdc++, larger than a pointer and two sizes would need.
+- Moving a short string copies its characters, so it is not cheaper than copying.
+- A `string_view` or pointer into a short string points **inside the string object**, so it dangles if that object moves, even though nothing was "reallocated".
+
+<MCQ
+  id="concept-check"
+  prompt="You hold `int* p = &v[0];` and then call `v.push_back(x)` when size equals capacity. What is true?"
+  options={["p still points to the first element", "p points to freed memory and must not be used", "push_back fails", "p is automatically updated"]}
+  answer={1}
+  explanation="Full capacity forces reallocation, which moves every element and invalidates all pointers."
+/>

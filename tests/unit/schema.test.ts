@@ -204,7 +204,8 @@ describe("loader", () => {
     ])
       expect(ids.has(id)).toBe(true);
 
-    const token = llm.modules[0].lessons[0];
+    expect(llm.modules[0].lessons[0].slug).toBe("00-concepts");
+    const token = llm.modules[0].lessons[1];
     expect(token.slug).toBe("01-what-is-a-token");
     expect(token.blocks.filter((b) => b.kind === "card").some((b) => b.kind === "card" && b.title === "Mission briefing")).toBe(true);
     const diagrams = llm.modules
@@ -212,7 +213,7 @@ describe("loader", () => {
       .flatMap((l) => l.blocks)
       .filter((b) => b.kind === "card")
       .flatMap((b) => (b.kind === "card" ? [...b.markdown.matchAll(/\]\((\/diagrams\/[^)]+)\)/g)].map((m) => m[1]) : []));
-    expect(diagrams).toHaveLength(40);
+    expect(new Set(diagrams).size).toBe(40);
     expect(diagrams).toContain("/diagrams/llm-inference/05-batching/01-continuous-batching.png");
 
     const sample = courses[1];

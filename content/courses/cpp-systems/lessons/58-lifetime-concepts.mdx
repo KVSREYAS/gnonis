@@ -1,0 +1,218 @@
+---
+id: cpp-systems/01-lifetime/00-concepts
+title: "Concepts: Object Lifetime and RAII"
+estMinutes: 14
+xp: 40
+missionIntro: "The plain explanation of when C++ objects are created and destroyed, and how RAII uses that to clean up resources."
+keyIdeas:
+  - "An object's lifetime starts when its constructor finishes and ends when its destructor starts."
+  - "A local object is destroyed automatically when its scope ends, in reverse order of creation."
+  - "RAII: acquire a resource in a constructor, release it in the destructor."
+  - "The rule of zero: let members that already manage resources do the work, and write no special functions."
+---
+## What this module covers
+
+This module is about **lifetime**: the period during which an object exists and can be used safely. Lifetime matters because many objects hold a **resource**, which is anything that must be given back when you are done with it: heap memory, an open file, a locked mutex, a network socket.
+
+If you forget to give a resource back, you get a **leak**. If you use an object after its lifetime ended, you get a **dangling** reference or pointer, which is undefined behaviour.
+
+This page explains the rules the compiler follows, then the pattern (RAII) that turns those rules into automatic cleanup.
+
+## Scope, construction, destruction
+
+A **scope** is a block of code between `{` and `}`. A **local variable** is declared inside a scope and lives in the function's stack frame.
+
+1. When execution reaches the declaration, the **constructor** runs. The object's lifetime begins when the constructor finishes.
+2. When execution leaves the scope, the **destructor** runs. This happens on every way out: reaching `}`, `return`, `break`, or an exception passing through.
+3. Locals in one scope are destroyed in **reverse order** of construction.
+
+```cpp
+void f() {
+    Logger a("a");   // +a
+    Logger b("b");   // +b
+    if (bad) return; // -b then -a, automatically
+}                    // -b then -a
+```
+
+You never call a destructor by hand for a local. The compiler inserts the calls at every exit.
+
+## RAII step by step
+
+**RAII** stands for Resource Acquisition Is Initialization. It is a rule for writing classes:
+
+1. The constructor acquires the resource (opens the file, locks the mutex, allocates).
+2. The destructor releases it.
+3. Copying and moving are either defined correctly or forbidden, so exactly one object owns the resource.
+
+```cpp
+class File {
+    std::FILE* f_;
+public:
+    explicit File(const char* p) : f_(std::fopen(p, "r")) {}
+    ~File() { if (f_) std::fclose(f_); }
+    File(const File&) = delete;            // no copies
+    File& operator=(const File&) = delete;
+};
+```
+
+Because destructors run on every exit, cleanup can no longer be skipped. The standard library already does this: `std::vector` frees memory, `std::lock_guard` unlocks, `std::unique_ptr` deletes.
+
+![Objects built a, b, c and destroyed c, b, a, including on an exception path](/diagrams/cpp-systems/01-lifetime/01-raii-scope-guards.png)
+
+## The special member functions
+
+A class has five **special member functions** that control copying, moving and destruction:
+
+- destructor `~T()`
+- copy constructor `T(const T&)` and copy assignment `operator=(const T&)`
+- move constructor `T(T&&)` and move assignment `operator=(T&&)`
+
+The compiler writes them for you by copying or moving each member in turn. That is correct when every member already manages itself (a `std::string`, a `std::vector`).
+
+It is wrong when a member is a raw resource such as `int* p`. The generated copy copies the pointer, so two objects try to free the same memory.
+
+- **Rule of zero:** build classes only from self-managing members and write none of the five.
+- **Rule of five:** if you must write one (usually the destructor), think about all five.
+
+## The five special members, one by one
+
+For a class `T`, these five functions decide what happens when objects are destroyed, copied or moved:
+
+1. **Destructor** `~T()`: runs when an object's lifetime ends. Releases what the object owns.
+2. **Copy constructor** `T(const T& other)`: creates a **new** object as an independent duplicate of `other`. Runs for `T b = a;` and when passing by value.
+3. **Copy assignment** `T& operator=(const T& other)`: makes an **existing** object equal to `other`. It must first release what it already owns. Runs for `b = a;`.
+4. **Move constructor** `T(T&& other)`: creates a new object by taking `other`'s resources, leaving `other` empty but valid. Runs for `T b = std::move(a);` and when returning locals.
+5. **Move assignment** `T& operator=(T&& other)`: releases what the existing object owns, then takes `other`'s resources.
+
+The constructor/assignment difference matters: a constructor starts from nothing, an assignment must clean up an old value first.
+
+## When the compiler writes or deletes them
+
+If you do not declare a special member, the compiler may **implicitly declare** it. The generated version works member by member: it copies, moves or destroys each base and member in order.
+
+- **Destructor**: always generated if you do not write one.
+- **Copy constructor / copy assignment**: generated if you did not declare them. They are generated as **deleted** if you declared a move constructor or move assignment, or if a member cannot be copied (for example a `std::unique_ptr` member).
+- **Move constructor / move assignment**: generated **only if** you declared none of: destructor, copy constructor, copy assignment, the other move operation.
+
+The last rule surprises people: writing only a destructor silently removes the moves. Moves then fall back to copies, because an rvalue can bind to `const T&`.
+
+**Deleted** (`= delete`) means the function exists but any use is a compile error. `= default` asks for the generated version explicitly.
+
+## Why one usually means all five
+
+You write a special member yourself when the class **directly owns a resource** through a raw handle, such as `int* data_` or a file descriptor. Then the generated versions are wrong in a predictable way:
+
+- generated copy: copies the pointer, so two objects own one buffer and both delete it (double free)
+- generated copy assignment: also leaks the old buffer of the target
+- generated moves: suppressed by your destructor, so every move becomes a deep copy
+
+So once the destructor has to free something, copying and moving must also be defined to keep exactly one owner per resource. That reasoning gives three rules:
+
+- **Rule of three** (C++98): if you need a destructor, copy constructor or copy assignment, you need all three.
+- **Rule of five** (C++11): the same, plus move constructor and move assignment.
+- **Rule of zero**: better still, put the raw resource inside one small RAII class (or use `std::vector`, `std::unique_ptr`), and every other class writes none of the five.
+
+## Worked example: all five written out
+
+```cpp
+#include <algorithm>
+#include <cstddef>
+#include <utility>
+
+class Buffer {
+    std::size_t n_ = 0;
+    int* data_ = nullptr;
+public:
+    explicit Buffer(std::size_t n) : n_(n), data_(new int[n]{}) {}
+
+    ~Buffer() { delete[] data_; }                       // 1 destructor
+
+    Buffer(const Buffer& o)                              // 2 copy ctor
+        : n_(o.n_), data_(new int[o.n_]) {
+        std::copy(o.data_, o.data_ + n_, data_);
+    }
+
+    Buffer& operator=(const Buffer& o) {                 // 3 copy assign
+        if (this != &o) {
+            int* fresh = new int[o.n_];                  // allocate first
+            std::copy(o.data_, o.data_ + o.n_, fresh);
+            delete[] data_;                              // then free old
+            data_ = fresh; n_ = o.n_;
+        }
+        return *this;
+    }
+
+    Buffer(Buffer&& o) noexcept                          // 4 move ctor
+        : n_(std::exchange(o.n_, 0)),
+          data_(std::exchange(o.data_, nullptr)) {}
+
+    Buffer& operator=(Buffer&& o) noexcept {             // 5 move assign
+        if (this != &o) {
+            delete[] data_;
+            n_ = std::exchange(o.n_, 0);
+            data_ = std::exchange(o.data_, nullptr);
+        }
+        return *this;
+    }
+};
+```
+
+Notes: copy assignment allocates before freeing, so if `new` throws the object is unchanged. `std::exchange(x, v)` sets `x` to `v` and returns the old value. The moves are `noexcept` so `std::vector<Buffer>` moves them when it grows. The self-assignment checks stop `a = a` from freeing its own data.
+
+## Copy-and-swap and the rule of zero version
+
+**Copy-and-swap** writes both assignments as one function that takes its parameter **by value**:
+
+```cpp
+friend void swap(Buffer& a, Buffer& b) noexcept {
+    std::swap(a.n_, b.n_);
+    std::swap(a.data_, b.data_);
+}
+Buffer& operator=(Buffer other) noexcept {  // copy or move made here
+    swap(*this, other);
+    return *this;                            // old data dies with other
+}
+```
+
+The caller's argument picks the copy or move constructor to build `other`. Self-assignment is safe and the strong exception guarantee comes for free. The cost is an extra move in some cases.
+
+The rule-of-zero version of the same class:
+
+```cpp
+class Buffer {
+    std::vector<int> data_;
+public:
+    explicit Buffer(std::size_t n) : data_(n) {}
+};   // all five generated, all correct
+```
+
+Prefer this. Write the five only inside the one class whose job is owning the raw resource.
+
+## Dangling: using an object after it ends
+
+A **reference** or **pointer** does not keep its target alive. If the target's lifetime ends first, the pointer **dangles**.
+
+```cpp
+const std::string& bad() {
+    std::string s = "hi";
+    return s;              // s is destroyed here
+}                          // caller gets a reference to nothing
+```
+
+Common sources:
+
+- returning a reference or pointer to a local
+- a `std::string_view` built from a temporary `std::string`
+- a pointer into a `std::vector` that later reallocates
+
+A **temporary** (an unnamed object such as the result of `std::string("a") + "b"`) normally dies at the end of the full expression, the `;`. Binding it directly to a `const&` local extends its life to that local's scope. That extension does not pass through function returns.
+
+![Timeline showing a reference outliving its object](/diagrams/cpp-systems/01-lifetime/03-lifetime-and-dangling.png)
+
+<MCQ
+  id="concept-check"
+  prompt="A function locks a `std::lock_guard`, then throws before returning. When is the mutex unlocked?"
+  options={["Never, because the function did not return normally", "When the exception leaves the function's scope and the guard's destructor runs", "Only if the caller catches the exception", "When the program exits"]}
+  answer={1}
+  explanation="Destructors of locals run during stack unwinding, so the guard unlocks on the exception path too."
+/>

@@ -1,0 +1,65 @@
+---
+id: llm-inference/12-capstone/00-concepts
+title: "Concepts: Anatomy of an Inference Server"
+estMinutes: 8
+xp: 40
+missionIntro: "How every piece from this course fits into one server loop, and how to measure whether it works."
+keyIdeas:
+  - "A server has an API layer, a scheduler, a KV block manager and a model runner."
+  - "The scheduler loop picks, every step, which sequences run and how many tokens each gets."
+  - "Admission depends on free KV blocks and the step's token budget."
+  - "Benchmark with realistic arrival rates and report TTFT, TPOT and throughput percentiles."
+---
+## The components
+
+1. **API server**: receives HTTP requests, tokenizes prompts, streams tokens back.
+2. **Scheduler**: holds a **waiting** queue and a **running** set. Decides each step who runs.
+3. **Block manager**: owns the free list of KV blocks and each sequence's block table (module 6).
+4. **Model runner**: builds the batch tensors, runs one forward pass on the GPU, samples tokens.
+
+Data flows: request into waiting queue, then running set, then each step one token per running sequence goes back out to the API layer, until an end condition.
+
+![Server components and request flow](/diagrams/llm-inference/12-capstone/01-server-architecture.png)
+
+## One scheduler step
+
+Each iteration:
+
+1. **Finish**: remove sequences that hit an end token or max length. Free their blocks.
+2. **Grow**: for each running sequence, ensure a block exists for its next token. If none is free, **preempt** the newest running sequence (module 6).
+3. **Admit**: while the token budget and free blocks allow, move requests from waiting to running, scheduling their prefill (in chunks if long, module 5).
+4. **Run**: one forward pass over all decode tokens plus prefill chunks.
+5. **Emit**: sample one token per sequence that produced one, and stream it.
+
+Example budget 2,048 tokens: 60 running decodes use 60, leaving 1,988 for prefill chunks of waiting requests.
+
+![Scheduler loop with finish, grow, admit, run](/diagrams/llm-inference/12-capstone/02-build-the-scheduler.png)
+
+## Measuring it
+
+A useful benchmark imitates real traffic:
+
+- Requests arrive at a set **rate** (for example a Poisson process at 5 requests/s), not all at once.
+- Prompt and output lengths come from a realistic distribution.
+- Record per request: TTFT, TPOT, E2E. Report p50 and p99.
+- Record total output tokens per second.
+
+Then raise the rate until p99 targets break. That rate is your **goodput**.
+
+Profile the GPU side too: if step time is mostly attention, look at KV and FlashAttention settings. If it is mostly matmul at small batch, the server is memory-bound and wants a larger batch or quantized weights. Use the roofline from module 4 to decide which.
+
+![Latency percentiles vs request rate](/diagrams/llm-inference/12-capstone/03-benchmark-and-profile.png)
+
+## Poisson arrivals
+
+A **Poisson process** is the standard model for independent random arrivals. At rate lambda, the gaps between requests are random with an average of 1/lambda seconds, drawn from an exponential distribution: `gap = -ln(1 - u) / lambda` with u uniform in [0, 1).
+
+It creates realistic bursts: several requests close together, then pauses. Sending requests at perfectly even intervals hides queueing effects and makes latency look better than it will be in production.
+
+<MCQ
+  id="concept-check"
+  prompt="During a step, a running sequence needs a new KV block and none is free. What does a vLLM-style scheduler do?"
+  options={["Crash", "Preempt another sequence (swap or recompute) to free blocks", "Skip attention for that token", "Allocate CPU memory for attention"]}
+  answer={1}
+  explanation="Preemption frees blocks so running sequences can keep growing."
+/>

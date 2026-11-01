@@ -1,0 +1,92 @@
+---
+id: cpp-systems/13-capstone/00-concepts
+title: "Concepts: Tensors, Matmul and Softmax in C++"
+estMinutes: 8
+xp: 40
+missionIntro: "The maths and memory layout behind a transformer forward pass, written the way plain C++ computes it."
+keyIdeas:
+  - "A tensor is a flat array plus a shape and strides that map indices to an offset."
+  - "Matrix multiply dominates LLM compute. Tiling keeps blocks in cache for reuse."
+  - "Softmax turns scores into probabilities. Subtract the max first to avoid overflow."
+  - "Sampling picks the next token from those probabilities, shaped by temperature and top-k."
+---
+## Tensors are flat arrays
+
+A **tensor** is a multi-dimensional array of numbers. In memory it is always one flat buffer. Two extra lists describe it:
+
+- **shape**: size of each dimension, e.g. `[2, 3]`
+- **strides**: how many elements to skip to move by one in each dimension
+
+For a row-major `[2, 3]` tensor the strides are `[3, 1]`. Element `(i, j)` lives at offset `i*3 + j*1`.
+
+```cpp
+float at(const float* d, const int* st, int i, int j) {
+    return d[i * st[0] + j * st[1]];
+}
+```
+
+A **transpose** just swaps shape and strides, `[3, 2]` with strides `[1, 3]`, without moving data. The result is **non-contiguous**: walking its last dimension jumps through memory, which is slower.
+
+![Shape and strides mapping indices to offsets](/diagrams/cpp-systems/13-capstone/01-tensors-and-strides.png)
+
+## Matrix multiplication
+
+`C = A * B` where A is M by K and B is K by N:
+
+```cpp
+for (int i = 0; i < M; ++i)
+  for (int k = 0; k < K; ++k) {
+    float a = A[i*K + k];
+    for (int j = 0; j < N; ++j) C[i*N + j] += a * B[k*N + j];
+  }
+```
+
+That is `2*M*N*K` floating-point operations. The i-k-j loop order makes the inner loop walk B and C contiguously, which vectorizes.
+
+For large matrices, B does not fit in cache, so it is reloaded from memory for every row of A. **Tiling** splits the loops into blocks (say 64 by 64) that fit in L1/L2, and finishes all work on a block before moving on. Each loaded value is reused many times, so the code becomes limited by arithmetic instead of memory.
+
+## Softmax
+
+A model outputs **logits**: one raw score per vocabulary token. **Softmax** converts them to probabilities that are positive and sum to 1:
+
+p_i = exp(z_i) / sum over j of exp(z_j)
+
+`exp(1000)` overflows a float to infinity. Since subtracting the same number from every z does not change the result, compute it as:
+
+1. m = max(z)
+2. e_i = exp(z_i - m), all now at most 1
+3. s = sum of e_i
+4. p_i = e_i / s
+
+Example: z = [2, 1, 0]. m = 2. e = [1, 0.368, 0.135]. s = 1.503. p = [0.665, 0.245, 0.090].
+
+## Sampling the next token
+
+With probabilities in hand, choose a token:
+
+- **Greedy**: pick the largest p. Deterministic.
+- **Temperature T**: divide logits by T before softmax. T below 1 makes the distribution sharper, above 1 flatter.
+- **Top-k**: keep only the k largest, renormalize, sample.
+- **Random sampling**: draw u uniformly in [0, 1), walk the cumulative sum of p, and return the first index where the sum exceeds u.
+
+```cpp
+float u = dist(rng), c = 0;
+for (int i = 0; i < V; ++i) { c += p[i]; if (u < c) return i; }
+return V - 1;   // guards against rounding
+```
+
+These pieces, plus the attention you learned in the inference course, are a complete forward pass.
+
+## Top-p and where KV fits
+
+**Top-p** (also called nucleus sampling): sort tokens by probability, keep the smallest set whose probabilities add up to at least p (for example 0.9), renormalize, and sample from that set. Unlike top-k, the number of kept tokens adapts: few when the model is confident, many when it is not.
+
+**KV** refers to the keys and values that attention computes for every earlier token. A real engine stores them in a **KV cache** so they are not recomputed for each new token. The inference course explains its size and management in depth. In this capstone you will see it as a plain array indexed by layer, position and head.
+
+<MCQ
+  id="concept-check"
+  prompt="A row-major tensor has shape [4, 5]. What is the offset of element (2, 3)?"
+  options={["10", "13", "17", "23"]}
+  answer={1}
+  explanation="Strides are [5, 1], so 2*5 + 3 = 13."
+/>
