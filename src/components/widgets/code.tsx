@@ -1,14 +1,24 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { CheckCircle2, Lightbulb, Loader2, RotateCcw, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/components/providers";
 import { useLessonId } from "@/components/lesson/lesson-context";
 import type { ExerciseOf } from "@/lib/content/schema";
 import { gradeTests } from "@/lib/grading";
 import { getRunner, type RunResult } from "@/lib/runner";
 import { requestCpp } from "@/lib/runner/cpp-client";
+import {
+  checkLocalRunner,
+  LOCAL_RUNNER_EVENT,
+  LOCAL_RUNNER_KEY,
+  localRunnerOrigin,
+  parseLocalRunnerSettings,
+  type LocalRunnerHealth,
+  type LocalRunnerSettings,
+} from "@/lib/runner/cpp-local-settings";
 import { CodeEditor } from "./code-editor";
 import { Prompt } from "./inline-text";
 import type { WidgetProps } from "./types";
@@ -173,6 +183,100 @@ export function PythonRunFeedback({
   );
 }
 
+function subscribeLocalRunner(onChange: () => void) {
+  const notify = () => onChange();
+  window.addEventListener("storage", notify);
+  window.addEventListener(LOCAL_RUNNER_EVENT, notify);
+  return () => {
+    window.removeEventListener("storage", notify);
+    window.removeEventListener(LOCAL_RUNNER_EVENT, notify);
+  };
+}
+
+function readLocalRunnerRaw() {
+  try {
+    return localStorage.getItem(LOCAL_RUNNER_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function useLocalRunnerSettings(): [LocalRunnerSettings, (patch: Partial<LocalRunnerSettings>) => void] {
+  const raw = useSyncExternalStore(subscribeLocalRunner, readLocalRunnerRaw, () => "");
+  const settings = useMemo(() => parseLocalRunnerSettings(raw || null), [raw]);
+  const update = (patch: Partial<LocalRunnerSettings>) => {
+    const next = { ...parseLocalRunnerSettings(readLocalRunnerRaw() || null), ...patch };
+    const saved = parseLocalRunnerSettings(JSON.stringify(next));
+    localStorage.setItem(LOCAL_RUNNER_KEY, JSON.stringify(saved));
+    window.dispatchEvent(new Event(LOCAL_RUNNER_EVENT));
+  };
+  return [settings, update];
+}
+
+function LocalRunnerPanel({ settings, onChange }: { settings: LocalRunnerSettings; onChange: (patch: Partial<LocalRunnerSettings>) => void }) {
+  const [health, setHealth] = useState<LocalRunnerHealth | null>(null);
+  const [nonce, setNonce] = useState(0);
+
+  useEffect(() => {
+    if (!settings.enabled) return;
+    const ctrl = new AbortController();
+    const id = window.setTimeout(() => {
+      void checkLocalRunner(settings, ctrl.signal).then((next) => {
+        if (!ctrl.signal.aborted) setHealth(next);
+      });
+    }, 300);
+    return () => {
+      ctrl.abort();
+      window.clearTimeout(id);
+    };
+  }, [settings, nonce]);
+
+  const status = !settings.enabled ? "Off. Runs use the server sandbox." : (health?.detail ?? "Checking the runner…");
+
+  return (
+    <div className="mt-3 rounded-lg border border-border bg-ink p-3" data-testid="local-runner-settings">
+      <div className="flex items-center justify-between gap-3">
+        <label htmlFor="local-runner-toggle" className="text-base font-bold text-foreground">
+          Run on my PC
+          <span className="mt-0.5 block text-sm font-normal text-muted-foreground">Compile with g++ on this computer. Off uses the server sandbox.</span>
+        </label>
+        <Switch id="local-runner-toggle" checked={settings.enabled} onCheckedChange={(enabled) => onChange({ enabled })} data-testid="local-runner-toggle" />
+      </div>
+      {settings.enabled && (
+        <div className="mt-3 grid gap-3">
+          <label className="block text-sm text-muted-foreground">
+            Port
+            <input
+              value={settings.port}
+              onChange={(event) => onChange({ port: Number(event.target.value) })}
+              inputMode="numeric"
+              className="code-input mt-1 w-full rounded-lg border-2 border-border bg-ink px-3 py-2 font-mono text-base text-foreground outline-none focus:border-gold"
+              data-testid="local-runner-port"
+            />
+          </label>
+          <label className="block text-sm text-muted-foreground">
+            Pairing token
+            <input
+              value={settings.token}
+              onChange={(event) => onChange({ token: event.target.value })}
+              autoComplete="off"
+              spellCheck={false}
+              className="code-input mt-1 w-full rounded-lg border-2 border-border bg-ink px-3 py-2 font-mono text-base text-foreground outline-none focus:border-gold"
+              data-testid="local-runner-token"
+            />
+          </label>
+          <p role="status" data-testid="local-runner-status" data-connected={health?.state === "connected" ? "true" : "false"} className="text-base text-foreground">
+            {status}
+          </p>
+          <Button type="button" variant="outline" className="min-h-11 w-fit" onClick={() => setNonce((n) => n + 1)} data-testid="local-runner-recheck">
+            Check again
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function CodeWidget({ id, exercise, setAction, onGrade, locked }: WidgetProps<ExerciseOf<"code">>) {
   const lessonId = useLessonId();
   const { configured, ready, user } = useAuth();
@@ -186,11 +290,13 @@ export function CodeWidget({ id, exercise, setAction, onGrade, locked }: WidgetP
   const [cppBusy, setCppBusy] = useState<"run" | "submit" | null>(null);
   const [phase, setPhase] = useState<"run" | "submit" | null>(null);
   const session = usePythonSession(python);
+  const [localRunner, setLocalRunner] = useLocalRunnerSettings();
+  const localOn = !python && localRunner.enabled;
   const pythonBusy = session.status === "loading" || session.status === "running";
   const busy = python ? pythonBusy : cppBusy !== null;
-  const needsSignIn = !python && configured && ready && !user;
-  const noAccount = !python && !configured;
-  const blocked = locked || needsSignIn || noAccount || (!python && configured && !ready);
+  const needsSignIn = !python && !localOn && configured && ready && !user;
+  const noAccount = !python && !localOn && !configured;
+  const blocked = locked || needsSignIn || noAccount || (!python && !localOn && configured && !ready);
 
   const execute = async (kind: "samples" | "stdin" | "submit") => {
     setNotice(null);
@@ -210,14 +316,18 @@ export function CodeWidget({ id, exercise, setAction, onGrade, locked }: WidgetP
     }
     setCppBusy(kind === "submit" ? "submit" : "run");
     try {
-      const response = await requestCpp({
-        action: kind === "submit" ? "submit" : "run",
-        runKind: kind === "submit" ? undefined : kind,
-        code,
-        lessonId,
-        exerciseId: id,
-        stdin: kind === "stdin" ? stdin : undefined,
-      });
+      const response = await requestCpp(
+        {
+          action: kind === "submit" ? "submit" : "run",
+          runKind: kind === "submit" ? undefined : kind,
+          code,
+          lessonId,
+          exerciseId: id,
+          stdin: kind === "stdin" ? stdin : undefined,
+          ...(localOn && kind === "samples" && exercise.visibleTests ? { tests: exercise.visibleTests } : {}),
+        },
+        localOn ? { origin: localRunnerOrigin(localRunner.port), token: localRunner.token } : null,
+      );
       if (!response.ok) {
         setNotice(response.message);
         return null;
@@ -264,8 +374,9 @@ export function CodeWidget({ id, exercise, setAction, onGrade, locked }: WidgetP
   return (
     <div>
       <p className="mb-1 font-display text-sm tracking-widest text-gold-ink">
-        {python ? "PYTHON · RUNS IN YOUR BROWSER" : "C++ · COMPILES ON THE SERVER"}
+        {python ? "PYTHON · RUNS IN YOUR BROWSER" : localOn ? "C++ · COMPILES ON THIS PC" : "C++ · COMPILES ON THE SERVER"}
       </p>
+      {!python && <LocalRunnerPanel settings={localRunner} onChange={setLocalRunner} />}
       <Prompt text={exercise.prompt} />
       <CodeEditor value={code} onChange={setCode} disabled={locked} label={python ? "Python code editor" : "C++ code editor"} language={exercise.language} />
       <div className="mt-2 flex flex-wrap gap-2">

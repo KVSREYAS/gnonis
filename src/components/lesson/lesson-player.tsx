@@ -21,6 +21,7 @@ import { MissionPassed } from "@/components/lesson/mission-passed";
 import type { Exercise } from "@/lib/content/schema";
 import { exerciseKey, supports } from "@/lib/content/types";
 import type { Grade } from "@/lib/grading";
+import type { SkipReason } from "@/lib/progress/logic";
 import { cn } from "@/lib/utils";
 
 const DivePanel = dynamic(() => import("@/components/lesson/dive-panel").then((mod) => mod.DivePanel), { ssr: false });
@@ -44,7 +45,13 @@ export type PlayerLesson = {
   preview?: boolean;
 };
 
-type Status = { grade: Grade | null; attempt: number; skipped?: boolean };
+type Status = { grade: Grade | null; attempt: number; skipped?: boolean; skipReason?: SkipReason; desktopSkipped?: boolean };
+
+function persistedSkip(state: { exercises: Record<string, { skipped?: boolean; correct?: boolean; skipReason?: SkipReason }> }, lessonKey: string, id: string) {
+  const rec = state.exercises[exerciseKey(lessonKey, id)];
+  if (!rec?.skipped || rec.correct) return null;
+  return { skipped: true as const, skipReason: rec.skipReason === "know" ? ("know" as const) : ("skip" as const) };
+}
 
 export function DesktopBadge({ className }: { className?: string }) {
   return (
@@ -84,7 +91,7 @@ export function LessonPlayer({
   const device = useDevice();
   const { configured, user } = useAuth();
   const pathname = usePathname();
-  const { state, recordExercise, noteExerciseHash, completeLesson } = useProgress();
+  const { state, recordExercise, skipExercise, unskipExercise, noteExerciseHash, completeLesson } = useProgress();
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelTab, setPanelTab] = useState<"chat" | "calc">("chat");
   const [calcFocus, setCalcFocus] = useState(0);
@@ -94,13 +101,17 @@ export function LessonPlayer({
   const [index, setIndex] = useState(0);
   const [status, setStatus] = useState<Record<string, Status>>({});
   const [widgetAction, setWidgetAction] = useState<PrimaryAction | null>(null);
-  const [mission, setMission] = useState<null | { xpGained: number; firstCompletion: boolean; pending: number; preview?: boolean }>(null);
+  const [mission, setMission] = useState<null | { xpGained: number; firstCompletion: boolean; pending: number; skipped: number; preview?: boolean }>(null);
   const topRef = useRef<HTMLDivElement>(null);
 
   const step = steps[index];
   const exerciseIds = useMemo(() => steps.flatMap((s) => (s.kind === "exercise" ? [s.id] : [])), [steps]);
   const st = step.kind === "exercise" ? (status[step.id] ?? { grade: null, attempt: 0 }) : null;
   const blocked = step.kind === "exercise" && !supports(step.exercise, device);
+  const savedSkip = step.kind === "exercise" ? persistedSkip(state, lesson.key, step.id) : null;
+  const skipped = step.kind === "exercise" && (status[step.id] ? !!status[step.id]?.skipped : !!savedSkip);
+  const skipReason: SkipReason | undefined =
+    step.kind === "exercise" ? (status[step.id]?.skipped ? status[step.id]?.skipReason : status[step.id] ? undefined : savedSkip?.skipReason) : undefined;
   const savedHash = step.kind === "exercise" ? state.exercises[exerciseKey(lesson.key, step.id)]?.contentHash : undefined;
   const updated = step.kind === "exercise" && !!savedHash && !!lesson.hashes[step.id] && savedHash !== lesson.hashes[step.id];
 
@@ -111,9 +122,10 @@ export function LessonPlayer({
 
   const finish = useCallback(
     (latest: Record<string, Status>) => {
-      const pendingDesktop = exerciseIds.filter((id) => latest[id]?.skipped).map((id) => exerciseKey(lesson.key, id));
+      const pendingDesktop = exerciseIds.filter((id) => latest[id]?.desktopSkipped).map((id) => exerciseKey(lesson.key, id));
+      const skippedCount = exerciseIds.filter((id) => (latest[id] ? !!latest[id]?.skipped : !!persistedSkip(state, lesson.key, id))).length;
       if (lesson.preview) {
-        setMission({ xpGained: 0, firstCompletion: false, pending: pendingDesktop.length, preview: true });
+        setMission({ xpGained: 0, firstCompletion: false, pending: pendingDesktop.length, skipped: skippedCount, preview: true });
         return;
       }
       const r = completeLesson({
@@ -122,9 +134,9 @@ export function LessonPlayer({
         exerciseKeys: exerciseIds.map((id) => exerciseKey(lesson.key, id)),
         pendingDesktop,
       });
-      setMission({ xpGained: r.xpGained, firstCompletion: r.firstCompletion, pending: pendingDesktop.length });
+      setMission({ xpGained: r.xpGained, firstCompletion: r.firstCompletion, pending: pendingDesktop.length, skipped: skippedCount });
     },
-    [completeLesson, exerciseIds, lesson.key, lesson.preview, lesson.xp],
+    [completeLesson, exerciseIds, lesson.key, lesson.preview, lesson.xp, state],
   );
 
   const next = useCallback(
@@ -139,7 +151,7 @@ export function LessonPlayer({
     (g: Grade) => {
       if (step.kind !== "exercise") return;
       if (!lesson.preview) recordExercise(exerciseKey(lesson.key, step.id), g.correct, lesson.hashes[step.id]);
-      setStatus((s) => ({ ...s, [step.id]: { ...(s[step.id] ?? { attempt: 0 }), grade: g } }));
+      setStatus((s) => ({ ...s, [step.id]: { ...(s[step.id] ?? { attempt: 0 }), grade: g, skipped: false } }));
     },
     [lesson.hashes, lesson.key, lesson.preview, recordExercise, step],
   );
@@ -157,9 +169,23 @@ export function LessonPlayer({
 
   const skipDesktop = () => {
     if (step.kind !== "exercise") return;
-    const latest = { ...status, [step.id]: { grade: null, attempt: 0, skipped: true } };
+    const latest = { ...status, [step.id]: { grade: null, attempt: 0, desktopSkipped: true } };
     setStatus(latest);
     next(latest);
+  };
+
+  const doSkip = (reason: SkipReason) => {
+    if (step.kind !== "exercise" || blocked) return;
+    const latest = { ...status, [step.id]: { grade: null, attempt: st?.attempt ?? 0, skipped: true, skipReason: reason } };
+    setStatus(latest);
+    if (!lesson.preview) skipExercise(exerciseKey(lesson.key, step.id), reason, lesson.hashes[step.id]);
+    next(latest);
+  };
+
+  const unskip = () => {
+    if (step.kind !== "exercise") return;
+    setStatus((s) => ({ ...s, [step.id]: { grade: null, attempt: (s[step.id]?.attempt ?? 0) + 1, skipped: false } }));
+    if (!lesson.preview) unskipExercise(exerciseKey(lesson.key, step.id));
   };
 
   let primary: PrimaryAction | null;
@@ -169,6 +195,7 @@ export function LessonPlayer({
 
   if (step.kind === "card") primary = { label: continueLabel, onPress: () => next() };
   else if (blocked) primary = { label: isLast ? "Skip and finish" : "Skip for now", onPress: skipDesktop };
+  else if (skipped) primary = { label: continueLabel, onPress: () => next() };
   else if (st?.grade?.correct) primary = { label: continueLabel, onPress: () => next() };
   else if (st?.grade) {
     primary = { label: "Try again", onPress: retry };
@@ -179,6 +206,9 @@ export function LessonPlayer({
   } else primary = widgetAction;
 
   const progress = index;
+  const skippedIds = new Set(
+    exerciseIds.filter((id) => (status[id] ? !!status[id]?.skipped : !!persistedSkip(state, lesson.key, id))),
+  );
   const stepTitle = step.kind === "card" ? step.title : exerciseTitle(step.exercise);
   const stepText = step.kind === "card" ? step.text : exerciseBrief(step.exercise);
   const tutorContext = {
@@ -328,20 +358,34 @@ export function LessonPlayer({
           <span className="hidden text-sm text-muted-foreground sm:inline" aria-hidden>
             {progress + 1}/{steps.length}
           </span>
+          {skippedIds.size > 0 && (
+            <span className="text-sm font-bold text-gold-ink" data-testid="lesson-skipped-count">
+              {skippedIds.size} skipped
+            </span>
+          )}
           <Radar value={progress + 1} total={steps.length} />
         </div>
       </div>
       <div className="mb-4 flex gap-1" aria-hidden>
-        {steps.map((s, i) => (
-          <span
-            key={i}
-            className={cn(
-              "h-1.5 flex-1 rounded-full",
-              i < index ? "bg-money" : i === index ? "bg-gold" : "bg-panel-2",
-              s.kind === "exercise" && "h-2.5",
-            )}
-          />
-        ))}
+        {steps.map((s, i) => {
+          const stepSkipped = s.kind === "exercise" && skippedIds.has(s.id);
+          const mark = i === index ? "current" : i > index ? "ahead" : stepSkipped ? "skipped" : "done";
+          return (
+            <span
+              key={i}
+              data-step-state={mark}
+              data-skipped={stepSkipped ? "true" : "false"}
+              className={cn(
+                "h-1.5 flex-1 rounded-full",
+                mark === "done" && "bg-money",
+                mark === "skipped" && "bg-gold/45 outline outline-1 outline-gold",
+                mark === "current" && "bg-gold",
+                mark === "ahead" && "bg-panel-2",
+                s.kind === "exercise" && "h-2.5",
+              )}
+            />
+          );
+        })}
       </div>
 
       <section className="flex-1 pb-40" aria-live="polite" data-lesson-content>
@@ -377,10 +421,33 @@ export function LessonPlayer({
                 device={device}
                 setAction={setWidgetAction}
                 onGrade={onGrade}
-                locked={!!st?.grade}
+                locked={!!st?.grade || skipped}
               />
             )}
-            {st?.grade && (
+            {skipped && (
+              <div className="mt-4 rounded-lg border-2 border-gold/70 bg-ink p-4" data-testid="exercise-skipped" data-reason={skipReason === "know" ? "know" : "skip"}>
+                <p className="font-display text-xl tracking-wide text-gold-ink">{skipReason === "know" ? "ALREADY KNOWN" : "SKIPPED"}</p>
+                <p className="mt-1 text-base text-foreground">
+                  {skipReason === "know"
+                    ? "Marked as something you already know. It is not a solve. Try it whenever you want the real check."
+                    : "Skipped for now. It is not a solve, and the next lesson still unlocks when you finish this one."}
+                </p>
+                <Button type="button" variant="outline" className="mt-3 min-h-11" onClick={unskip} data-testid="unskip-exercise">
+                  Try it
+                </Button>
+              </div>
+            )}
+            {!blocked && !skipped && !st?.grade?.correct && !lesson.preview && (
+              <div className="mt-4 flex flex-wrap gap-2" data-testid="skip-actions">
+                <Button type="button" variant="outline" className="min-h-11" onClick={() => doSkip("skip")} data-testid="skip-exercise">
+                  Skip
+                </Button>
+                <Button type="button" variant="ghost" className="min-h-11" onClick={() => doSkip("know")} data-testid="know-exercise">
+                  I already know this
+                </Button>
+              </div>
+            )}
+            {st?.grade && !skipped && (
               <div
                 role="status"
                 data-testid="feedback"
@@ -477,6 +544,7 @@ export function LessonPlayer({
           xpGained={mission.xpGained}
           firstCompletion={mission.firstCompletion}
           pendingDesktop={mission.pending}
+          skipped={mission.skipped}
           preview={mission.preview}
           keyIdeas={lesson.keyIdeas}
           nextHref={nextHref}

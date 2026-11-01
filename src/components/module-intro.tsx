@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Check, Clock, Monitor, Play, Skull } from "lucide-react";
+import { ArrowLeft, Check, Clock, FastForward, Monitor, Play, Skull } from "lucide-react";
 import { Scene } from "@/components/art";
 import { useProgress } from "@/components/providers";
 import { buttonVariants } from "@/components/ui/button";
 import type { ModuleSummary } from "@/lib/content/types";
+import { skippedExerciseCount } from "@/lib/progress/logic";
 import { cn } from "@/lib/utils";
 
 /** Full-screen "loading screen" card for a district, with its tip line and mission list. */
@@ -34,6 +35,7 @@ export function ModuleIntro({ courseSlug, courseTitle, mod }: { courseSlug: stri
               {mod.lessons.map((l, i) => {
                 const complete = !!state.lessons[l.key];
                 const boss = l.kind === "boss";
+                const skipped = skippedExerciseCount(state, l.key, l.exerciseIds);
                 return (
                   <li key={l.key}>
                     <Link
@@ -61,6 +63,11 @@ export function ModuleIntro({ courseSlug, courseTitle, mod }: { courseSlug: stri
                           {l.desktopOnlyIds.length > 0 && (
                             <span className="inline-flex items-center gap-1 text-gold-ink">
                               <Monitor className="size-3.5" aria-hidden /> Desktop mission
+                            </span>
+                          )}
+                          {skipped > 0 && (
+                            <span className="inline-flex items-center gap-1 font-bold text-gold-ink" data-testid={`lesson-skipped-${l.slug}`}>
+                              <FastForward className="size-3.5" aria-hidden /> {skipped} skipped
                             </span>
                           )}
                         </span>

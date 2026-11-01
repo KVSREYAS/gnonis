@@ -1,4 +1,4 @@
-import type { LessonRecord, ProgressState, ExerciseRecord } from "./logic";
+import { mergeExerciseRecord, type LessonRecord, type ProgressState, type ExerciseRecord } from "./logic";
 
 export type RenameMap = {
   courses: Record<string, string>;
@@ -35,11 +35,7 @@ function mergeLessons(a: LessonRecord, b: LessonRecord): LessonRecord {
 }
 
 function mergeExercises(a: ExerciseRecord, b: ExerciseRecord): ExerciseRecord {
-  const attempts = Math.max(a.attempts, b.attempts);
-  const correct = a.correct || b.correct;
-  const firstTry = a.firstTry || b.firstTry;
-  const hash = !a.contentHash ? b.contentHash : !b.contentHash ? a.contentHash : a.contentHash === b.contentHash ? a.contentHash : a.attempts >= b.attempts ? a.contentHash : b.contentHash;
-  return hash ? { attempts, correct, firstTry, contentHash: hash } : { attempts, correct, firstTry };
+  return mergeExerciseRecord(a, b);
 }
 
 /** Rewrites saved lesson and exercise keys. Explicit ids win over a course-prefix rewrite. */

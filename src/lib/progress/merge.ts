@@ -1,4 +1,4 @@
-import { PROGRESS_VERSION, type ExerciseRecord, type LessonRecord, type ProgressState } from "./logic";
+import { mergeExerciseRecord, PROGRESS_VERSION, type ExerciseRecord, type LessonRecord, type ProgressState } from "./logic";
 
 /*
  * Merge rule for two saves of the same learner (e.g. phone and PC, or guest progress joining an account):
@@ -7,6 +7,8 @@ import { PROGRESS_VERSION, type ExerciseRecord, type LessonRecord, type Progress
  * - Lessons: union. A lesson finished on either side is finished. When both have it, keep the earliest
  *   `completedAt`, the highest `xpEarned`, and only the desktop missions still pending on both sides.
  * - Exercises: union. Solved on either side is solved, first-try on either side is first-try, attempts is the max.
+ *   A solve beats a skip. Otherwise the later skip or un-skip wins (`skippedAt`). With no timestamps, a skip
+ *   on either side is kept, and "I already know this" beats a plain skip.
  * - XP: the sum of the merged lessons' `xpEarned` (XP is only ever paid through lessons), never lower than
  *   either side's XP. So separate progress adds up, and the same progress is never counted twice.
  * - Streak: the side that played most recently, best is the max of both.
@@ -63,19 +65,7 @@ function mergeLesson(a: LessonRecord | undefined, b: LessonRecord | undefined): 
 
 function mergeExercise(a: ExerciseRecord | undefined, b: ExerciseRecord | undefined): ExerciseRecord {
   if (!a || !b) return { ...(a ?? b)! };
-  const attempts = Math.max(a.attempts, b.attempts);
-  const correct = a.correct || b.correct;
-  const firstTry = a.firstTry || b.firstTry;
-  const contentHash = !a.contentHash
-    ? b.contentHash
-    : !b.contentHash
-      ? a.contentHash
-      : a.contentHash === b.contentHash
-        ? a.contentHash
-        : a.attempts >= b.attempts
-          ? a.contentHash
-          : b.contentHash;
-  return contentHash ? { attempts, correct, firstTry, contentHash } : { attempts, correct, firstTry };
+  return mergeExerciseRecord(a, b);
 }
 
 function mergeStreak(a: ProgressState["streak"], b: ProgressState["streak"]): ProgressState["streak"] {

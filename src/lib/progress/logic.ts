@@ -9,12 +9,24 @@ export type LessonRecord = {
   pendingDesktop: string[];
 };
 
+/** "skip" is Skip. "know" is I already know this. Both are skipped, and neither is a solve. */
+export type SkipReason = "skip" | "know";
+
 export type ExerciseRecord = {
   attempts: number;
   correct: boolean;
   firstTry: boolean;
   /** Hash of the answer-bearing fields at the time this record was written. Absent on older saves. */
   contentHash?: string;
+  /**
+   * True while the learner has skipped this exercise and has not solved it.
+   * False after they choose Try it. Absent when they never skipped.
+   * A solve drops the field: skipped is not the same as correct.
+   */
+  skipped?: boolean;
+  skipReason?: SkipReason;
+  /** ISO time of the latest skip or un-skip. Merges keep the later choice. */
+  skippedAt?: string;
 };
 
 export type ProgressState = {
@@ -78,6 +90,15 @@ export function wantedStars(streakDays: number): number {
 
 export const EXERCISE_BONUS_XP = 10;
 
+/** An attempt after a skip is the later decision, so a stale skip on another device does not come back. A solve drops the skip entirely. */
+function closeSkip(next: ExerciseRecord, prev: ExerciseRecord | undefined): ExerciseRecord {
+  if (!prev?.skipped && !prev?.skippedAt && next.skipped !== true) return next;
+  const rest: ExerciseRecord = { attempts: next.attempts, correct: next.correct, firstTry: next.firstTry };
+  if (next.contentHash) rest.contentHash = next.contentHash;
+  if (next.correct) return rest;
+  return { ...rest, skipped: false, skippedAt: new Date().toISOString() };
+}
+
 export function recordExercise(state: ProgressState, key: string, correct: boolean, contentHash?: string): ProgressState {
   const prev = state.exercises[key];
   const hashChanged = !!contentHash && !!prev?.contentHash && prev.contentHash !== contentHash;
@@ -87,21 +108,96 @@ export function recordExercise(state: ProgressState, key: string, correct: boole
     return state;
   }
   if (prev && hashChanged && !correct) {
-    return { ...state, exercises: { ...state.exercises, [key]: { ...prev, attempts: prev.attempts + 1, correct: true } } };
+    const next = closeSkip({ ...prev, attempts: prev.attempts + 1, correct: true }, prev);
+    return { ...state, exercises: { ...state.exercises, [key]: next } };
   }
   if (prev && hashChanged && correct) {
     return {
       ...state,
       exercises: {
         ...state.exercises,
-        [key]: { attempts: prev.attempts + 1, correct: true, firstTry: prev.firstTry, contentHash },
+        [key]: closeSkip({ attempts: prev.attempts + 1, correct: true, firstTry: prev.firstTry, contentHash }, prev),
       },
     };
   }
   const attempts = (prev?.attempts ?? 0) + 1;
   const next: ExerciseRecord = { attempts, correct, firstTry: correct && attempts === 1 };
   if (contentHash) next.contentHash = contentHash;
-  return { ...state, exercises: { ...state.exercises, [key]: next } };
+  return { ...state, exercises: { ...state.exercises, [key]: closeSkip(next, prev) } };
+}
+
+/** Marks an exercise skipped without solving it. A solve is left alone. */
+export function skipExercise(state: ProgressState, key: string, reason: SkipReason, now: Date, contentHash?: string): ProgressState {
+  const prev = state.exercises[key];
+  if (prev?.correct) return state;
+  if (prev?.skipped && (prev.skipReason ?? "skip") === reason && (!contentHash || prev.contentHash === contentHash)) return state;
+  const next: ExerciseRecord = {
+    attempts: prev?.attempts ?? 0,
+    correct: false,
+    firstTry: prev?.firstTry ?? false,
+    skipped: true,
+    skipReason: reason,
+    skippedAt: now.toISOString(),
+  };
+  const hash = contentHash ?? prev?.contentHash;
+  if (hash) next.contentHash = hash;
+  return { ...state, exercises: { ...state.exercises, [key]: next }, updatedAt: now.toISOString() };
+}
+
+/** Clears a skip so the exercise can be tried again. Solving it later is what counts as correct. */
+export function unskipExercise(state: ProgressState, key: string, now: Date): ProgressState {
+  const prev = state.exercises[key];
+  if (!prev?.skipped) return state;
+  const next: ExerciseRecord = {
+    attempts: prev.attempts,
+    correct: false,
+    firstTry: prev.firstTry,
+    skipped: false,
+    skippedAt: now.toISOString(),
+  };
+  if (prev.contentHash) next.contentHash = prev.contentHash;
+  return { ...state, exercises: { ...state.exercises, [key]: next }, updatedAt: now.toISOString() };
+}
+
+export function isExerciseSkipped(record: ExerciseRecord | undefined): boolean {
+  return !!record && record.skipped === true && record.correct !== true;
+}
+
+/** Later skip or un-skip wins. With no timestamps, a skip on either side is kept and "know" beats "skip". */
+export function mergeSkip(a: ExerciseRecord, b: ExerciseRecord): Pick<ExerciseRecord, "skipped" | "skipReason" | "skippedAt"> {
+  const leftAt = typeof a.skippedAt === "string" ? a.skippedAt : "";
+  const rightAt = typeof b.skippedAt === "string" ? b.skippedAt : "";
+  if (leftAt !== rightAt) {
+    const winner = leftAt > rightAt ? a : b;
+    if (winner.skipped !== true) return winner.skippedAt ? { skipped: false, skippedAt: winner.skippedAt } : {};
+    const reason = winner.skipReason === "know" || winner.skipReason === "skip" ? winner.skipReason : undefined;
+    return reason
+      ? { skipped: true, skipReason: reason, ...(winner.skippedAt ? { skippedAt: winner.skippedAt } : {}) }
+      : { skipped: true, ...(winner.skippedAt ? { skippedAt: winner.skippedAt } : {}) };
+  }
+  if (a.skipped !== true && b.skipped !== true) return leftAt ? { skipped: false, skippedAt: leftAt } : {};
+  const skipReason = a.skipReason === "know" || b.skipReason === "know" ? "know" : a.skipReason === "skip" || b.skipReason === "skip" ? "skip" : undefined;
+  return skipReason
+    ? { skipped: true, skipReason, ...(leftAt ? { skippedAt: leftAt } : {}) }
+    : { skipped: true, ...(leftAt ? { skippedAt: leftAt } : {}) };
+}
+
+export function mergeExerciseRecord(a: ExerciseRecord, b: ExerciseRecord): ExerciseRecord {
+  const attempts = Math.max(a.attempts, b.attempts);
+  const correct = a.correct || b.correct;
+  const firstTry = a.firstTry || b.firstTry;
+  const contentHash = !a.contentHash
+    ? b.contentHash
+    : !b.contentHash
+      ? a.contentHash
+      : a.contentHash === b.contentHash
+        ? a.contentHash
+        : a.attempts >= b.attempts
+          ? a.contentHash
+          : b.contentHash;
+  const base: ExerciseRecord = contentHash ? { attempts, correct, firstTry, contentHash } : { attempts, correct, firstTry };
+  if (correct) return base;
+  return { ...base, ...mergeSkip(a, b) };
 }
 
 /** Stamps the current hash onto a legacy record that has none. A mismatch is left alone so the exercise stays "updated". */
@@ -189,25 +285,71 @@ export function levelForXp(xp: number): { level: number; rank: string; into: num
 
 /* ---------- Respect (course mastery) ---------- */
 
+export type RespectLesson = { key: string; exerciseCount: number; exerciseIds?: readonly string[] };
+
+/** Skipped exercises in one lesson. Ids are the exercise id, not the `lesson#exercise` key. */
+export function skippedExerciseCount(state: ProgressState, lessonKey: string, exerciseIds: readonly string[]): number {
+  return exerciseIds.filter((id) => isExerciseSkipped(state.exercises[`${lessonKey}#${id}`])).length;
+}
+
+export function skippedExerciseTotal(state: ProgressState, lessons: readonly RespectLesson[]): number {
+  return lessons.reduce((sum, lesson) => sum + skippedExerciseCount(state, lesson.key, lesson.exerciseIds ?? []), 0);
+}
+
 /**
- * 0-100. A completed lesson is worth 1, minus a share for desktop missions still pending.
- * `lessons` lists every playable lesson in the course with its exercise count.
+ * 0-100. A completed lesson is worth 1, minus half a share for each desktop mission still pending,
+ * and minus half a share for each exercise that is still skipped.
+ *
+ * Skipping does not block the next lesson: `nextLessonKey` only looks at lesson records, and
+ * finishing a lesson writes that record whether the exercises were solved or skipped. A skipped
+ * exercise is done-but-not-mastered: it counts in the percent at half a solve. A finished lesson
+ * with nothing skipped is still worth a full share (older saves have no skip flags, so their
+ * percent does not change). Solving the exercise later clears the skip and restores the share.
+ * `exerciseIds` is optional so callers that only know the count keep the previous percent.
  */
-export function respect(state: ProgressState, lessons: { key: string; exerciseCount: number }[]): number {
+export function respect(state: ProgressState, lessons: readonly RespectLesson[]): number {
   if (lessons.length === 0) return 0;
   let score = 0;
   for (const l of lessons) {
     const rec = state.lessons[l.key];
     if (!rec) continue;
     const pendingShare = l.exerciseCount ? rec.pendingDesktop.length / l.exerciseCount : 0;
-    score += 1 - 0.5 * pendingShare;
+    const skipped = skippedExerciseCount(state, l.key, l.exerciseIds ?? []);
+    const skipShare = l.exerciseCount ? skipped / l.exerciseCount : 0;
+    score += Math.max(0, 1 - 0.5 * pendingShare - 0.5 * skipShare);
   }
   return Math.round((score / lessons.length) * 100);
 }
 
-/** First lesson (in course order) that has not been completed. */
+/** First lesson (in course order) that has not been completed. Skips do not keep it locked. */
 export function nextLessonKey(state: ProgressState, orderedKeys: string[]): string | undefined {
   return orderedKeys.find((k) => !state.lessons[k]);
+}
+
+function cleanExercise(value: unknown): ExerciseRecord | null {
+  if (!value || typeof value !== "object") return null;
+  const rec = value as Partial<ExerciseRecord>;
+  const next: ExerciseRecord = {
+    attempts: typeof rec.attempts === "number" && rec.attempts >= 0 ? rec.attempts : 0,
+    correct: rec.correct === true,
+    firstTry: rec.firstTry === true,
+  };
+  if (typeof rec.contentHash === "string") next.contentHash = rec.contentHash;
+  if (next.correct) return next;
+  if (rec.skipped === true || rec.skipped === false) next.skipped = rec.skipped;
+  if (rec.skipReason === "know" || rec.skipReason === "skip") next.skipReason = rec.skipReason;
+  if (typeof rec.skippedAt === "string") next.skippedAt = rec.skippedAt;
+  return next;
+}
+
+function cleanExercises(raw: unknown): Record<string, ExerciseRecord> {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Record<string, ExerciseRecord> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const rec = cleanExercise(value);
+    if (rec) out[key] = rec;
+  }
+  return out;
 }
 
 /** Tolerates old or partial saves instead of throwing them away, then rewrites any renamed ids. */
@@ -220,7 +362,7 @@ export function migrate(raw: unknown, renames: RenameMap = EMPTY_RENAMES): Progr
       version: PROGRESS_VERSION,
       xp: typeof r.xp === "number" && r.xp >= 0 ? r.xp : 0,
       lessons: r.lessons && typeof r.lessons === "object" ? r.lessons : {},
-      exercises: r.exercises && typeof r.exercises === "object" ? r.exercises : {},
+      exercises: cleanExercises(r.exercises),
       streak: r.streak && typeof r.streak === "object" ? { ...base.streak, ...r.streak } : base.streak,
       updatedAt: typeof r.updatedAt === "string" ? r.updatedAt : null,
       epoch: typeof r.epoch === "number" && r.epoch >= 0 ? r.epoch : 0,

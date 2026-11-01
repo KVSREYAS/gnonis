@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { completeLesson, emptyProgress, migrate, recordExercise, resetProgress, type ProgressState } from "@/lib/progress/logic";
+import { completeLesson, emptyProgress, migrate, recordExercise, resetProgress, skipExercise, unskipExercise, type ProgressState } from "@/lib/progress/logic";
 import { isEmptyProgress, mergeProgress, sameProgress } from "@/lib/progress/merge";
 
 const at = (iso: string) => new Date(iso);
@@ -67,6 +67,20 @@ describe("mergeProgress", () => {
 
     const otherPhone = completeLesson(emptyProgress(), { ...lesson("c/m/a", 50, ["c/m/a#code"]), now: at("2026-10-24T09:00:00") }).state;
     expect(mergeProgress(phone, otherPhone).lessons["c/m/a"].pendingDesktop).toEqual(["c/m/a#code"]);
+  });
+
+  it("lets a solve beat a skip, and otherwise keeps the later skip or un-skip", () => {
+    const skipped = skipExercise(emptyProgress(), "e", "skip", at("2026-10-22T10:00:00"));
+    const known = skipExercise(emptyProgress(), "e", "know", at("2026-10-22T11:00:00"));
+    expect(mergeProgress(skipped, known).exercises.e).toMatchObject({ skipped: true, skipReason: "know", correct: false });
+    const solved = recordExercise(skipped, "e", true);
+    expect(mergeProgress(known, solved).exercises.e).toMatchObject({ correct: true });
+    expect(mergeProgress(known, solved).exercises.e.skipped).toBeUndefined();
+    const undone = unskipExercise(known, "e", at("2026-10-22T12:00:00"));
+    expect(mergeProgress(known, undone).exercises.e.skipped).toBe(false);
+    expect(sameProgress(mergeProgress(known, undone), mergeProgress(undone, known))).toBe(true);
+    const legacy = { ...emptyProgress(), exercises: { e: { attempts: 0, correct: false, firstTry: false, skipped: true } } };
+    expect(mergeProgress(legacy, emptyProgress()).exercises.e.skipped).toBe(true);
   });
 
   it("treats an exercise solved or first-tried on either side as solved or first-tried", () => {

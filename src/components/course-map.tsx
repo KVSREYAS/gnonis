@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { Check, Lock, Monitor, Play, Skull } from "lucide-react";
+import { Check, FastForward, Lock, Monitor, Play, Skull } from "lucide-react";
 import { courseLessons } from "@/components/course-card";
 import { useDevice, useProgress } from "@/components/providers";
 import { RespectBar } from "@/components/respect-bar";
 import { buttonVariants } from "@/components/ui/button";
 import { exerciseKey, type CourseSummary, type LessonSummary, type ModuleSummary } from "@/lib/content/types";
 import type { ProgressState } from "@/lib/progress/logic";
-import { levelForXp, nextLessonKey, respect } from "@/lib/progress/logic";
+import { levelForXp, nextLessonKey, respect, skippedExerciseCount, skippedExerciseTotal } from "@/lib/progress/logic";
 import { cn } from "@/lib/utils";
 
 function lessonUpdated(state: ProgressState, lesson: LessonSummary) {
@@ -27,6 +27,7 @@ function Blip({
   isNext,
   pending,
   updated,
+  skipped,
 }: {
   course: string;
   mod: string;
@@ -35,6 +36,7 @@ function Blip({
   isNext: boolean;
   pending: boolean;
   updated: boolean;
+  skipped: number;
 }) {
   const boss = lesson.kind === "boss";
   const state = done ? "complete" : isNext ? "next up" : "not started";
@@ -42,7 +44,8 @@ function Blip({
     <Link
       href={`/courses/${course}/${mod}/${lesson.slug}`}
       className="tap group relative grid place-items-center rounded-full"
-      aria-label={`${lesson.title}, ${state}${boss ? ", boss fight" : ""}${pending ? ", desktop mission pending" : ""}${updated ? ", exercise updated" : ""}`}
+      aria-label={`${lesson.title}, ${state}${boss ? ", boss fight" : ""}${pending ? ", desktop mission pending" : ""}${skipped ? `, ${skipped} skipped` : ""}${updated ? ", exercise updated" : ""}`}
+      data-skipped={skipped > 0 ? "true" : "false"}
       title={lesson.title}
       data-testid={isNext ? "next-blip" : undefined}
     >
@@ -59,6 +62,11 @@ function Blip({
       {pending && (
         <span className="absolute -top-0.5 -right-0.5 grid size-4 place-items-center rounded-full bg-panel-2 text-gold-ink" aria-hidden>
           <Monitor className="size-3" />
+        </span>
+      )}
+      {skipped > 0 && (
+        <span className="absolute -right-0.5 -bottom-0.5 grid size-4 place-items-center rounded-full bg-panel-2 text-gold-ink" aria-hidden data-testid={`blip-skipped-${lesson.slug}`}>
+          <FastForward className="size-3" />
         </span>
       )}
       {updated && (
@@ -129,6 +137,7 @@ function District({ course, mod, nextKey }: { course: string; mod: ModuleSummary
                     isNext={l.key === nextKey}
                     pending={(state.lessons[l.key]?.pendingDesktop.length ?? 0) > 0}
                     updated={lessonUpdated(state, l)}
+                    skipped={skippedExerciseCount(state, l.key, l.exerciseIds)}
                   />
                 </span>
               ))}
@@ -164,6 +173,11 @@ export function CourseMap({ course }: { course: CourseSummary }) {
           </div>
           <div className="w-full rounded-lg bg-ink/90 px-4 py-3 sm:w-80">
             <RespectBar value={loaded ? respect(state, lessons) : 0} />
+            {loaded && skippedExerciseTotal(state, lessons) > 0 && (
+              <p className="mt-1 text-sm text-gold-ink" data-testid="respect-skipped">
+                {skippedExerciseTotal(state, lessons)} skipped · half a solve each in this percent
+              </p>
+            )}
             <p className="mt-1 text-sm text-muted-foreground">
               Level {lvl.level} · {lvl.rank}
             </p>
@@ -184,6 +198,9 @@ export function CourseMap({ course }: { course: CourseSummary }) {
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Monitor className="size-4 text-gold-ink" /> Desktop mission pending
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <FastForward className="size-4 text-gold-ink" /> Skipped exercise
           </span>
         </div>
         <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Districts">
