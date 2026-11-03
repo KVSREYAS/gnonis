@@ -1,0 +1,27 @@
+---
+id: economics/02-supply-and-demand/03-test-sd
+title: 'Module test: Supply and demand'
+estMinutes: 3
+xp: 150
+fun: 4
+missionIntro: A timed test on curves, shifts, taxes and caps.
+kind: boss
+keyIdeas:
+- Shortage below equilibrium, surplus above.
+- Shifts come from things other than the good's own price.
+- Taxes create a wedge and a deadweight loss.
+---
+
+## Module test
+
+5 timed questions on supply and demand. 3 wrong answers end the test, and you can retry as often as you like.
+
+<Boss
+  id="module-test"
+  title={"Module test: Supply and demand"}
+  briefing={"5 questions, 3 minutes. 3 wrong answers end the test."}
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "mcq", "prompt": "A drought ruins half the onion crop. Onion price and quantity:", "options": ["Price up, quantity down", "Price down, quantity up", "Both up", "Both down"], "answer": 0, "explanation": "Supply shifts left."}, {"type": "mcq", "prompt": "Incomes rise and people buy more restaurant meals at every price. That is:", "options": ["A movement along demand", "A rightward shift of demand", "A rightward shift of supply", "A fall in quantity supplied"], "answer": 1, "explanation": "Something other than price changed, so the curve shifts."}, {"type": "predict", "prompt": "Demand Q = 120 − 4P, supply Q = 6P. Equilibrium price?", "answer": 12, "tolerance": {"mode": "absolute", "value": 0.1}, "explanation": "120 − 4P = 6P gives P = 12.", "unit": "₹"}, {"type": "mcq", "prompt": "A price floor above equilibrium causes:", "options": ["A shortage", "A surplus", "Equilibrium", "A shift in demand"], "answer": 1, "explanation": "Sellers offer more than buyers want at the high price."}, {"type": "fill", "text": "A tax is mostly paid by the side that is {{0}} able to walk away.", "chips": ["less", "more", "equally"], "answers": ["less"], "explanation": "The less flexible side cannot avoid it."}]}
+  explanation={"Module test passed: Supply and demand."}
+/>

@@ -1,0 +1,27 @@
+---
+id: economics/05-trade/03-test-trade
+title: 'Module test: Trade'
+estMinutes: 3
+xp: 150
+fun: 4
+missionIntro: A timed test on comparative advantage.
+kind: boss
+keyIdeas:
+- Specialise by lowest opportunity cost.
+- Trade at a price between the two costs.
+- Absolute advantage in everything still leaves gains from trade.
+---
+
+## Module test
+
+4 timed questions on trade. 3 wrong answers end the test, and you can retry as often as you like.
+
+<Boss
+  id="module-test"
+  title={"Module test: Trade"}
+  briefing={"4 questions, 3 minutes. 3 wrong answers end the test."}
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "mcq", "prompt": "Country A makes 10 cars or 20 tonnes of wheat. Country B makes 2 cars or 10 tonnes. B has a comparative advantage in:", "options": ["Cars", "Wheat", "Both", "Neither"], "answer": 1, "explanation": "Wheat costs B 0.2 cars per tonne, A 0.5."}, {"type": "predict", "prompt": "Mira makes 6 shirts or 3 bags per hour. Her opportunity cost of one bag, in shirts?", "answer": 2, "tolerance": {"mode": "absolute", "value": 0}, "explanation": "6 / 3 = 2 shirts per bag.", "unit": "shirts"}, {"type": "mcq", "prompt": "Rice costs Asha 0.5 m cloth and Ben 3 m cloth. Which price lets both gain?", "options": ["0.25 m per kg", "1.5 m per kg", "4 m per kg", "Any price"], "answer": 1, "explanation": "It must be between 0.5 and 3."}, {"type": "fill", "text": "Trade lets each side consume {{0}} its own production frontier.", "chips": ["beyond", "inside", "exactly on"], "answers": ["beyond"], "explanation": "Specialisation raises the total."}]}
+  explanation={"Module test passed: Trade."}
+/>

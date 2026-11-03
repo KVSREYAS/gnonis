@@ -1,0 +1,48 @@
+---
+id: economics/01-scarcity-and-choice/01-first-stand
+title: Your first lemonade stand
+estMinutes: 7
+xp: 100
+fun: 5
+missionIntro: Run a stand for three days. Price too high and nobody buys. Make too many cups and you pay for waste.
+keyIdeas:
+- Revenue is price times quantity sold. Profit is revenue minus cost.
+- Cups you make but do not sell still cost money.
+- The best price balances selling more cups against earning more per cup.
+---
+
+## Revenue, cost and profit
+
+Three words you need for the game:
+
+- **Revenue**: the money that comes in. Price times the number sold.
+- **Cost**: the money that goes out. Here, ₹5 for every cup you make, sold or not.
+- **Profit**: revenue minus cost.
+
+Customers drop away as the price rises: in this town nobody pays ₹40 or more. Hotter days bring more people. You see the forecast before you open.
+
+<Game
+  id="stand-3"
+  game={"lemonade"}
+  prompt={"Make at least ₹1,200 profit in 3 days. Watch the wasted and turned-away numbers."}
+  config={{"days": 3, "costPerCup": 5, "maxPrice": 40, "target": 1200, "seed": 11}}
+  explanation={"The profit-maximising price here is about halfway between cost and the top price, near ₹22. Then make about as many cups as people want at that price."}
+/>
+
+## What the numbers showed
+
+Two mistakes cost money in this game:
+
+1. **Wasted cups**: you made more than people wanted, and each unsold cup still cost ₹5.
+2. **Turned-away customers**: you made too few, and lost sales that would have paid well above ₹5.
+
+Raising the price earns more per cup but sells fewer cups. The best price is where one more rupee of price no longer earns more than the sales it loses. That is marginal thinking in action.
+
+<Predict
+  id="best-price"
+  prompt={"Cost is ₹5 a cup and nobody pays ₹40. Demand falls in a straight line between those. What price maximises profit per customer who walks by? (Hint: halfway between cost and top price.)"}
+  answer={22.5}
+  tolerance={{"mode": "absolute", "value": 1}}
+  explanation={"(5 + 40) / 2 = 22.5. Profit per passer-by is (p − 5)(1 − p/40), which peaks at the midpoint."}
+  unit={"₹"}
+/>

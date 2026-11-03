@@ -1,0 +1,27 @@
+---
+id: economics/06-market-failures/03-test-failures
+title: 'Module test: When markets fail'
+estMinutes: 3
+xp: 150
+fun: 4
+missionIntro: A timed test on externalities, public goods, commons and information.
+kind: boss
+keyIdeas:
+- Externalities fall on outsiders.
+- Commons get overused, public goods underprovided.
+- Hidden information can unravel a market.
+---
+
+## Module test
+
+5 timed questions on when markets fail. 3 wrong answers end the test, and you can retry as often as you like.
+
+<Boss
+  id="module-test"
+  title={"Module test: When markets fail"}
+  briefing={"5 questions, 3 minutes. 3 wrong answers end the test."}
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "mcq", "prompt": "A plastics plant dumps waste into a river used by farmers downstream. This is:", "options": ["A positive externality", "A negative externality", "A public good", "Adverse selection"], "answer": 1, "explanation": "A cost on people outside the deal."}, {"type": "mcq", "prompt": "Street lighting is:", "options": ["Rival and excludable", "Non-rival and non-excludable", "Rival and non-excludable", "A club good"], "answer": 1, "explanation": "A public good."}, {"type": "mcq", "prompt": "After buying full phone insurance, people drop their phones more often. This is:", "options": ["Adverse selection", "Moral hazard", "A public good", "Free riding"], "answer": 1, "explanation": "A hidden action after the deal."}, {"type": "predict", "prompt": "Lake regrowth is 0.5 × S × (1 − S/1000). How many new fish at S = 500?", "answer": 125, "tolerance": {"mode": "absolute", "value": 0}, "explanation": "0.5 × 500 × 0.5 = 125.", "unit": "fish"}, {"type": "fill", "text": "A tax equal to the external harm is called a {{0}} tax.", "chips": ["Pigouvian", "Ricardian", "Keynesian"], "answers": ["Pigouvian"], "explanation": "Named after Arthur Pigou."}]}
+  explanation={"Module test passed: When markets fail."}
+/>

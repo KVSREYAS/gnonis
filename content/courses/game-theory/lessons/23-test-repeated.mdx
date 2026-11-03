@@ -1,0 +1,27 @@
+---
+id: game-theory/06-repeated-games/03-test-repeated
+title: 'Module test: Repeated games'
+estMinutes: 3
+xp: 150
+fun: 4
+missionIntro: A timed test on repeated games.
+kind: boss
+keyIdeas:
+- The shadow of the future sustains cooperation.
+- Tit for tat copies the last move.
+- Noise punishes strict strategies.
+---
+
+## Module test
+
+4 timed questions on repeated games. 3 wrong answers end the test, and you can retry as often as you like.
+
+<Boss
+  id="module-test"
+  title={"Module test: Repeated games"}
+  briefing={"4 questions, 3 minutes. 3 wrong answers end the test."}
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "mcq", "prompt": "Why can cooperation survive in a repeated prisoner's dilemma?", "options": ["Payoffs change", "Future punishment makes defecting today costly", "Players cannot defect", "It is zero-sum"], "answer": 1, "explanation": "The shadow of the future."}, {"type": "mcq", "prompt": "Grim trigger after one accidental defection:", "options": ["Forgives next round", "Defects forever", "Randomises", "Copies once"], "answer": 1, "explanation": "One defection ends cooperation for good."}, {"type": "predict", "prompt": "Tit for tat vs always defect for 10 rounds (payoffs 3/0/5/1). Tit for tat's total?", "answer": 9, "tolerance": {"mode": "absolute", "value": 0}, "explanation": "0 in round 1, then 1 point in each of 9 rounds.", "unit": "points"}, {"type": "ordering", "prompt": "Order Axelrod's traits as listed: first the one about round 1.", "items": ["Nice", "Retaliating", "Forgiving", "Clear"], "explanation": "Never defect first, punish defection, return to cooperation, be readable."}]}
+  explanation={"Module test passed: Repeated games."}
+/>

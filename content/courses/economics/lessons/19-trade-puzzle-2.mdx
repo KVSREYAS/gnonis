@@ -1,0 +1,42 @@
+---
+id: economics/05-trade/02-trade-puzzle-2
+title: 'Trade puzzle: the better worker'
+estMinutes: 7
+xp: 100
+fun: 5
+missionIntro: One side is faster at both jobs. Trade still pays. Prove it.
+keyIdeas:
+- Absolute advantage in both goods does not remove gains from trade.
+- Only the ratios matter.
+---
+
+## Setup
+
+An Indian software firm and a Vietnamese firm each have 8 engineer-days.
+
+- **India** writes 6 apps or tests 6 apps per day.
+- **Vietnam** writes 1 app or tests 3 apps per day.
+
+India is better at both. India needs 36 apps written and 16 tested. Vietnam needs 4 written and 13 tested. Neither can do it alone. Find the split and the trade.
+
+<Game
+  id="better"
+  game={"comparative-advantage"}
+  prompt={"Meet both firms' needs even though India is faster at everything."}
+  config={{"goods": ["apps written", "apps tested"], "a": {"name": "India", "hours": 8, "perHour": [6, 6]}, "b": {"name": "Vietnam", "hours": 8, "perHour": [1, 3]}, "needA": [36, 16], "needB": [4, 13]}}
+  explanation={"Writing costs India 1 test and Vietnam 3 tests, so India writes and Vietnam tests. India: 7 days writing (42), 1 day testing (6). Vietnam: 8 days testing (24). India sends 5 written apps at 2 tests each. India ends with 37 written and 16 tested, Vietnam with 5 and 14."}
+/>
+
+## Takeaway
+
+Comparative advantage, not absolute advantage, decides who should do what. A top surgeon who types fast still hires a typist, because each hour typing costs her an hour of surgery.
+
+The same logic explains why rich and poor countries both gain from trading with each other. The gains are not always shared evenly inside each country: workers in industries that shrink can lose, which is why trade policy is debated.
+
+<MCQ
+  id="surgeon"
+  prompt={"A lawyer types twice as fast as her assistant. Should she do her own typing?"}
+  options={["Yes, she is faster", "No, her time typing costs billable legal work", "Only on weekends", "Only if the assistant is slow"]}
+  answer={1}
+  explanation={"Her opportunity cost of typing is high."}
+/>

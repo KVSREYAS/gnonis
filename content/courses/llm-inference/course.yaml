@@ -9,6 +9,7 @@ cover: skyline
 prerequisites: []
 tagline: From one token to a serving fleet.
 level: intermediate
+category: cs
 lessons:
   - tokens-concepts
   - what-is-a-token

@@ -1,0 +1,49 @@
+---
+id: economics/02-supply-and-demand/02-taxes-and-caps
+title: Taxes and price caps
+estMinutes: 7
+xp: 100
+fun: 4
+missionIntro: Who really pays a tax, and why a price ceiling creates queues.
+keyIdeas:
+- A per-unit tax drives a wedge between what buyers pay and sellers keep.
+- The side that can adjust less pays more of the tax.
+- A price ceiling below equilibrium creates a shortage. A floor above it creates a surplus.
+- Deadweight loss is the value of trades that no longer happen.
+---
+
+## A tax on each unit
+
+A **per-unit tax** is a fixed amount charged on each unit sold, such as ₹6 per litre. Say the seller hands it to the government.
+
+Sellers now need ₹6 more to supply the same amount, so the supply curve moves up by ₹6. The new equilibrium has a higher price for buyers, a lower price kept by sellers, and fewer units traded.
+
+**Tax incidence** means who actually bears the tax. It does not depend on who writes the cheque. It depends on which side can more easily walk away.
+
+<Game
+  id="tax-market"
+  game={"market"}
+  prompt={"A ₹6 tax per unit is added. Find the price buyers pay that clears the market, before and after."}
+  config={{"maxPrice": 40, "rounds": [{"label": "Before the tax", "demand": {"a": 100, "b": 2}, "supply": {"a": 10, "b": 1}, "tax": 0}, {"label": "With a ₹6 tax paid by sellers", "demand": {"a": 100, "b": 2}, "supply": {"a": 10, "b": 1}, "tax": 6}]}}
+  explanation={"The price buyers pay rose from ₹30 to ₹32, so buyers carry ₹2 of the ₹6 tax and sellers carry ₹4. Sellers' supply here reacts less to price, so they pay more."}
+/>
+
+## The wedge and deadweight loss
+
+![A ₹10 tax: buyers pay ₹25, sellers keep ₹15, and the red triangle is the deadweight loss](/diagrams/economics/tax-wedge.png)
+
+The grey rectangle is **tax revenue**: tax per unit times units sold. The red triangle is **deadweight loss**: trades that were worth more to the buyer than they cost the seller, but no longer happen because the tax made them unprofitable. Nobody gets that value. It is simply lost.
+
+## Price ceilings and floors
+
+A **price ceiling** is a legal maximum price. If it is set below equilibrium, buyers want more than sellers offer, so there is a lasting shortage. Rent control and capped fuel prices often lead to queues, waiting lists or black markets.
+
+A **price floor** is a legal minimum. Set above equilibrium, it creates a lasting surplus. Minimum support prices for crops can lead to large unsold government stocks.
+
+<MCQ
+  id="ceiling-check"
+  prompt={"Equilibrium rent is ₹20,000. The city caps rent at ₹14,000. What follows?"}
+  options={["A surplus of flats", "A shortage of flats: more people want them than landlords offer", "No change", "Landlords build more flats"]}
+  answer={1}
+  explanation={"The cap is below equilibrium, so quantity demanded rises and quantity supplied falls."}
+/>

@@ -1,0 +1,27 @@
+---
+id: economics/07-money-and-inflation/03-test-money
+title: 'Module test: Money and inflation'
+estMinutes: 3
+xp: 150
+fun: 4
+missionIntro: A timed test on inflation, real values and compounding.
+kind: boss
+keyIdeas:
+- Real ≈ nominal − inflation.
+- Rule of 72.
+- Inflation helps fixed-rate borrowers.
+---
+
+## Module test
+
+5 timed questions on money and inflation. 3 wrong answers end the test, and you can retry as often as you like.
+
+<Boss
+  id="module-test"
+  title={"Module test: Money and inflation"}
+  briefing={"5 questions, 3 minutes. 3 wrong answers end the test."}
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "predict", "prompt": "Salary rises 10%, inflation is 7%. Real salary change, in %?", "answer": 3, "tolerance": {"mode": "absolute", "value": 0.3}, "explanation": "10 − 7 = 3 (approximately).", "unit": "%"}, {"type": "predict", "prompt": "At 9% a year, about how many years to double?", "answer": 8, "tolerance": {"mode": "absolute", "value": 0.5}, "explanation": "72 / 9 = 8.", "unit": "years"}, {"type": "mcq", "prompt": "Inflation turns out higher than expected. Who gains?", "options": ["Savers in fixed deposits", "Borrowers with fixed-rate loans", "Pensioners on fixed pensions", "Lenders"], "answer": 1, "explanation": "They repay with cheaper rupees."}, {"type": "mcq", "prompt": "India's CPI inflation target is:", "options": ["2%", "4% with a 2-6% band", "10%", "0%"], "answer": 1, "explanation": "Set under the RBI's flexible inflation targeting framework."}, {"type": "fill", "text": "Interest earned on past interest is called {{0}} interest.", "chips": ["compound", "simple", "real", "nominal"], "answers": ["compound"], "explanation": "Growth on growth."}]}
+  explanation={"Module test passed: Money and inflation."}
+/>

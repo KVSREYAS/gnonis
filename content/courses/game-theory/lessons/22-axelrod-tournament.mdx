@@ -1,0 +1,42 @@
+---
+id: game-theory/06-repeated-games/02-axelrod-tournament
+title: Axelrod's tournament
+estMinutes: 7
+xp: 100
+fun: 5
+missionIntro: Enter a strategy into a round-robin and see where it finishes. Then add noise.
+keyIdeas:
+- Against a mixed field, reciprocators beat both saints and sinners.
+- With noise, strict strategies fall into feuds.
+- Generous or Pavlov-style strategies recover from mistakes better.
+---
+
+## Round one: no mistakes
+
+You pick one strategy to enter. It plays every other entry (and a copy of itself) for 50 rounds. The field is a mix of nice, nasty and random players. Finish in the top 2.
+
+<Game
+  id="clean"
+  game={"pd-tournament"}
+  prompt={"Pick a strategy that finishes in the top 2."}
+  config={{"field": ["always-defect", "always-cooperate", "grim-trigger", "random", "alternator", "suspicious-tit-for-tat"], "rounds": 50, "noise": 0, "choices": ["always-defect", "always-cooperate", "tit-for-tat", "grim-trigger"], "topN": 2}}
+  explanation={"Tit for tat or grim trigger finish at the top: they cooperate with the nice players and stop the nasty ones exploiting them. Always cooperate gets exploited, always defect gets stonewalled."}
+/>
+
+## Round two: 5% noise
+
+Now each move flips by mistake 5% of the time. One accidental defection can set off a chain of retaliation between two tit-for-tat players that lasts until another mistake breaks it. Grim trigger never recovers at all.
+
+Strategies that forgive some defections, or that return to cooperating after mutual defection, tend to do better here. Results vary from run to run, so you may need a retry.
+
+<Game
+  id="noisy"
+  game={"pd-tournament"}
+  prompt={"With 5% noise, pick a strategy that finishes in the top 3."}
+  config={{"field": ["tit-for-tat", "grim-trigger", "always-defect", "pavlov", "random", "tit-for-two-tats"], "rounds": 100, "noise": 0.05, "choices": ["grim-trigger", "tit-for-tat", "generous-tit-for-tat", "always-defect"], "topN": 3}}
+  explanation={"Tit for tat and generous tit for tat usually finish near the top. Grim trigger falls behind because one mistake ends cooperation forever."}
+/>
+
+## Takeaway
+
+Axelrod's summary of what does well: be **nice** (never defect first), **retaliate** (do not let defection pay), **forgive** (go back to cooperating), and be **clear** (easy for others to read). In a noisy world, extra forgiveness matters more.

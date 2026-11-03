@@ -1,0 +1,34 @@
+---
+id: economics/06-market-failures/01-fishing-commons
+title: Fishing commons
+estMinutes: 8
+xp: 100
+fun: 5
+missionIntro: You and three other boats share one lake. Catch enough to make a living without emptying it.
+keyIdeas:
+- Fish regrow fastest at half capacity.
+- Each extra fish you take is fully yours. The damage is shared.
+- Other users react to your greed.
+---
+
+## The lake
+
+The lake holds up to 1,000 fish. Each season the fish left over regrow: fastest when the lake is half full (125 new fish), slowly when nearly empty or nearly full.
+
+![Regrowth peaks at 500 fish](/diagrams/economics/commons-growth.png)
+
+Four boats share it. The sustainable total is about 125 fish a season, roughly 31 per boat. The other three boats start near a fair share, but they copy any overfishing they see from you.
+
+<Game
+  id="lake"
+  game={"commons"}
+  prompt={"Catch at least 250 fish over 10 seasons and leave at least 400 in the lake."}
+  config={{"seasons": 10, "capacity": 1000, "growth": 0.5, "bots": 3, "greed": 0.1, "maxCatch": 150, "minStock": 400, "target": 250}}
+  explanation={"Around 25 to 30 fish a season keeps the lake near half full. Big catches pull the other boats into overfishing, and the stock collapses."}
+/>
+
+## What happened
+
+If you took a lot early, the others followed and the stock crashed, so everyone's long-run catch fell. This is the tragedy of the commons in action.
+
+Elinor Ostrom won the 2009 Nobel Prize for showing that real communities often avoid this: they set catch limits, watch each other, and punish cheats. Governments also use quotas and tradable fishing rights. The common thread is that someone limits access.

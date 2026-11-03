@@ -234,6 +234,7 @@ export function loadCourse(dir: string, issues: ContentIssue[]): CourseData | un
     prerequisites: meta.data.prerequisites,
     tagline: meta.data.tagline ?? "",
     level: meta.data.level,
+    category: meta.data.category ?? "cs",
     modules,
   };
 }

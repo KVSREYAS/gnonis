@@ -1,0 +1,32 @@
+---
+id: game-theory/04-mixed-strategies/01-penalty-kicks
+title: Penalty shoot-out
+estMinutes: 7
+xp: 100
+fun: 5
+missionIntro: 20 kicks against a keeper who learns your habits. Be unpredictable.
+keyIdeas:
+- Patterns get punished.
+- Mix in the right proportion, not 50/50 by default.
+- Short streaks happen in real randomness. Do not over-correct.
+---
+
+## How to play
+
+You take 20 penalties. The scoring chances are the real-data table from the last lesson. The keeper watches your last 5 kicks and leans toward your more common side.
+
+If you always go to your best side, the keeper learns it and your scoring rate falls. Score 14 or more to win.
+
+<Game
+  id="shootout"
+  game={"penalty-kicks"}
+  prompt={"Score at least 14 of 20."}
+  config={{"kicks": 20, "target": 14, "memory": 5, "score": {"L": [0.58, 0.95], "R": [0.93, 0.7]}}}
+  explanation={"Against a keeper who exploits patterns, the best you can do on average is about 80%, which needs an unpredictable mix of both sides."}
+/>
+
+## What you were up against
+
+Humans are bad at being random: we switch too often and avoid streaks. A keeper (or a computer) that tracks patterns punishes that.
+
+The equilibrium idea is not that you flip a coin for fun. It is that any predictability is a weakness the other side can use, so the only safe plan is one they cannot read.

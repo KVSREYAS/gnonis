@@ -1,0 +1,49 @@
+---
+id: economics/01-scarcity-and-choice/02-margin-puzzles
+title: Marginal thinking puzzles
+estMinutes: 6
+xp: 100
+fun: 4
+missionIntro: Short puzzles where the answer depends on the next unit, not the total.
+keyIdeas:
+- Compare marginal benefit with marginal cost.
+- Ignore sunk costs.
+- Totals can mislead. The last unit decides.
+---
+
+## Marginal tables
+
+A bakery adds workers. The table shows total loaves per day.
+
+| Workers | Loaves | Extra loaves |
+|---|---|---|
+| 1 | 50 | 50 |
+| 2 | 90 | 40 |
+| 3 | 120 | 30 |
+| 4 | 140 | 20 |
+| 5 | 150 | 10 |
+
+The **marginal product** is the extra output from one more worker. It falls as more workers share the same oven. This is called **diminishing marginal returns**.
+
+<Predict
+  id="hire"
+  prompt={"Each loaf sells for ₹30 and a worker costs ₹700 a day. How many workers should the bakery hire?"}
+  answer={3}
+  tolerance={{"mode": "absolute", "value": 0}}
+  explanation={"Worker 3 adds 30 loaves = ₹900 > ₹700. Worker 4 adds 20 loaves = ₹600 < ₹700. Stop at 3."}
+  unit={"workers"}
+/>
+
+## Free is not always free
+
+A shop offers "buy 2, get the 3rd free". If you only wanted one shirt, the marginal cost of the second shirt is its full price, and the marginal benefit is whatever a second shirt is worth to you. The free third shirt only matters if you value it.
+
+Offers like this work because people compare the deal to the total price instead of asking what each extra item is worth to them.
+
+<MCQ
+  id="flight"
+  prompt={"A flight has 20 empty seats an hour before take-off. Flying costs the same whether the seats are full or not. Each extra passenger adds ₹300 in food and fuel. The lowest price worth accepting for one seat is:"}
+  options={["The average cost per seat, about ₹6,000", "₹300", "₹0", "The usual fare"]}
+  answer={1}
+  explanation={"Only the extra cost matters now. Any price above ₹300 adds profit."}
+/>

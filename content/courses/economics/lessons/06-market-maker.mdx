@@ -1,0 +1,52 @@
+---
+id: economics/02-supply-and-demand/01-market-maker
+title: 'Market maker: clear the market'
+estMinutes: 7
+xp: 100
+fun: 5
+missionIntro: You set the price. Find the one where the queue and the pile both disappear.
+keyIdeas:
+- 'Shortage: raise the price. Surplus: cut it.'
+- The clearing price is where the curves cross.
+- 'You can solve it exactly: set a − bP equal to c + dP.'
+---
+
+## How to play
+
+You run the price board for a market of chai stalls. Move the slider and watch two numbers:
+
+- **Buyers want**: quantity demanded at your price.
+- **Sellers offer**: quantity supplied at your price.
+
+If buyers want more, there is a shortage, so raise the price. If sellers offer more, there is a surplus, so cut it. Press **Set price** when you think it clears. Then news hits the market and you do it again.
+
+<Game
+  id="clear-markets"
+  game={"market"}
+  prompt={"Clear all four markets. Each one starts after some news shifts a curve."}
+  config={{"maxPrice": 25, "rounds": [{"label": "A normal morning", "demand": {"a": 200, "b": 10}, "supply": {"a": 20, "b": 8}, "tax": 0}, {"label": "Exam week: students want more chai", "demand": {"a": 272, "b": 10}, "supply": {"a": 20, "b": 8}, "tax": 0}, {"label": "Milk price doubles: stalls offer less", "demand": {"a": 272, "b": 10}, "supply": {"a": -34, "b": 8}, "tax": 0}, {"label": "Ten new stalls open", "demand": {"a": 272, "b": 10}, "supply": {"a": 38, "b": 8}, "tax": 0}]}}
+  explanation={"Demand up: price and quantity rise. Supply down: price rises, quantity falls. Supply up: price falls, quantity rises."}
+/>
+
+## Reading the shifts
+
+![Demand shifting right raises both the price and the quantity sold](/diagrams/economics/demand-shift.png)
+
+What you just saw:
+
+| News | Curve | Price | Quantity |
+|---|---|---|---|
+| More buyers | Demand right | Up | Up |
+| Higher input cost | Supply left | Up | Down |
+| More sellers | Supply right | Down | Up |
+
+When price and quantity move the same way, look for a demand shift. When they move opposite ways, look for a supply shift.
+
+<Predict
+  id="solve-eq"
+  prompt={"Demand: Q = 200 − 10P. Supply: Q = 20 + 8P. What is the equilibrium price?"}
+  answer={10}
+  tolerance={{"mode": "absolute", "value": 0.1}}
+  explanation={"200 − 10P = 20 + 8P, so 180 = 18P and P = 10. Quantity is 100."}
+  unit={"₹"}
+/>

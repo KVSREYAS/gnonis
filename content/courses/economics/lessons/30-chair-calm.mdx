@@ -1,0 +1,37 @@
+---
+id: economics/08-central-banks/01-chair-calm
+title: 'Run the central bank: the boom'
+estMinutes: 8
+xp: 100
+fun: 5
+missionIntro: Twelve quarters, one slider. Keep inflation near 2% and unemployment near 5% through a credit boom.
+keyIdeas:
+- The neutral rate is expected inflation plus 1 point here.
+- Raise rates before a boom shows up in inflation.
+- Overreacting causes a recession.
+---
+
+## Your job
+
+In this simulator the target is 2% inflation and 5% unemployment. Each quarter you announce a policy rate from 0% to 15%.
+
+How the model works:
+
+- The **real rate** is your rate minus expected inflation. A real rate of 1% is **neutral**: it neither speeds up nor slows the economy.
+- Above neutral, demand cools. Below it, demand heats up.
+- Hot demand raises inflation and lowers unemployment.
+- Expected inflation moves halfway toward actual inflation each quarter.
+
+<Game
+  id="calm"
+  game={"central-bank"}
+  prompt={"Keep the average miss score at 1.5 or below over 12 quarters. A credit boom arrives in quarter 4."}
+  config={{"quarters": 12, "maxAvgLoss": 1.5, "shocks": [{"quarter": 4, "demand": 2, "supply": 0, "news": "Credit boom: households borrow and spend much more."}, {"quarter": 5, "demand": 1, "supply": 0, "news": "The boom keeps going."}]}}
+  explanation={"Start at about 3% (neutral). When the boom arrives, lift the rate a few points, then ease back toward neutral as it fades."}
+/>
+
+## What you learned
+
+Rates work with a lag: what you set this quarter mostly affects the next few. Waiting for inflation to show up means you are already late, and then you have to move harder.
+
+Real central banks face the same problem, with worse data and uncertain lags. That is why they talk so much about forecasts and expectations.

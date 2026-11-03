@@ -1,0 +1,51 @@
+---
+id: game-theory/04-mixed-strategies/00-mixed-concepts
+title: 'Concepts: mixing and indifference'
+estMinutes: 7
+xp: 60
+fun: 2
+missionIntro: Why randomising can be the best strategy, and how to compute the right mix.
+keyIdeas:
+- A mixed strategy chooses each option with a set probability.
+- In a mixed equilibrium each player's mix makes the other indifferent between their options.
+- Expected payoff = sum of payoff × probability.
+- Real penalty takers mix close to the equilibrium.
+---
+
+## Pure and mixed
+
+A **pure strategy** is one definite choice. A **mixed strategy** picks among choices with fixed probabilities, like "left 40%, right 60%".
+
+The **expected payoff** of a mix is the average payoff you would get over many plays: each payoff times its probability, added up.
+
+Example: score 0.9 of the time if you go left, 0.6 if you go right, mixing 50/50 gives 0.5 × 0.9 + 0.5 × 0.6 = 0.75.
+
+## The indifference rule
+
+In matching pennies, any predictable pattern can be exploited. If you play heads 70% of the time, the other player always plays tails.
+
+In a **mixed-strategy equilibrium**, each player mixes so that the **other** player gets the same expected payoff from every option they use. Then the other player has no better reply, so they are happy to keep mixing too.
+
+This sounds backwards: your mix is set by **their** payoffs, not yours.
+
+## Penalty kicks
+
+A penalty kick is a real zero-sum game. Ignacio Palacios-Huerta studied 1,417 professional penalties (2003) and found scoring rates near these:
+
+| | Keeper left | Keeper right |
+|---|---|---|
+| Kick left | 58% | 95% |
+| Kick right | 93% | 70% |
+
+![The keeper's dive mix that makes both sides equally good for the kicker](/diagrams/game-theory/penalty-indifference.png)
+
+The keeper should dive left about 42% of the time, making both kick directions score about 80%. Kickers' and keepers' real choices were close to the equilibrium mixes.
+
+<Predict
+  id="ev"
+  prompt={"You score 90% kicking left and 60% kicking right against this keeper. You kick left 30% of the time. Expected scoring chance, in %?"}
+  answer={69}
+  tolerance={{"mode": "absolute", "value": 0.5}}
+  explanation={"0.3 × 90 + 0.7 × 60 = 27 + 42 = 69."}
+  unit={"%"}
+/>

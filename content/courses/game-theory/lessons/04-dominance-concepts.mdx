@@ -1,0 +1,57 @@
+---
+id: game-theory/02-dominance/00-dominance-concepts
+title: 'Concepts: dominance and the prisoner''s dilemma'
+estMinutes: 6
+xp: 60
+fun: 2
+missionIntro: Dominant strategies, dominated strategies, and why two rational players can both end up worse off.
+keyIdeas:
+- A strategy strictly dominates another if it gives a higher payoff against every choice of the other players.
+- A rational player never plays a strictly dominated strategy.
+- In the prisoner's dilemma, defecting dominates, yet both defecting is worse for both than both cooperating.
+- 'Iterated elimination: delete dominated strategies, then look again.'
+---
+
+## Dominance
+
+Strategy A **strictly dominates** strategy B if A gives you a higher payoff than B **whatever** the other players do. Then B is **strictly dominated**.
+
+If one strategy dominates all your others, it is a **dominant strategy**: you should play it without even thinking about the other player.
+
+Check it cell by cell: compare your payoff in row A with row B in every column. If A wins in every column, A dominates.
+
+## The prisoner's dilemma
+
+Two suspects are questioned apart. Each can stay **quiet** (cooperate with the other) or **confess** (defect).
+
+![Confess is the better reply to both of the other's choices](/diagrams/game-theory/prisoners-dilemma.png)
+
+If they stay quiet, confessing gets you 0 instead of −1. If they confess, confessing gets you −5 instead of −10. Confess dominates. Both reason this way, both confess, and both get −5, though both staying quiet gives −1 each. Individually rational choices lead to a result that is worse for both.
+
+## Where it shows up
+
+The same structure appears whenever each side gains from cheating but everyone loses if all cheat:
+
+- Two firms that could both keep prices high, but each gains by undercutting.
+- Countries that would all gain from cutting emissions, but each gains by letting others do it.
+- Teammates who each gain by slacking on a group project.
+
+The usual payoffs used in this course: both cooperate 3 each, both defect 1 each, defect against a cooperator 5 for the defector and 0 for the other.
+
+## Iterated elimination
+
+Some games have no dominant strategy, but still solve. **Iterated elimination of strictly dominated strategies** works like this:
+
+1. Delete any strictly dominated strategy for any player.
+2. The game is now smaller. Look again: a strategy that was fine before may now be dominated.
+3. Repeat until nothing more can be deleted.
+
+If one cell is left, that is the prediction. Each round of deletion assumes one more level of "I know that you know that I am rational".
+
+<MCQ
+  id="dom-check"
+  prompt={"Rows: Up gives you 4 vs Left and 2 vs Right. Down gives you 3 vs Left and 1 vs Right. Which is true?"}
+  options={["Down dominates Up", "Up strictly dominates Down", "Neither dominates", "Both are dominant"]}
+  answer={1}
+  explanation={"4 > 3 and 2 > 1, so Up is better in every column."}
+/>

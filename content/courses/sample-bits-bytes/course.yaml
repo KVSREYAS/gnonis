@@ -8,6 +8,7 @@ cover: pier
 prerequisites: []
 tagline: A short sample pack. Drop a folder in, and a course appears.
 level: intro
+category: cs
 lessons:
   - number-formats-concepts
   - bytes-per-number

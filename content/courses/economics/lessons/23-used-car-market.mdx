@@ -1,0 +1,41 @@
+---
+id: economics/06-market-failures/02-used-car-market
+title: The market for lemons
+estMinutes: 7
+xp: 100
+fun: 5
+missionIntro: Buy used cars when only the seller knows the quality. Then see how inspections save the market.
+keyIdeas:
+- If buyers cannot see quality, they pay for average quality.
+- Owners of good cars then refuse to sell, so the average falls.
+- This unravelling can destroy a market. Inspections and warranties fix it.
+---
+
+## The setup
+
+In this market a "lemon" is a bad used car. Each car has a quality from ₹0 to ₹100 thousand: what it is worth to its owner. It is worth 1.5 times that to you, so every trade could make both sides richer.
+
+But only the owner knows the quality. An owner sells only if your offer is at least what the car is worth to them. So at an offer of ₹60k, only cars worth ₹0 to ₹60k get sold, and their average is ₹30k.
+
+<Game
+  id="lemons"
+  game={"lemons"}
+  prompt={"Try blind offers, then use inspections. End with a total gain of at least ₹40k over 8 rounds."}
+  config={{"rounds": 8, "bonus": 1.5, "target": 40, "inspectCost": 5}}
+  explanation={"Blind offers lose money on average: at an offer of P, the average car is worth P/2 to its owner and 0.75P to you. Inspections reveal quality, so trades happen at fair prices and both sides gain."}
+/>
+
+## Why the blind market collapses
+
+At any blind offer P, you get an average car worth 0.75 P to you but pay P. You lose a quarter of your offer on average, so the only safe offer is zero, and no cars trade. Gains that both sides wanted disappear because of missing information.
+
+Inspections, certified pre-owned schemes, warranties and seller ratings exist to fix exactly this. Akerlof shared the 2001 Nobel Prize for this idea.
+
+<Predict
+  id="lemon-avg"
+  prompt={"Car qualities are spread evenly from ₹0 to ₹100k. You offer ₹80k blind. What is the average quality of the cars offered to you, in ₹k?"}
+  answer={40}
+  tolerance={{"mode": "absolute", "value": 0.5}}
+  explanation={"Only cars worth ₹80k or less are offered. Their average is 80/2 = 40."}
+  unit={"₹k"}
+/>

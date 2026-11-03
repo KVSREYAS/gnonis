@@ -1,0 +1,32 @@
+---
+id: game-theory/08-cooperation-and-fairness/01-ultimatum
+title: The ultimatum game
+estMinutes: 7
+xp: 100
+fun: 5
+missionIntro: Propose splits to five bots with secret limits, then decide on four offers made to you.
+keyIdeas:
+- Lowballing is profitable only if it is accepted.
+- Rejecting a positive offer costs you money.
+- Read your opponents.
+---
+
+## How to play
+
+Part 1: you propose. Five bots each have a secret minimum they will accept out of 10 coins. Offer too little and both get 0.
+
+Part 2: you respond. Four bots make you offers. Accept and get the offer, or reject and both get 0.
+
+End with at least 33 coins. Fair 5/5 offers to everyone get you 25 from part 1. You can do better if you read the bots.
+
+<Game
+  id="split"
+  game={"ultimatum"}
+  prompt={"Finish with at least 33 coins."}
+  config={{"pie": 10, "thresholds": [3, 4, 2, 5, 1], "offers": [1, 5, 3, 2], "target": 33}}
+  explanation={"The bots' minimums were 3, 4, 2, 5 and 1. Offering just enough keeps 7 + 6 + 8 + 5 + 9 = 35. Accepting every positive offer adds 11."}
+/>
+
+## What this shows
+
+As a responder, rejecting cost you real coins. As a proposer, the best offer depended on what each bot would accept, not on theory alone. In real life you rarely know the minimum, so offers near 40-50% are the safe choice, which is what most people do.

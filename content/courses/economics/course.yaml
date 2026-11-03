@@ -1,0 +1,148 @@
+id: economics
+title: Economics
+description: 'How markets set prices, why firms charge what they do, why trade helps both sides, when
+  markets fail, and how central banks steer inflation. Built around games: run a lemonade stand, clear
+  markets, fish a shared lake, buy used cars blind and chair the central bank.'
+order: 10
+cover: hills
+prerequisites: []
+tagline: Play the market, then understand it.
+level: intro
+category: economics
+lessons:
+- scarcity-concepts
+- first-stand
+- margin-puzzles
+- test-scarcity
+- sd-concepts
+- market-maker
+- taxes-and-caps
+- test-sd
+- elasticity-concepts
+- elastic-or-not
+- price-hunt
+- test-elasticity
+- firms-concepts
+- stand-week
+- be-the-monopolist
+- test-firms
+- trade-concepts
+- trade-puzzle
+- trade-puzzle-2
+- test-trade
+- failure-concepts
+- fishing-commons
+- used-car-market
+- test-failures
+- money-concepts
+- compounding-race
+- inflation-eats
+- test-money
+- macro-concepts
+- chair-calm
+- chair-oil
+- test-macro
+districts:
+- id: 01-scarcity-and-choice
+  title: Scarcity, choice and opportunity cost
+  district: Scarcity, choice and opportunity cost
+  summary: 'Economics starts with one fact: you cannot have everything. Every choice gives something up,
+    and good choices weigh the next unit, not the whole pile.'
+  tip: 'TIP: The cost of anything is what you give up to get it.'
+  art: grid
+  status: ready
+  lessons:
+  - scarcity-concepts
+  - first-stand
+  - margin-puzzles
+  - test-scarcity
+- id: 02-supply-and-demand
+  title: Supply and demand
+  district: Supply and demand
+  summary: Buyers want less as the price rises, sellers offer more. Where the two meet, the market clears.
+    Then shocks, taxes and price caps push it around.
+  tip: 'TIP: A shift of a curve moves the price. A change in price only moves you along a curve.'
+  art: hills
+  status: ready
+  lessons:
+  - sd-concepts
+  - market-maker
+  - taxes-and-caps
+  - test-sd
+- id: 03-elasticity
+  title: Elasticity
+  district: Elasticity
+  summary: How much do buyers react when the price moves? That one number decides whether a price rise
+    brings in more money or less.
+  tip: 'TIP: Elasticity = % change in quantity / % change in price.'
+  art: bridge
+  status: ready
+  lessons:
+  - elasticity-concepts
+  - elastic-or-not
+  - price-hunt
+  - test-elasticity
+- id: 04-firms-and-markets
+  title: Firms, costs and market power
+  district: Firms, costs and market power
+  summary: Why firms produce where marginal revenue meets marginal cost, how competition pushes price
+    to cost, and what a monopoly does differently.
+  tip: 'TIP: Profit is maximised where marginal revenue = marginal cost.'
+  art: tower
+  status: ready
+  lessons:
+  - firms-concepts
+  - stand-week
+  - be-the-monopolist
+  - test-firms
+- id: 05-trade
+  title: Trade and comparative advantage
+  district: Trade and comparative advantage
+  summary: Why two people, or two countries, both gain from trade even when one is better at everything.
+  tip: 'TIP: Specialise in the good with the lowest opportunity cost.'
+  art: pier
+  status: ready
+  lessons:
+  - trade-concepts
+  - trade-puzzle
+  - trade-puzzle-2
+  - test-trade
+- id: 06-market-failures
+  title: When markets fail
+  district: When markets fail
+  summary: Pollution nobody pays for, shared lakes that get emptied, and used-car markets that collapse
+    because sellers know more than buyers.
+  tip: 'TIP: A market fails when a choice affects people who are not part of the deal.'
+  art: docks
+  status: ready
+  lessons:
+  - failure-concepts
+  - fishing-commons
+  - used-car-market
+  - test-failures
+- id: 07-money-and-inflation
+  title: Money, interest and inflation
+  district: Money, interest and inflation
+  summary: What inflation is, how it is measured, why compound interest is so strong, and how inflation
+    quietly eats savings.
+  tip: 'TIP: Real return ≈ nominal return − inflation.'
+  art: skyline
+  status: ready
+  lessons:
+  - money-concepts
+  - compounding-race
+  - inflation-eats
+  - test-money
+- id: 08-central-banks
+  title: Central banks and the economy
+  district: Central banks and the economy
+  summary: GDP, unemployment and the policy rate. Then you take the chair of the central bank and steer
+    through shocks.
+  tip: 'TIP: Rates act with a lag. Move before inflation is obvious.'
+  art: desert
+  status: ready
+  lessons:
+  - macro-concepts
+  - chair-calm
+  - chair-oil
+  - test-macro

@@ -1,0 +1,59 @@
+---
+id: game-theory/03-nash-equilibrium/00-nash-concepts
+title: 'Concepts: best responses and Nash equilibrium'
+estMinutes: 7
+xp: 60
+fun: 2
+missionIntro: How to find equilibria, why some games have several, and what a focal point is.
+keyIdeas:
+- A best response is your highest-payoff choice given what the others do.
+- A Nash equilibrium is a strategy profile where every player is playing a best response.
+- Some games have several equilibria, some have none in pure strategies.
+- A focal point is an equilibrium that stands out, so people coordinate on it without talking.
+---
+
+## Best responses
+
+Your **best response** to the other player's choice is the strategy that gives you the highest payoff against it.
+
+A quick method for a matrix:
+
+1. For each column, mark your highest payoff (gold) in that column.
+2. For each row, mark their highest payoff (green) in that row.
+3. Any cell with **both** numbers marked is a Nash equilibrium.
+
+In the prisoner's dilemma only Confess/Confess gets both marks.
+
+## Nash equilibrium
+
+A **Nash equilibrium** is a strategy profile where no player can get a higher payoff by changing **only their own** strategy. Everyone is already playing a best response to everyone else.
+
+It is named after John Nash, who proved in 1950 that every finite game has at least one, if players are allowed to randomise (module 4).
+
+An equilibrium need not be good for the players. Both confessing is an equilibrium and is worse for both than both staying quiet.
+
+## Several equilibria: coordination
+
+In the **stag hunt**, two hunters can chase a stag (only works if both do) or a hare (works alone).
+
+![Stag hunt: Stag/Stag and Hare/Hare are both equilibria](/diagrams/game-theory/stag-hunt.png)
+
+Both Stag/Stag (4, 4) and Hare/Hare (3, 3) are equilibria. Stag is better for both but risky: if the other goes for hare, you get 0. Games like this are **coordination games**. The theory says which outcomes are stable, but not which one people will reach.
+
+## Focal points and no pure equilibrium
+
+Thomas Schelling noticed in 1960 that people often coordinate without talking by picking what stands out: a **focal point**. Asked to meet a stranger in New York with no plan, most of his students chose Grand Central Station at noon.
+
+Some games have no cell where both are happy. In **matching pennies**, you win if the coins match and they win if not.
+
+![Matching pennies: no cell is a best response for both](/diagrams/game-theory/matching-pennies.png)
+
+The answer there is to randomise, which is module 4.
+
+<MCQ
+  id="nash-check"
+  prompt={"In a cell, the row player could get more by switching rows. Is it a Nash equilibrium?"}
+  options={["Yes, if the column player is happy", "No, one player wants to change alone", "Only in zero-sum games", "Yes, always"]}
+  answer={1}
+  explanation={"Every player must already be at a best response."}
+/>

@@ -1,0 +1,33 @@
+---
+id: game-theory/03-nash-equilibrium/01-nash-hunt
+title: Nash hunt
+estMinutes: 8
+xp: 100
+fun: 5
+missionIntro: Five payoff tables. Tap every equilibrium. Some have one, some two, one has none.
+keyIdeas:
+- 'Check every cell: can either player gain by switching alone?'
+- Mark best responses to speed it up.
+- Zero equilibria is a valid answer.
+---
+
+## How to play
+
+For each table, tap every cell that is a Nash equilibrium, then press Check. If you think there is none, press Check with nothing selected.
+
+Reminder: gold is the row player's payoff, green is the column player's. A cell is an equilibrium if gold is the highest in its **column** and green is the highest in its **row**.
+
+<Game
+  id="hunt"
+  game={"nash-hunt"}
+  prompt={"Solve all five tables. You can miss twice."}
+  config={{"maxMistakes": 2, "puzzles": [{"title": "Prisoner's dilemma", "rows": ["Cooperate", "Defect"], "cols": ["Cooperate", "Defect"], "payoffs": [[[3, 3], [0, 5]], [[5, 0], [1, 1]]]}, {"title": "Stag hunt", "rows": ["Stag", "Hare"], "cols": ["Stag", "Hare"], "payoffs": [[[4, 4], [0, 3]], [[3, 0], [3, 3]]]}, {"title": "Matching pennies", "rows": ["Heads", "Tails"], "cols": ["Heads", "Tails"], "payoffs": [[[1, -1], [-1, 1]], [[-1, 1], [1, -1]]]}, {"title": "Which cinema?", "rows": ["Action", "Drama"], "cols": ["Action", "Drama"], "payoffs": [[[3, 2], [0, 0]], [[0, 0], [2, 3]]]}, {"title": "Price war (3×3)", "rows": ["High", "Medium", "Low"], "cols": ["High", "Medium", "Low"], "payoffs": [[[6, 6], [2, 8], [1, 5]], [[8, 2], [4, 4], [1, 3]], [[5, 1], [3, 1], [2, 2]]]}]}}
+  explanation={"Prisoner's dilemma: Defect/Defect. Stag hunt: Stag/Stag and Hare/Hare. Matching pennies: none. Cinema: both matching cells. Price war: Medium/Medium and Low/Low."}
+/>
+
+## What the tables showed
+
+- One equilibrium (prisoner's dilemma) can be bad for both.
+- Two equilibria (stag hunt, cinema) leave a coordination problem: which one?
+- Zero pure equilibria (matching pennies) means players should be unpredictable.
+- In the price war, High/High pays both the most (6, 6) but is not stable: each firm gains 2 by dropping to Medium. Medium/Medium (4, 4) and Low/Low (2, 2) are both equilibria, and once firms are stuck at Low, neither gains by raising its price alone.

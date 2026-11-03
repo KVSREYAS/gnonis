@@ -1,0 +1,42 @@
+---
+id: game-theory/06-repeated-games/01-beat-the-bot
+title: Beat the bot
+estMinutes: 7
+xp: 100
+fun: 5
+missionIntro: Play the repeated prisoner's dilemma against a hidden strategy, then name it.
+keyIdeas:
+- Probe with a defection to learn how the bot reacts.
+- Then exploit or cooperate depending on what you learned.
+- Some strategies only differ after two defections in a row.
+---
+
+## How to play
+
+You play 10 rounds against a bot. Both cooperate: 3 each. Both defect: 1 each. You defect on a cooperator: 5 for you, 0 for it.
+
+The first bot plays a strategy you can see. Get 27 points. The second bot hides its strategy. Score 30 and then guess what it was. You will need to test it.
+
+<Game
+  id="known"
+  game={"pd-match"}
+  prompt={"This bot plays tit for tat. Score at least 27 in 10 rounds."}
+  config={{"opponent": "tit-for-tat", "rounds": 10, "target": 27, "reveal": true, "guess": false}}
+  explanation={"Cooperate all the way for 30, or cooperate for 9 and defect in the last round for 32. Defecting early starts a feud that costs more."}
+/>
+
+## Now the mystery bot
+
+The next bot plays one of the strategies from the concepts lesson. To tell them apart, try a defection and watch the reply. Try two in a row. Then settle into whatever pays best.
+
+<Game
+  id="mystery"
+  game={"pd-match"}
+  prompt={"Score at least 30 in 12 rounds and name the bot's strategy."}
+  config={{"opponent": "tit-for-two-tats", "rounds": 12, "target": 30, "reveal": false, "guess": true}}
+  explanation={"It was tit for two tats: it forgives a single defection, so alternating defect and cooperate exploits it. It only hits back after two defections in a row."}
+/>
+
+## What you learned
+
+Forgiving strategies can be exploited by a player who defects just often enough not to trigger them. Strict ones like grim trigger cannot be exploited, but never recover from a single slip. That trade-off is the theme of the next lesson.

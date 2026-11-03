@@ -1,0 +1,27 @@
+---
+id: game-theory/02-dominance/03-test-dominance
+title: 'Module test: Dominant strategies'
+estMinutes: 3
+xp: 150
+fun: 4
+missionIntro: A timed test on dominance.
+kind: boss
+keyIdeas:
+- Strictly dominated strategies are never played.
+- 'The prisoner''s dilemma: dominant defection, worse joint result.'
+- Iterated elimination can solve a game.
+---
+
+## Module test
+
+4 timed questions on dominant strategies. 3 wrong answers end the test, and you can retry as often as you like.
+
+<Boss
+  id="module-test"
+  title={"Module test: Dominant strategies"}
+  briefing={"4 questions, 3 minutes. 3 wrong answers end the test."}
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "mcq", "prompt": "In the prisoner's dilemma, confessing is:", "options": ["Dominated", "Dominant", "Random", "Only good if the other is quiet"], "answer": 1, "explanation": "It is better against both choices."}, {"type": "mcq", "prompt": "Why is the prisoner's dilemma a dilemma?", "options": ["There is no equilibrium", "Each player's best choice leads to a result worse for both", "Payoffs are random", "Players cannot count"], "answer": 1, "explanation": "Individual and group interest clash."}, {"type": "predict", "prompt": "In a 2/3-of-the-average game, what does a level-2 thinker pick? (level 0 averages 50)", "answer": 22, "tolerance": {"mode": "absolute", "value": 1}, "explanation": "2/3 × 2/3 × 50 ≈ 22.2."}, {"type": "fill", "text": "Deleting dominated strategies step by step is called {{0}} elimination.", "chips": ["iterated", "random", "mixed"], "answers": ["iterated"], "explanation": "Repeat until nothing more can be deleted."}]}
+  explanation={"Module test passed: Dominant strategies."}
+/>

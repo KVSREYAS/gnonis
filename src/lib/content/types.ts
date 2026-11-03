@@ -1,5 +1,5 @@
 import type { BodyBlock } from "./mdx";
-import type { CourseMeta, Device, DistrictMeta, Exercise, LessonFrontmatter } from "./schema";
+import type { Category, CourseMeta, Device, DistrictMeta, Exercise, LessonFrontmatter } from "./schema";
 
 export type LessonData = {
   /** Stable progress id from frontmatter. Not derived from the title or file order. */
@@ -31,8 +31,9 @@ export type ModuleData = Omit<DistrictMeta, "lessons" | "id"> & {
   lessons: LessonData[];
 };
 
-export type CourseData = Omit<CourseMeta, "districts" | "lessons" | "tagline"> & {
+export type CourseData = Omit<CourseMeta, "districts" | "lessons" | "tagline" | "category"> & {
   slug: string;
+  category: Category;
   tagline: string;
   modules: ModuleData[];
 };

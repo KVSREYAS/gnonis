@@ -1,0 +1,41 @@
+---
+id: game-theory/05-sequential-games/02-centipede
+title: The centipede game
+estMinutes: 6
+xp: 100
+fun: 5
+missionIntro: A pot that doubles every turn. Take it, or pass and hope the other side passes too.
+keyIdeas:
+- Backward induction says take at the first move.
+- Real players often pass several times and do better.
+- Knowing your opponent's habits beats pure theory.
+---
+
+## The game
+
+A pot starts at 4 coins and doubles each time a player passes. On your turn you **take** (you get 3/4 of the pot, the other gets 1/4) or **pass**. You move first, then the bot, alternating, for 6 stages.
+
+Backward induction: at the last stage the mover takes. Knowing that, the one before takes. All the way back to stage 1: take immediately and get 3. Yet in experiments (McKelvey and Palfrey, 1992) most people pass a few times.
+
+<Game
+  id="pot"
+  game={"centipede"}
+  prompt={"This bot is known to grab the pot the second time it gets to move. Get at least 12 coins."}
+  config={{"stages": 6, "base": 4, "botTakeAt": 3, "target": 12}}
+  explanation={"The bot takes at stage 4. So pass at stage 1, let the bot pass at stage 2, and take at stage 3, when the pot is 16 and you get 12."}
+/>
+
+## Theory and people
+
+Backward induction assumes everyone is perfectly rational and everyone knows it, all the way down. One small doubt ("maybe the other player will pass") makes passing worthwhile early on.
+
+The lesson is not that the theory is wrong. It shows exactly how much trust or knowledge you need for cooperation to pay, and what to do when you know how the other side really plays.
+
+<Predict
+  id="pot4"
+  prompt={"Pot starts at 4 and doubles each pass. How big is it at stage 5 (after 4 passes)?"}
+  answer={64}
+  tolerance={{"mode": "absolute", "value": 0}}
+  explanation={"4 × 2⁴ = 64."}
+  unit={"coins"}
+/>

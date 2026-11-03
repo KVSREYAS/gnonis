@@ -5,6 +5,7 @@ import { codeBlanksSchema } from "./code-blanks/schema";
 import { debugSchema } from "./debug/schema";
 import { dragSortSchema } from "./drag-sort/schema";
 import { envelopeSchema } from "./envelope/schema";
+import { gameSchema } from "./game/schema";
 import { fillSchema } from "./fill/schema";
 import { mcqSchema } from "./mcq/schema";
 import { orderingSchema } from "./ordering/schema";
@@ -47,6 +48,7 @@ export const EXERCISE_LIST = [
   defineExercise({ type: "spot-bug", tag: "SpotBug", label: "Spot the bug", schema: spotBugSchema }),
   defineExercise({ type: "parsons", tag: "Parsons", label: "Parsons", schema: parsonsSchema }),
   defineExercise({ type: "code-blanks", tag: "CodeBlanks", label: "Fill the code", schema: codeBlanksSchema }),
+  defineExercise({ type: "game", tag: "Game", label: "Mini-game", schema: gameSchema }),
   defineExercise({ type: "slider-diagram", tag: "SliderDiagram", label: "Slider diagram", schema: sliderDiagramSchema }),
 ];
 

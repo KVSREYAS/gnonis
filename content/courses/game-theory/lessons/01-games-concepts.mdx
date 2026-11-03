@@ -1,0 +1,56 @@
+---
+id: game-theory/01-games-and-payoffs/00-games-concepts
+title: 'Concepts: what a game is'
+estMinutes: 6
+xp: 60
+fun: 2
+missionIntro: 'The vocabulary of game theory: players, strategies, payoffs, and the two ways to draw a game.'
+keyIdeas:
+- A game has players, strategies and payoffs.
+- A payoff matrix shows simultaneous games. A game tree shows moves in order.
+- In a zero-sum game one player's gain is the other's loss.
+- 'Players are assumed to be rational: they pick what gives them the highest payoff.'
+---
+
+## What game theory studies
+
+**Game theory** is the study of decisions where your result depends on what other people choose, and theirs depends on you. It covers chess, but also pricing wars, auctions, voting, wage talks and evolution.
+
+Every game has three parts:
+
+- **Players**: who is deciding.
+- **Strategies**: the options each player can choose. A **strategy profile** is one choice for every player.
+- **Payoffs**: the number each player gets for each strategy profile. Bigger is better.
+
+## The payoff matrix
+
+When players move at the same time, or without seeing each other's move, we draw a **payoff matrix**. Rows are your strategies, columns are the other player's. Each cell holds two numbers: **your payoff first** (gold in this course), **theirs second** (green).
+
+![The prisoner's dilemma written as a payoff matrix](/diagrams/game-theory/prisoners-dilemma.png)
+
+Here both payoffs are years in prison written as negative numbers, so −1 is better than −5.
+
+<MCQ
+  id="read-matrix"
+  prompt={"In the matrix above, you stay quiet and they confess. What do you get?"}
+  options={["−1", "−10", "0", "−5"]}
+  answer={1}
+  explanation={"Row \"stay quiet\", column \"confess\": you get −10, they get 0."}
+/>
+
+## Trees and kinds of games
+
+When players move in turns and see earlier moves, we draw a **game tree**: each node is a decision, each branch a move, each end point a list of payoffs.
+
+Two more words:
+
+- **Zero-sum**: the payoffs in every cell add to the same total, so one side's gain is the other's loss. Chess and penalty kicks are zero-sum. Trade is not.
+- **Rational**: a player who always picks the option with the highest payoff for themselves, given what they believe. Game theory starts by assuming this, then tests it against real behaviour.
+
+<MCQ
+  id="zero-sum"
+  prompt={"Which is a zero-sum game?"}
+  options={["Two firms agreeing a joint venture", "A tennis match", "Trading rice for cloth", "Two drivers deciding which side of the road to drive on"]}
+  answer={1}
+  explanation={"One player's win is exactly the other's loss."}
+/>
