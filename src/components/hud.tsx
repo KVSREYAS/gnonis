@@ -42,6 +42,9 @@ export function Hud() {
             GN
           </span>
           <span className="hidden font-display text-lg tracking-wide text-foreground sm:inline">GNOSIS</span>
+          <span className="hidden border-l border-border pl-2 text-xs font-bold tracking-widest text-muted-foreground uppercase lg:inline">
+            One mission at a time
+          </span>
         </Link>
 
         <div className={cn("ml-auto flex items-center sm:gap-5", compact ? "gap-2 min-[400px]:gap-3" : "gap-3")}>

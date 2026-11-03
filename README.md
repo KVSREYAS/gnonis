@@ -1,9 +1,8 @@
 # Gnosis
 
-A personal, boot.dev-style course player for learning how LLM inference really works: tokens, attention, the KV cache,
-GPU memory and the roofline, and more. Lessons are short reading cards with interactive missions in between: multiple
-choice, fill-in chips, ordering, number prediction, tuning simulators, step-through visualisers, Python code puzzles,
-debug-this, and timed boss fights.
+A personal, boot.dev-style course player for learning anything, one mission at a time. Lessons are short reading cards
+with interactive missions in between: multiple choice, fill-in chips, ordering, number prediction, tuning simulators,
+step-through visualisers, code puzzles, debug-this, and timed boss fights.
 
 The look is an original late-90s/early-2000s open-world crime game menu (charcoal panels, gold display type, a sunset
 gradient, a district map with blips). All art is hand-made SVG. The reading surfaces stay plain and high-contrast:
