@@ -41,7 +41,7 @@ test("a downloaded course plays offline and keeps skips and completions", async 
 
   await context.setOffline(false);
   await page.goto(COURSE);
-  await expect(page.getByTestId("hud-xp")).not.toHaveText("$00000000");
+  await expect(page.getByTestId("hud-xp")).not.toHaveText("0 XP");
   await expect(page.getByTestId("offline-indicator")).toHaveCount(0);
 
   await page.getByTestId("offline-remove-sample-bits-bytes").click();

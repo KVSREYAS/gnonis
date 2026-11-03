@@ -24,12 +24,12 @@ test("plays a lesson through to LESSON COMPLETE", async ({ page }) => {
   await page.getByTestId("sizes-fill-chip-1").click();
   await action.click();
   await expect(page.getByTestId("feedback")).toHaveAttribute("data-correct", "true");
-  await expect(action).toHaveText(/finish mission/i);
+  await expect(action).toHaveText(/finish lesson/i);
   await action.click();
 
   await expect(page.getByTestId("mission-passed")).toBeVisible({ timeout: 5_000 });
   await expect(page.getByTestId("mission-passed")).toContainText("bf16 keeps fp32's exponent range");
-  await expect(page.getByTestId("hud-xp")).toHaveText("$00000050");
+  await expect(page.getByTestId("hud-xp")).toHaveText("50 XP");
   await expect(page.getByTestId("mission-next")).toBeVisible();
 });
 
@@ -56,7 +56,7 @@ test("skip and already-known unlock the next lesson and can be retried", async (
   await page.getByTestId("skip-exercise").click();
   await expect(page.getByTestId("mission-passed")).toBeVisible({ timeout: 8_000 });
   await expect(page.getByTestId("mission-skipped")).toContainText("2 exercises skipped");
-  await expect(page.getByTestId("hud-xp")).toHaveText("$00000030");
+  await expect(page.getByTestId("hud-xp")).toHaveText("30 XP");
 
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("inference-academy:progress:v1") || "{}"));
   const lessonKey = "sample-bits-bytes/01-number-formats/01-bytes-per-number";
