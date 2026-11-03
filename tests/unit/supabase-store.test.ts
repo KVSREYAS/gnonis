@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { completeLesson, emptyProgress, recordExercise, resetProgress, type ProgressState } from "@/lib/progress/logic";
+import { completeLesson, emptyProgress, recordExercise, resetProgress, skipExercise, type ProgressState } from "@/lib/progress/logic";
 import { PROGRESS_KEY } from "@/lib/progress/store";
 import { SupabaseProgressStore, userCacheKey, type ProgressRemote, type SyncStatus } from "@/lib/progress/supabase-store";
 
@@ -199,6 +199,33 @@ describe("SupabaseProgressStore", () => {
     await store.save(finished("c/m/a", 50));
     await store.flush();
     expect(remote.row?.xp).toBe(50);
+  });
+
+  it("keeps an offline completion and skip, then merges them without dropping a newer remote solve", async () => {
+    vi.stubGlobal("navigator", { onLine: false });
+    try {
+      const remote = new FakeRemote();
+      remote.row = recordExercise(finished("c/m/remote", 40, "2026-10-23T12:00:00"), "shared", true);
+      const { store, storage, statuses } = makeStore(remote);
+      expect((await store.load()).xp).toBe(0);
+
+      const local = skipExercise(finished("c/m/local", 30, "2026-10-22T09:00:00"), "shared", "skip", new Date("2026-10-22T09:05:00"));
+      await store.save(local);
+      await vi.advanceTimersByTimeAsync(DEBOUNCE);
+      expect(remote.pushes).toHaveLength(0);
+      expect(statuses.at(-1)).toBe("offline");
+      expect(JSON.parse(storage.getItem(userCacheKey(USER))!)).toMatchObject({ dirty: true, state: { xp: 30 } });
+
+      (navigator as { onLine: boolean }).onLine = true;
+      await store.sync();
+      expect(Object.keys(remote.row!.lessons).sort()).toEqual(["c/m/local", "c/m/remote"]);
+      expect(remote.row?.xp).toBe(70);
+      expect(remote.row?.exercises.shared).toMatchObject({ correct: true });
+      expect(remote.row?.exercises.shared.skipped).toBeUndefined();
+      expect(JSON.parse(storage.getItem(userCacheKey(USER))!).dirty).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("stops retrying after the last subscriber leaves", async () => {

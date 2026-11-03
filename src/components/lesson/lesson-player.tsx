@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AskSelection, readLessonSelection } from "@/components/lesson/ask-selection";
 import { useAuth, useDevice, useProgress } from "@/components/providers";
+import { offlinePolicy } from "@/lib/offline/policy";
+import { useOnline } from "@/lib/offline/use-online";
 import { exerciseBrief, exerciseTitle } from "@/lib/chat/context";
 import { DIVE_PANEL_STORAGE_KEY, resolveDivePanelOpen, parseDivePanelChoice } from "@/lib/chat/dive-panel";
 import { PHONE_QUERY } from "@/lib/settings";
@@ -89,6 +91,8 @@ export function LessonPlayer({
   defaultModel?: string;
 }) {
   const device = useDevice();
+  const online = useOnline();
+  const network = offlinePolicy(online);
   const { configured, user } = useAuth();
   const pathname = usePathname();
   const { state, recordExercise, skipExercise, unskipExercise, noteExerciseHash, completeLesson } = useProgress();
@@ -268,6 +272,8 @@ export function LessonPlayer({
     rememberDive(true);
   }, [rememberDive]);
 
+  const shownTab = network.chat ? panelTab : "calc";
+
   useEffect(() => {
     if (!chatEnabled) return;
     const onKey = (event: KeyboardEvent) => {
@@ -285,7 +291,7 @@ export function LessonPlayer({
         setCalcFocus((n) => n + 1);
         return;
       }
-      if (device === "phone" || key !== "l" || event.shiftKey) return;
+      if (!network.highlightAsk || device === "phone" || key !== "l" || event.shiftKey) return;
       const target = event.target;
       if (target instanceof HTMLElement && target.closest("input, textarea, select, [contenteditable='true']")) return;
       event.preventDefault();
@@ -296,7 +302,7 @@ export function LessonPlayer({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [addQuote, chatEnabled, device, rememberDive]);
+  }, [addQuote, chatEnabled, device, network.highlightAsk, rememberDive]);
 
   const chatgptFor = useCallback(
     (text: string) =>
@@ -344,15 +350,15 @@ export function LessonPlayer({
               className="shrink-0 border-gold/60 px-2 text-gold-ink sm:px-3"
               aria-expanded={panelOpen}
               aria-controls="dive-panel"
-              aria-label="Dive deeper"
+              aria-label={network.chat ? "Dive deeper" : "Calculator"}
               data-testid="dive-toggle"
               onClick={() => {
-                setPanelTab("chat");
+                setPanelTab(network.chat ? "chat" : "calc");
                 rememberDive(!panelOpen);
               }}
             >
               <MessagesSquare />
-              <span className="max-sm:sr-only">Dive deeper</span>
+              <span className="max-sm:sr-only">{network.chat ? "Dive deeper" : "Calc"}</span>
             </Button>
           )}
           <span className="hidden text-sm text-muted-foreground sm:inline" aria-hidden>
@@ -504,7 +510,7 @@ export function LessonPlayer({
         </div>
       </div>
 
-      {chatEnabled && (
+      {chatEnabled && network.highlightAsk && (
         <AskSelection
           enabled
           device={device}
@@ -518,7 +524,7 @@ export function LessonPlayer({
       {chatEnabled && panelOpen && (
         <DivePanel
           device={device}
-          tab={panelTab}
+          tab={shownTab}
           onTab={setPanelTab}
           onClose={() => rememberDive(false)}
           lessonKey={lesson.key}
@@ -535,6 +541,7 @@ export function LessonPlayer({
           latestQuestion={latestQuestion}
           onLatestQuestion={rememberQuestion}
           calcFocus={calcFocus}
+          offline={!network.chat}
         />
       )}
 

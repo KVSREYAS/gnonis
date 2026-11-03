@@ -5,6 +5,8 @@ import { CheckCircle2, Lightbulb, Loader2, RotateCcw, XCircle } from "lucide-rea
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/components/providers";
+import { offlinePolicy } from "@/lib/offline/policy";
+import { useOnline } from "@/lib/offline/use-online";
 import { useLessonId } from "@/components/lesson/lesson-context";
 import type { ExerciseOf } from "@/lib/content/schema";
 import { gradeTests } from "@/lib/grading";
@@ -280,6 +282,7 @@ function LocalRunnerPanel({ settings, onChange }: { settings: LocalRunnerSetting
 export function CodeWidget({ id, exercise, setAction, onGrade, locked }: WidgetProps<ExerciseOf<"code">>) {
   const lessonId = useLessonId();
   const { configured, ready, user } = useAuth();
+  const online = useOnline();
   const python = exercise.language === "python";
   const [code, setCode] = useState(exercise.starter);
   const [stdin, setStdin] = useState("");
@@ -294,9 +297,10 @@ export function CodeWidget({ id, exercise, setAction, onGrade, locked }: WidgetP
   const localOn = !python && localRunner.enabled;
   const pythonBusy = session.status === "loading" || session.status === "running";
   const busy = python ? pythonBusy : cppBusy !== null;
-  const needsSignIn = !python && !localOn && configured && ready && !user;
-  const noAccount = !python && !localOn && !configured;
-  const blocked = locked || needsSignIn || noAccount || (!python && !localOn && configured && !ready);
+  const cloudOffline = !python && !localOn && !offlinePolicy(online).cloudCpp;
+  const needsSignIn = !python && !localOn && !cloudOffline && configured && ready && !user;
+  const noAccount = !python && !localOn && !cloudOffline && !configured;
+  const blocked = locked || needsSignIn || noAccount || cloudOffline || (!python && !localOn && !cloudOffline && configured && !ready);
 
   const execute = async (kind: "samples" | "stdin" | "submit") => {
     setNotice(null);
@@ -430,6 +434,11 @@ export function CodeWidget({ id, exercise, setAction, onGrade, locked }: WidgetP
           ))}
         </ul>
       )}
+      {cloudOffline && (
+        <p role="status" data-testid="cpp-offline" className="mt-3 rounded-lg border-2 border-gold bg-ink p-3 text-base">
+          You&apos;re offline, so the cloud compiler is unavailable. Run on my PC still works when the runner on this computer answers.
+        </p>
+      )}
       {noAccount && (
         <p role="status" data-testid="cpp-unavailable" className="mt-3 rounded-lg border-2 border-gold bg-ink p-3 text-base">
           C++ compiles on a server sandbox, and this copy of Gnosis has no sign-in configured, so Run and Submit are unavailable.
@@ -443,6 +452,11 @@ export function CodeWidget({ id, exercise, setAction, onGrade, locked }: WidgetP
       {notice && (
         <p role="alert" data-testid="cpp-unavailable" className="mt-3 whitespace-pre-wrap rounded-lg border-2 border-gold bg-ink p-3 text-base">
           {notice}
+        </p>
+      )}
+      {python && !online && !session.warmed && session.status !== "running" && (
+        <p className="mt-3 text-base text-muted-foreground" data-testid="python-offline">
+          Python runs in this browser, but the runtime has to download once. That first download needs a connection.
         </p>
       )}
       {python && (

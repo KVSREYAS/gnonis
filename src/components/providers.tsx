@@ -22,6 +22,8 @@ import type { RenameMap } from "@/lib/progress/rename-map";
 import { LocalProgressStore, PROGRESS_KEY, type ProgressStore } from "@/lib/progress/store";
 import { SupabaseProgressStore, supabaseRemote, type SyncStatus } from "@/lib/progress/supabase-store";
 import { applySettingsToDocument, DEFAULT_SETTINGS, parseSettings, PHONE_QUERY, SETTINGS_KEY, type Settings } from "@/lib/settings";
+import { OfflineNavigation } from "@/components/offline/offline-navigation";
+import { ServiceWorkerRegister } from "@/components/offline/service-worker-register";
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 
@@ -298,7 +300,11 @@ export function Providers({ children, renames }: { children: React.ReactNode; re
   return (
     <SettingsProvider>
       <AuthProvider>
-        <ProgressProvider renames={renames}>{children}</ProgressProvider>
+        <ProgressProvider renames={renames}>
+          <ServiceWorkerRegister />
+          <OfflineNavigation />
+          {children}
+        </ProgressProvider>
       </AuthProvider>
     </SettingsProvider>
   );

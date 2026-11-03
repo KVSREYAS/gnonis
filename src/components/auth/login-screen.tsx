@@ -16,6 +16,8 @@ import {
   type FieldErrors,
 } from "@/lib/auth/email-password";
 import { createClient } from "@/lib/supabase/client";
+import { offlinePolicy } from "@/lib/offline/policy";
+import { useOnline } from "@/lib/offline/use-online";
 import { safeNextPath } from "@/lib/supabase/redirect";
 import { cn } from "@/lib/utils";
 
@@ -82,6 +84,7 @@ export function LoginScreen() {
   const next = safeNextPath(params.get("next"));
   const { configured, ready, user, signOut } = useAuth();
   const { flush } = useProgress();
+  const online = useOnline();
   const id = useId();
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -192,6 +195,18 @@ export function LoginScreen() {
                 <p className="mt-4 flex items-center gap-2 text-lg text-muted-foreground" role="status">
                   <Loader2 className="size-5 animate-spin" aria-hidden /> Loading…
                 </p>
+              ) : !offlinePolicy(online).signIn && !user ? (
+                <>
+                  <p className="mt-3 text-lg text-foreground" data-testid="login-offline">
+                    Sign-in needs a connection.
+                  </p>
+                  <p className="mt-2 text-base text-muted-foreground">
+                    Progress stays on this device. It syncs to your account the next time you sign in online.
+                  </p>
+                  <Link href={next} className={buttonVariants({ size: "lg", className: "mt-6 h-14 w-full font-display text-xl tracking-wider" })}>
+                    Keep playing
+                  </Link>
+                </>
               ) : user ? (
                 <>
                   <p className="mt-3 text-lg text-foreground">
@@ -200,7 +215,7 @@ export function LoginScreen() {
                   <Link href={next} className={buttonVariants({ size: "lg", className: "mt-6 h-14 w-full font-display text-xl tracking-wider" })}>
                     Continue
                   </Link>
-                  <Button variant="ghost" className="mt-2 w-full" onClick={leave} disabled={busy !== null}>
+                  <Button variant="ghost" className="mt-2 w-full" onClick={leave} disabled={busy !== null || !online}>
                     {busy === "signout" ? "Signing out…" : "Sign out"}
                   </Button>
                 </>

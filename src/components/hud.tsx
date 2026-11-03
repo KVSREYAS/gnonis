@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Star } from "lucide-react";
 import { AccountMenu } from "@/components/auth/account-menu";
 import { useAuth, useProgress } from "@/components/providers";
+import { useOnline } from "@/lib/offline/use-online";
 import { SettingsMenu } from "@/components/settings-menu";
 import { levelForXp, wantedStars } from "@/lib/progress/logic";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,7 @@ export function Hud() {
   const { state, loaded, streakDays } = useProgress();
   // The account button needs room on narrow phones, so the HUD tightens up below 400px when accounts are on.
   const { configured: compact } = useAuth();
+  const online = useOnline();
   const stars = wantedStars(streakDays);
   const lvl = levelForXp(state.xp);
 
@@ -45,6 +47,15 @@ export function Hud() {
         </Link>
 
         <div className={cn("ml-auto flex items-center sm:gap-5", compact ? "gap-2 min-[400px]:gap-3" : "gap-3")}>
+          {!online && (
+            <span
+              className="rounded border border-gold/60 px-1.5 py-0.5 text-[10px] font-bold tracking-widest text-gold-ink uppercase"
+              data-testid="offline-indicator"
+              title="No connection. Downloaded courses, the calculator, and on-device progress still work."
+            >
+              Offline
+            </span>
+          )}
           <span className="hidden items-center gap-2 text-sm text-muted-foreground md:flex" title={`${lvl.into} / ${lvl.span} XP to next level`}>
             <span className="rounded border border-gold/50 px-1.5 font-display text-gold-ink">LV {lvl.level}</span>
             <span>{lvl.rank}</span>

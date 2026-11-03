@@ -45,6 +45,7 @@ export function DivePanel({
   latestQuestion,
   onLatestQuestion,
   calcFocus,
+  offline = false,
 }: {
   device: Device;
   tab: "chat" | "calc";
@@ -64,6 +65,8 @@ export function DivePanel({
   latestQuestion: string;
   onLatestQuestion: (question: string) => void;
   calcFocus: number;
+  /** Chat, web search, and the outside-model links need a network. The calculator does not. */
+  offline?: boolean;
 }) {
   const [chatMounted, setChatMounted] = useState(tab === "chat");
   const [model, setModel] = useState(() => readModel(defaultModel));
@@ -108,13 +111,16 @@ export function DivePanel({
       <header className="pb-2">
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
-            <p className="font-display text-2xl tracking-wide text-foreground">DIVE DEEPER</p>
-            <p className="text-sm text-muted-foreground">A tutor for the step on screen.</p>
+            <p className="font-display text-2xl tracking-wide text-foreground">{offline ? "CALCULATOR" : "DIVE DEEPER"}</p>
+            <p className="text-sm text-muted-foreground">
+              {offline ? "Chat, web search, and ChatGPT need a connection." : "A tutor for the step on screen."}
+            </p>
           </div>
           <button type="button" className="tap grid place-items-center rounded-lg text-muted-foreground hover:text-foreground" aria-label="Close dive deeper" onClick={onClose}>
             <X className="size-6" />
           </button>
         </div>
+        {!offline && (
         <label className="mt-2 block text-xs font-bold tracking-widest text-muted-foreground uppercase">
           Model
           <span className="ml-2 font-sans text-xs font-normal tracking-normal normal-case">per 1M tokens, in / out</span>
@@ -132,8 +138,10 @@ export function DivePanel({
             ))}
           </select>
         </label>
+        )}
       </header>
 
+      {!offline && (
       <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
         <a
           href={links.chatgpt}
@@ -151,7 +159,9 @@ export function DivePanel({
           Grok
         </a>
       </div>
+      )}
 
+      {!offline && (
       <div className="mb-3 grid grid-cols-2 gap-1 rounded-lg bg-ink p-1" role="tablist" aria-label="Dive deeper tools">
         {(
           [
@@ -172,9 +182,10 @@ export function DivePanel({
           </button>
         ))}
       </div>
+      )}
 
       <div className={cn("flex min-h-0 flex-1 flex-col pb-3", device === "phone" && "pb-[max(0.75rem,env(safe-area-inset-bottom))]")}>
-        {chatMounted && (
+        {chatMounted && !offline && (
           <div className={cn("min-h-0 flex-1 flex-col", tab === "chat" ? "flex" : "hidden")}>
             <DiveChat
               lessonKey={lessonKey}
@@ -193,7 +204,7 @@ export function DivePanel({
             />
           </div>
         )}
-        {tab === "calc" && <Calculator active focusToken={calcFocus} />}
+        {(offline || tab === "calc") && <Calculator active focusToken={calcFocus} />}
       </div>
     </aside>
   );
