@@ -48,16 +48,17 @@ id: my-course/missions/01-hello
 title: Hello
 estMinutes: 5
 xp: 30
-missionIntro: One line for the map and the intro.
+fun: 3
+missionIntro: One line for the course page and the intro.
 keyIdeas:
   - First thing to remember.
   - Second.
   - Third.
 ---
 
-## Mission briefing
+## What a hello is
 
-Two short paragraphs. A card is at most 170 words.
+Two short paragraphs. Plain words, no analogies or game theme. A card is at most 170 words.
 
 <MCQ
   id="what-next"
@@ -68,7 +69,7 @@ Two short paragraphs. A card is at most 170 words.
 />
 ```
 
-Required frontmatter: `id`, `title`, `estMinutes` (1-90), `xp`, `missionIntro`. Optional: `kind: boss` (the lesson must contain a `<Boss />`) and `keyIdeas` (up to six; the mission-passed screen lists them).
+Required frontmatter: `id`, `title`, `estMinutes` (1-90), `xp`, `missionIntro`. Optional in the schema: `kind: boss` (a module test; the lesson must contain a `<Boss />`) and `keyIdeas` (up to six; the lesson-complete screen lists them). `fun` (integer 1-5) is required by `validate:content`: 1 = dense theory, 5 = hands-on coding or a surprising result. The lesson page and course page show it as "Fun 3/5", and the course page can filter by it.
 
 `id` is lowercase segments separated by `/` or `-`. Write the full progress id. Do not compute it from the title.
 

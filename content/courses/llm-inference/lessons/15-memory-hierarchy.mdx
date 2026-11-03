@@ -3,8 +3,9 @@ id: llm-inference/04-gpu-memory-roofline/01-memory-hierarchy
 title: The GPU memory hierarchy
 estMinutes: 3
 xp: 60
-missionIntro: Big memory is slow and fast memory is tiny. Inference kernels live
-  and die by which one they touch.
+fun: 2
+missionIntro: Big memory is slow and fast memory is tiny. Inference kernel speed
+  depends on which one they use.
 keyIdeas:
   - HBM is large (80 GB on an H100) but around 3.35 TB/s, while on-chip SRAM is
     tiny and far faster.
@@ -13,12 +14,6 @@ keyIdeas:
   - Fast kernels reuse each byte many times while it sits in registers or shared
     memory.
 ---
-
-## Mission briefing
-
-Registers are your pocket, shared memory your glovebox, HBM the garage across town. Every trip costs time.
-
-**Mission:** Learn the stash spots: what fits in your pocket, your glovebox and the garage across town.
 
 ## Two kinds of fast
 

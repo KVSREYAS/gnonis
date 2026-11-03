@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const LESSON = "/courses/sample-bits-bytes/01-number-formats/01-bytes-per-number";
 
-test("plays a lesson through to MISSION PASSED", async ({ page }) => {
+test("plays a lesson through to LESSON COMPLETE", async ({ page }) => {
   await page.goto(LESSON);
   const action = page.getByTestId("primary-action");
 
@@ -67,10 +67,10 @@ test("skip and already-known unlock the next lesson and can be retried", async (
   await page.goto("/courses/sample-bits-bytes");
   await expect(page.getByTestId("blip-skipped-01-bytes-per-number")).toBeVisible();
   await expect(page.getByTestId("respect-skipped")).toContainText("2 skipped");
-  await expect(page.getByRole("progressbar", { name: /Respect/ })).toHaveAttribute("aria-valuenow", "13");
+  await expect(page.getByRole("progressbar", { name: /Progress/ })).toHaveAttribute("aria-valuenow", "13");
   await expect(page.getByTestId("next-blip")).toHaveAttribute("aria-label", /Concepts: Bits, Bytes and Number Formats, next up/);
   await page.goto("/courses/sample-bits-bytes/01-number-formats");
-  const missions = page.getByRole("list", { name: "Missions in this district" });
+  const missions = page.getByRole("list", { name: "Lessons in this module" });
   await expect(missions.getByRole("link").nth(0)).toHaveAttribute("href", /\/00-concepts$/);
   await expect(missions.getByRole("link").nth(1)).toHaveAttribute("href", /\/01-bytes-per-number$/);
   await expect(page.getByTestId("lesson-skipped-01-bytes-per-number")).toContainText("2 skipped");
@@ -94,5 +94,5 @@ test("skip and already-known unlock the next lesson and can be retried", async (
 test("desktop-only exercises are flagged in phone mode", async ({ page, isMobile }) => {
   test.skip(!isMobile, "phone-only behaviour");
   await page.goto("/courses/llm-inference/01-tokens-forward-pass");
-  await expect(page.getByText("Desktop mission").first()).toBeVisible();
+  await expect(page.getByText("Desktop exercise").first()).toBeVisible();
 });

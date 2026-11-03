@@ -18,6 +18,8 @@ export const LessonFrontmatterSchema = z
     missionIntro: text,
     kind: z.enum(["lesson", "boss"]).default("lesson"),
     keyIdeas: z.array(text).min(1).max(6).optional(),
+    /** Fun meter, 1 (dense theory) to 5 (hands-on, coding or surprising). */
+    fun: z.number().int().min(1).max(5).optional(),
   })
   .strict();
 export type LessonFrontmatter = z.infer<typeof LessonFrontmatterSchema>;

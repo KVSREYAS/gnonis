@@ -1,4 +1,4 @@
-export function RespectBar({ value, label = "Respect" }: { value: number; label?: string }) {
+export function RespectBar({ value, label = "Progress" }: { value: number; label?: string }) {
   return (
     <div>
       <div className="mb-1 flex items-baseline justify-between text-sm">

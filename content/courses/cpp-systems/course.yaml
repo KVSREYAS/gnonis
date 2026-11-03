@@ -84,10 +84,10 @@ lessons:
 districts:
 - id: 01-lifetime
   title: Lifetime and RAII
-  district: Lifetime Lane
+  district: Lifetime and RAII
   summary: Destructors run on every path out of scope. Make cleanup automatic, then
     never write delete again.
-  tip: 'TIP: If you write a destructor, you probably need the other four. Or none.'
+  tip: 'TIP: If you write a destructor, you probably need the other four. Or none of them.'
   art: skyline
   status: ready
   lessons:
@@ -98,9 +98,9 @@ districts:
   - boss-lifetime-lane
 - id: 02-move
   title: Move semantics
-  district: Move Motel
-  summary: 'Value categories, std::move, noexcept, and perfect forwarding: stealing
-    resources without getting caught.'
+  district: Move semantics
+  summary: 'Value categories, std::move, noexcept, and perfect forwarding: transferring
+    resources instead of copying them.'
   tip: 'TIP: std::move doesn''t move. It casts.'
   art: docks
   status: ready
@@ -112,7 +112,7 @@ districts:
   - boss-move-motel
 - id: 03-ownership
   title: Smart-pointer ownership
-  district: Pointer Projects
+  district: Smart-pointer ownership
   summary: 'unique_ptr, shared_ptr and weak_ptr: who owns what, what it costs, and
     how cycles leak.'
   tip: 'TIP: Default to unique_ptr. Share only when ownership really is shared.'
@@ -126,7 +126,7 @@ districts:
   - boss-pointer-projects
 - id: oop
   title: Object-oriented programming
-  district: Class Act Garage
+  district: Object-oriented programming
   summary: Classes and access, constructors and destructors, static members, operators and friends, then inheritance and virtual functions.
   tip: 'TIP: Data private, methods public, destructors virtual in base classes.'
   art: docks
@@ -140,10 +140,10 @@ districts:
   - boss-class-act-garage
 - id: 04-templates
   title: Templates and compile time
-  district: Template Town
+  district: Templates and compile time
   summary: Deduction, concepts and constexpr. Make the compiler do the work and the
     error messages readable.
-  tip: 'TIP: Constrain templates with concepts. Your future self reads the errors.'
+  tip: 'TIP: Constrain templates with concepts. The error messages get much shorter.'
   art: tower
   status: ready
   lessons:
@@ -154,7 +154,7 @@ districts:
   - boss-template-town
 - id: 05-stl
   title: Containers, algorithms and views
-  district: STL Strip
+  district: Containers, algorithms and views
   summary: Pick containers by access pattern, use algorithms and ranges, and pass
     span and string_view.
   tip: 'TIP: reserve() before a known-size push_back loop.'
@@ -168,7 +168,7 @@ districts:
   - boss-stl-strip
 - id: 06-layout
   title: Memory layout
-  district: Layout Lofts
+  district: Memory layout
   summary: 'Padding, alignment and cache lines: where your bytes really live.'
   tip: 'TIP: Order members largest alignment first.'
   art: bridge
@@ -181,9 +181,9 @@ districts:
   - boss-layout-lofts
 - id: 07-dod
   title: Data-oriented design
-  district: Data-Oriented Docks
+  district: Data-oriented design
   summary: AoS vs SoA, hot/cold splitting and branchless code. Design for the batch.
-  tip: 'TIP: Where there is one, there are many.'
+  tip: 'TIP: Store fields that are processed together in their own arrays.'
   art: docks
   status: ready
   lessons:
@@ -194,7 +194,7 @@ districts:
   - boss-dod-docks
 - id: 08-ub
   title: Undefined behaviour
-  district: UB Underground
+  district: Undefined behaviour
   summary: The optimiser assumes UB never happens. Learn the catalogue, pun legally,
     and run sanitizers.
   tip: 'TIP: -fsanitize=address,undefined in every test build.'
@@ -208,7 +208,7 @@ districts:
   - boss-ub-underground
 - id: 09-concurrency
   title: Concurrency and the memory model
-  district: Concurrency Casino
+  district: Concurrency and the memory model
   summary: jthread, mutexes, atomics, acquire/release and false sharing.
   tip: 'TIP: Release publishes, acquire receives.'
   art: skyline
@@ -221,7 +221,7 @@ districts:
   - boss-concurrency-casino
 - id: 10-simd
   title: SIMD
-  district: SIMD Speedway
+  district: SIMD
   summary: Auto-vectorisation, SSE intrinsics, and accumulators that hide latency.
   tip: 'TIP: Vector body, scalar tail.'
   art: hills
@@ -234,7 +234,7 @@ districts:
   - boss-simd-speedway
 - id: 11-perf
   title: Profiling and benchmarking
-  district: Perf Pier
+  district: Profiling and benchmarking
   summary: Benchmarks that don't lie, perf and flame graphs, and reading the assembly.
   tip: 'TIP: Measure, explain, then optimise.'
   art: pier
@@ -247,7 +247,7 @@ districts:
   - boss-perf-pier
 - id: 12-building-blocks
   title: Systems building blocks
-  district: Builders' Yard
+  district: Systems building blocks
   summary: Arena allocators, a lock-free SPSC ring, a thread pool and object pools.
   tip: 'TIP: Bump-allocate per step, then reset.'
   art: grid
@@ -260,7 +260,7 @@ districts:
   - boss-builders-yard
 - id: 13-capstone
   title: 'Capstone: inference in C++'
-  district: The Inference Heist
+  district: 'Capstone: inference in C++'
   summary: Tensors and strides, tiled matmul, stable softmax and a full forward pass.
   tip: 'TIP: Decode is bandwidth-bound. Count the bytes.'
   art: tower

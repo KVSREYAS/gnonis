@@ -1,20 +1,15 @@
 ---
 id: cpp-systems/01-lifetime/01-raii-scope-guards
-title: "RAII: The Bodyguard Pattern"
+title: "RAII and Scope Guards"
 estMinutes: 6
 xp: 80
+fun: 4
 missionIntro: "Tie every resource to an object's lifetime, and the destructor cleans up on every exit path, exceptions included."
 keyIdeas:
   - "A resource is acquired in a constructor and released in the destructor (Core Guidelines R.1)."
   - "Destructors of fully constructed locals run in reverse order of construction, also during exception unwinding."
   - "Scope guards generalise RAII to any \"undo this on exit\" action."
 ---
-
-## Mission briefing
-
-Every resource in Los Santos (files, locks, sockets, GPU buffers) needs a bodyguard who never forgets to lock up. In C++ the bodyguard is an object, and its shift ends exactly at the closing brace.
-
-**Mission:** stop writing `close()` by hand.
 
 ## Reverse order, every exit
 

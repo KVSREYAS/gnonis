@@ -3,18 +3,13 @@ id: cpp-systems/07-dod/01-aos-vs-soa
 title: "Array of Structs vs Struct of Arrays"
 estMinutes: 8
 xp: 100
+fun: 4
 missionIntro: "If a loop touches one field, store that field contiguously. SoA turns half-wasted cache lines into fully used ones."
 keyIdeas:
   - "AoS (`std::vector<Particle>`) interleaves fields, so a loop over x drags y, z, mass and id through the cache too."
   - "SoA (`struct { std::vector<float> x, y, z; }`) packs each field contiguously: 100% useful bytes and easy SIMD."
   - "Mike Acton: \"where there is one, there are many\". Design for the transform you run on the whole batch."
 ---
-
-## Mission briefing
-
-Your crew's records are stored one person per folder. To check everyone's ammo you open every folder and wade through their whole life story.
-
-**Mission:** keep an ammo spreadsheet instead.
 
 ## Wasted bytes
 

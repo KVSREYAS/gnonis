@@ -12,7 +12,7 @@ export function generateStaticParams() {
 
 export async function generateMetadata({ params }: PageProps<"/courses/[course]/[module]">): Promise<Metadata> {
   const { course, module } = await params;
-  return { title: getCourse(course)?.modules.find((m) => m.slug === module)?.title ?? "District" };
+  return { title: getCourse(course)?.modules.find((m) => m.slug === module)?.title ?? "Module" };
 }
 
 export default async function ModulePage({ params }: PageProps<"/courses/[course]/[module]">) {

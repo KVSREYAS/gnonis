@@ -3,18 +3,13 @@ id: cpp-systems/09-concurrency/02-atomics-and-memory-order
 title: "Atomics and Memory Ordering"
 estMinutes: 9
 xp: 110
+fun: 5
 missionIntro: "std::atomic makes single operations indivisible. memory_order decides what other memory becomes visible along with them."
 keyIdeas:
   - "seq_cst (the default) is one global order and the easiest to reason about."
   - "release/acquire: everything written before a release-store is visible to a thread whose acquire-load reads that value. This is the message-passing pattern."
   - "relaxed gives atomicity only, which suits counters but never flags that guard other data."
 ---
-
-## Mission briefing
-
-Concurrency Casino's chip counter is atomic, so nobody double-spends. But when you shout "the package is ready", does your partner actually see the package?
-
-**Mission:** learn acquire and release.
 
 ## Message passing
 

@@ -3,8 +3,9 @@ id: llm-inference/07-quantization/03-activation-outliers-smoothquant
 title: Outliers and SmoothQuant
 estMinutes: 3
 xp: 100
-missionIntro: Weights are easy to quantize. Activations have a few monster
-  channels. SmoothQuant moves the difficulty into the weights.
+fun: 3
+missionIntro: Weights are easy to quantize. Activations have a few channels
+  with very large values. SmoothQuant moves the difficulty into the weights.
 keyIdeas:
   - LLM.int8() found large outlier features in a few hidden channels once models
     reach about 6.7B parameters.
@@ -14,13 +15,7 @@ keyIdeas:
     reduction reported.
 ---
 
-## Mission briefing
-
-Most of the crew are regular guys. Three of them are 20 times bigger than everyone else and won't fit in any crate.
-
-**Mission:** shrink the giants and beef up their partners so everyone fits the same crate.
-
-## Monster channels
+## Outlier channels
 
 Dettmers et al. (LLM.int8()) showed that above about 6.7B parameters, a handful of hidden dimensions carry huge activation values. Naive int8 activation quantization destroys accuracy. Their fix keeps those channels in fp16, which is accurate but slower.
 

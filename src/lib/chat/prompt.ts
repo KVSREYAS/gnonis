@@ -54,7 +54,7 @@ export function tutorInstructions(ctx: TutorContext, web: boolean): string {
       : "Web lookup is off. Answer from the lesson and general knowledge, and don't pretend you searched the web.",
     `Course: ${oneLine(ctx.courseTitle)}`,
     `Lesson: ${oneLine(ctx.lessonTitle)}`,
-    `District: ${oneLine(ctx.district)}`,
+    `Module: ${oneLine(ctx.district)}`,
     `Step (${ctx.stepKind}): ${oneLine(ctx.stepTitle)}`,
     "<screen>",
     clip(ctx.stepText, 5000),

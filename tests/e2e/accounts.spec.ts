@@ -71,7 +71,7 @@ test("sign-up without a session shows a check-your-email message", async ({ page
   await expect(page.getByTestId("tab-signin")).toHaveAttribute("aria-selected", "true");
 });
 
-test("a wrong password gets a BUSTED message, then the right one signs in", async ({ page }) => {
+test("a wrong password gets a SIGN-IN FAILED message, then the right one signs in", async ({ page }) => {
   let attempts = 0;
   const supabase = await mockSupabase(page, {
     signin: (body) =>
@@ -83,7 +83,7 @@ test("a wrong password gets a BUSTED message, then the right one signs in", asyn
   await page.getByTestId("email-input").fill("sreyas@example.com");
   await page.getByTestId("password-input").fill("wrong-password");
   await page.getByTestId("auth-submit").click();
-  await expect(page.getByTestId("auth-error")).toContainText("BUSTED");
+  await expect(page.getByTestId("auth-error")).toContainText("SIGN-IN FAILED");
   await expect(page.getByTestId("auth-error")).toContainText("Wrong email or password");
 
   await page.getByTestId("password-input").fill("right-password");

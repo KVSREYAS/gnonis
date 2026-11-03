@@ -3,7 +3,8 @@ id: llm-inference/06-paged-attention/03-preemption-and-swapping
 title: "Out of Blocks: Preemption"
 estMinutes: 4
 xp: 90
-missionIntro: "When the pool runs dry, something gets kicked out: recompute it
+fun: 5
+missionIntro: "When the pool runs dry, one request is evicted: recompute it
   later or swap it to CPU."
 keyIdeas:
   - When no free blocks remain, vLLM preempts whole sequences, latest arrivals
@@ -13,12 +14,6 @@ keyIdeas:
   - Pool size = free GPU memory / bytes per block, so it's worth knowing how
     many blocks you have.
 ---
-
-## Mission briefing
-
-Paged Pier is full. A new yacht shows up and the harbour master needs a berth now.
-
-**Mission:** decide who gets towed, and whether to tow them to the CPU lot or just sink them and rebuild later.
 
 ## Know your pool
 

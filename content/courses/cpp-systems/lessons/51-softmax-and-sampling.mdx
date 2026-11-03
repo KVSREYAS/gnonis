@@ -3,18 +3,13 @@ id: cpp-systems/13-capstone/03-softmax-and-sampling
 title: "Stable Softmax and Greedy Decode"
 estMinutes: 9
 xp: 110
+fun: 5
 missionIntro: "Turn logits into probabilities without overflowing, then pick the next token. This is the last step of every inference loop."
 keyIdeas:
   - "Subtract the max before exp: softmax(x) = exp(x − m) / Σ exp(x − m). It's mathematically identical and can't overflow."
   - "exp(89) already overflows float32 (max ≈ 3.4e38, ln ≈ 88.7)."
   - "Greedy decoding is argmax. Temperature divides logits by T before softmax."
 ---
-
-## Mission briefing
-
-The vault's last lock is probability. Get the numbers wrong and you get NaN, and alarms everywhere.
-
-**Mission:** a softmax that never overflows.
 
 ## Overflow
 

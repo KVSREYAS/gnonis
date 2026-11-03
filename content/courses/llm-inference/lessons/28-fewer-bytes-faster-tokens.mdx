@@ -1,8 +1,9 @@
 ---
 id: llm-inference/07-quantization/01-fewer-bytes-faster-tokens
-title: "Quantization: Smuggling the Model in Smaller Crates"
+title: "Quantization: Fewer Bytes, Faster Tokens"
 estMinutes: 3
 xp: 100
+fun: 3
 missionIntro: int8, int4 and fp8 shrink weights (and KV caches), which raises
   the memory-bound decode ceiling almost proportionally.
 keyIdeas:
@@ -12,11 +13,6 @@ keyIdeas:
   - FP8 E4M3 (max 448) and E5M2 (max 57,344) are native on Hopper/Ada GPUs; E4M3
     is usually used for weights and activations.
 ---
-
-## Mission briefing
-
-The cops at the bridge weigh every truck. Your 140 GB fp16 cargo won't fit on one 80 GB GPU. Repack it
-into 4-bit crates, keep the goods intact, and drive past while they're still counting.
 
 ## Fewer bytes, faster tokens
 
@@ -51,9 +47,9 @@ Batch-1 decode is bandwidth divided by bytes read. Halve the bytes per weight an
   explanation={"AWQ finds the ~1% of channels that matter most using activation statistics and scales them before quantizing. GPTQ instead uses approximate second-order (Hessian) information to correct errors layer by layer."}
 />
 
-## Floats on a diet
+## FP8 formats
 
-FP8 comes in two flavours. E4M3 has more precision and E5M2 has more range.
+FP8 comes in two variants. E4M3 has more precision and E5M2 has more range.
 
 ![Bit layouts of FP16, BF16, FP8 E4M3, FP8 E5M2 and INT4, plus 70B weight sizes against an 80 GB GPU](/diagrams/llm-inference/07-quantization/01-fewer-bytes-faster-tokens.png)
 
@@ -66,9 +62,9 @@ FP8 comes in two flavours. E4M3 has more precision and E5M2 has more range.
   explanation="E4M3 trades range for precision; max 448. E5M2 reaches 57,344. Source - Micikevicius et al., arXiv 2209.05433."
 />
 
-## Street wisdom
+## Summary
 
-Quantization is JPEG for weights. Done well, nobody notices. Done badly, the model starts recommending
-you drive into the ocean.
+Quantization is lossy compression of the weights. With a good method (GPTQ, AWQ, careful FP8) the accuracy
+loss is small. With a naive method, the output quality drops noticeably. Always measure accuracy after quantizing.
 
 Sources: [GPTQ](https://arxiv.org/abs/2210.17323), [AWQ](https://arxiv.org/abs/2306.00978), [SmoothQuant](https://arxiv.org/abs/2211.10438), [FP8 formats](https://arxiv.org/abs/2209.05433)

@@ -3,18 +3,13 @@ id: cpp-systems/07-dod/02-hot-cold-splitting
 title: "Hot/Cold Splitting"
 estMinutes: 7
 xp: 90
-missionIntro: "Fields used every frame (hot) and fields used once in a blue moon (cold) shouldn't share cache lines."
+fun: 3
+missionIntro: "Fields used every frame (hot) and fields used rarely (cold) shouldn't share cache lines."
 keyIdeas:
   - "Move rarely used fields (names, debug info, config) into a separate cold array indexed the same way."
   - "Smaller hot structs mean more objects per cache line and fewer misses per update."
   - "Measure first: splitting only helps if the hot loop is memory-bound."
 ---
-
-## Mission briefing
-
-Your getaway car carries the whole wardrobe in the trunk, and every corner is slower for it.
-
-**Mission:** leave the tuxedos at the safehouse.
 
 ## Count the objects
 

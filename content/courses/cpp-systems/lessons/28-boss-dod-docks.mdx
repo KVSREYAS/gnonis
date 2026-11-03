@@ -1,8 +1,9 @@
 ---
 id: cpp-systems/07-dod/04-boss-dod-docks
-title: "Boss: Data-Oriented Docks"
+title: "Module test: Data-oriented design"
 estMinutes: 12
 xp: 220
+fun: 5
 missionIntro: "AoS vs SoA, hot/cold and branches. Then write a data-oriented update loop."
 kind: boss
 keyIdeas:
@@ -11,24 +12,22 @@ keyIdeas:
   - "Avoid unpredictable branches in hot loops."
 ---
 
-## Mission briefing
+## Module test
 
-Data-Oriented Docks ships millions of crates a second. Your design either flows or jams.
-
-Six questions, then the getaway: the update loop.
+Six timed questions on Data-oriented design. 3 wrong answers end the test. Then a coding task: the update loop.
 
 <Boss
   id="docks-dod"
-  title="Data-Oriented Docks"
-  briefing="Six questions, three hearts, three minutes."
+  title="Module test: Data-oriented design"
+  briefing="Six questions, 3 minutes. 3 wrong answers end the test."
   timeLimit={180}
   playerHp={3}
   parts={[{"type": "predict", "prompt": "AoS records are 48 bytes and the loop reads one 4-byte field. Fraction of streamed bytes that's useful, in %?", "answer": 8.33, "tolerance": {"mode": "absolute", "value": 0.2}, "unit": "%", "explanation": "4/48."}, {"type": "mcq", "prompt": "\"Where there is one, there are many\" argues for…", "options": ["Virtual functions per object", "Batch-oriented transforms over arrays", "Deep inheritance", "Linked lists"], "answer": 1, "explanation": "Acton's DOD principle."}, {"type": "predict", "prompt": "Hot struct 32 B. Records per 64-byte line?", "answer": 2, "tolerance": {"mode": "absolute", "value": 0}, "explanation": "64/32."}, {"type": "mcq", "prompt": "Branch mispredict cost on modern x86, roughly?", "options": ["1 cycle", "15–20 cycles", "1,000 cycles", "Free"], "answer": 1, "explanation": "Pipeline flush."}, {"type": "fill", "text": "SoA makes {{0}} loads trivial, while AoS needs {{1}} to collect one field.", "chips": ["SIMD", "gathers", "virtual", "heap"], "answers": ["SIMD", "gathers"], "explanation": "Contiguous fields."}, {"type": "mcq", "prompt": "First step before restructuring data?", "options": ["Rewrite in assembly", "Profile to confirm the loop is memory-bound", "Add threads", "Use std::list"], "answer": 1, "explanation": "Measure."}]}
-  explanation="Data-Oriented Docks is cleared. Crates are flowing."
+  explanation="Module test passed: Data-oriented design."
   devices={["phone", "desktop"]}
 />
 
-## Getaway: the update loop
+## Coding task: the update loop
 
 Step every living body in SoA order, and retire the ones that hit the floor.
 

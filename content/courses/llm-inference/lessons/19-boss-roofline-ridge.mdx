@@ -1,9 +1,10 @@
 ---
 id: llm-inference/04-gpu-memory-roofline/05-boss-roofline-ridge
-title: "Boss: Roofline Ridge"
+title: "Module test: GPU memory and the roofline"
 estMinutes: 2
 xp: 200
-missionIntro: Bandwidth, intensity and ridge points, at speed. The toughest fight so far.
+fun: 4
+missionIntro: Bandwidth, intensity and ridge points, in a timed test.
 kind: boss
 keyIdeas:
   - Arithmetic intensity = FLOPs / bytes, and the roofline is min(peak,
@@ -13,19 +14,17 @@ keyIdeas:
     move you up.
 ---
 
-## Mission briefing
+## Module test
 
-Final climb up Roofline Ridge. One side is memory-bound, the other compute-bound, and the boss wants proof you know where you're standing.
-
-Six hits to win. Wrong answers cost hearts. Don't look down.
+Six timed questions on GPU memory and the roofline. 3 wrong answers end the test.
 
 <Boss
   id="ridge"
   devices={["phone","desktop"]}
-  title="Roofline Ridge"
-  briefing="Six questions on the ridge. Three hearts. Three minutes. Do the maths fast."
+  title="Module test: GPU memory and the roofline"
+  briefing="Six questions, 3 minutes. 3 wrong answers end the test."
   timeLimit={180}
   playerHp={3}
   parts={[{"type":"predict","prompt":"A100: 312 TFLOP/s, 2.0 TB/s. Ridge point in FLOP/byte?","answer":156,"tolerance":{"mode":"relative","value":0.03},"explanation":"312 / 2.0 = 156."},{"type":"mcq","prompt":"A kernel has an intensity of 20 FLOP/byte on an H100. It is...","options":["Compute-bound","Memory-bound","Exactly at the ridge","Network-bound"],"answer":1,"explanation":"20 is far below about 295, so it sits on the bandwidth slope."},{"type":"predict","prompt":"H100 (3.35 TB/s), 8B model in int4 (4 GB). Batch-1 decode ceiling in tokens/s?","answer":837,"tolerance":{"mode":"relative","value":0.05},"unit":"tokens/s","explanation":"3.35e12 / 4e9 ≈ 837 tokens/s."},{"type":"ordering","prompt":"Order these operations from lowest to highest arithmetic intensity.","items":["Element-wise add of two fp16 tensors","Batch-1 decode GEMV","Batch-64 decode GEMM","4096³ square matmul"],"explanation":"About 0.17, then about 1, then about 63, then about 1,365 FLOP/byte."},{"type":"fill","text":"Batching raises decode intensity because each weight loaded from {{0}} is reused for {{1}} tokens.","chips":["HBM","registers","B","1","PCIe"],"answers":["HBM","B"],"explanation":"One load, B uses, so intensity is roughly B FLOP/byte in fp16."},{"type":"mcq","prompt":"Which change does NOT raise the batch-1 decode ceiling?","options":["int4 weights","A GPU with higher HBM bandwidth","A GPU with 2x tensor-core FLOP/s but the same bandwidth","Tensor parallelism across 2 GPUs"],"answer":2,"explanation":"At batch 1 you are bandwidth-bound, so more FLOP/s alone does not help."}]}
-  explanation="Roofline Ridge is cleared, along with the first four districts. Batching and paging come next."
+  explanation="Module test passed: GPU memory and the roofline."
 />

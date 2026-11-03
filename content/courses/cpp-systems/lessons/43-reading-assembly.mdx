@@ -3,18 +3,13 @@ id: cpp-systems/11-perf/03-reading-assembly
 title: "Reading the Assembly"
 estMinutes: 8
 xp: 100
-missionIntro: "Compiler Explorer shows what you actually shipped. Learn to spot vectorised loops, calls and spills in ten seconds."
+fun: 3
+missionIntro: "Compiler Explorer shows what you actually shipped. Learn to spot vectorised loops, calls and spills quickly."
 keyIdeas:
   - "x86-64 SysV: args in rdi, rsi, rdx, rcx, r8, r9 (xmm0–7 for floats), return in rax/xmm0."
   - "`ps` suffix means packed single (SIMD), and `ss` is scalar single. `vfmadd231ps ymm` is AVX2 FMA on 8 floats."
   - "Telltales: `call` in a hot loop (not inlined), lots of loads and stores to rsp (spills), branches inside the inner loop."
 ---
-
-## Mission briefing
-
-Under Perf Pier is the engine room. Real speed is written in assembly.
-
-**Mission:** read enough of it to call a bluff.
 
 ## Spot the vector
 

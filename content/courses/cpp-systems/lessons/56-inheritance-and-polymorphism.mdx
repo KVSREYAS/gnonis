@@ -3,18 +3,13 @@ id: cpp-systems/oop/04-inheritance-and-polymorphism
 title: "Inheritance, Virtual Functions and Polymorphism"
 estMinutes: 9
 xp: 100
+fun: 5
 missionIntro: "A derived class reuses a base class. Make a function virtual and a base pointer calls the right version at runtime."
 keyIdeas:
   - "`class Truck : public Vehicle` inherits Vehicle's public interface."
   - "`virtual` plus `override` lets a call through a Base& or Base* pick the derived version. A class with a pure virtual function (`= 0`) is abstract."
   - "If you delete through a base pointer, the base needs a `virtual` destructor."
 ---
-
-## Mission briefing
-
-Bikes, cars and planes are all vehicles. Shout "honk" at any of them and each makes its own noise.
-
-**Mission:** one interface, many vehicles.
 
 ## Virtual calls
 
@@ -45,7 +40,7 @@ Each class with virtual functions has a table of function pointers (the vtable),
 <SpotBug
   id="no-virtual-dtor"
   prompt="Which line is undefined behaviour?"
-  code={"#include <string>\nstruct Base { ~Base() {} };\nstruct Derived : Base { std::string name = \"Big Smoke\"; };\nint main() {\n    Base* p = new Derived;\n    delete p;\n}"}
+  code={"#include <string>\nstruct Base { ~Base() {} };\nstruct Derived : Base { std::string name = \"engine\"; };\nint main() {\n    Base* p = new Derived;\n    delete p;\n}"}
   bugLine={6}
   explanation="Base has no virtual destructor, so deleting a Derived through a Base* is UB, and name is never destroyed."
   devices={["phone", "desktop"]}

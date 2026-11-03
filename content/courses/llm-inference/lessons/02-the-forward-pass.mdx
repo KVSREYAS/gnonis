@@ -3,6 +3,7 @@ id: llm-inference/01-tokens-forward-pass/02-the-forward-pass
 title: The forward pass
 estMinutes: 4
 xp: 60
+fun: 3
 missionIntro: Follow one token id from the embedding table, through every
   transformer block, to the logits.
 keyIdeas:
@@ -12,12 +13,6 @@ keyIdeas:
     add.
   - The output is one logit per vocabulary entry for every position.
 ---
-
-## Mission briefing
-
-One id walks in. Dozens of transformer blocks later, a vote over 128,000 word pieces walks out.
-
-**Mission:** Escort token #644 through every block on Grove Street. Don't let it lose its residual.
 
 ## From ids to vectors
 

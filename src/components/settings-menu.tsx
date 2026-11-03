@@ -103,7 +103,7 @@ export function SettingsMenu() {
           <div className="py-3">
             <p className="mb-1 text-base font-bold">Device mode</p>
             <p className="mb-2 text-sm text-muted-foreground">
-              Phone mode shows only phone-friendly exercises. Desktop missions wait for a keyboard. Now: <strong>{device}</strong>.
+              Phone mode shows only phone-friendly exercises. Desktop exercises wait for a keyboard. Now: <strong>{device}</strong>.
             </p>
             <Segmented<Settings["device"]>
               label="Device mode"

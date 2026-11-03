@@ -43,6 +43,7 @@ export default async function PreviewPage({ params }: PageProps<"/preview/[cours
           title: lesson.title,
           kind: lesson.kind,
           xp: lesson.xp,
+          fun: lesson.fun,
           keyIdeas: lesson.keyIdeas,
           district: mod.district,
           moduleIndex: mod.index,

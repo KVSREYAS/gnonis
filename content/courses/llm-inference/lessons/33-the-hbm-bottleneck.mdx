@@ -3,6 +3,7 @@ id: llm-inference/08-flash-attention/01-the-hbm-bottleneck
 title: The HBM Bottleneck
 estMinutes: 3
 xp: 90
+fun: 3
 missionIntro: Standard attention writes the full N×N score and probability
   matrices to slow HBM, then reads them back. That's the real cost.
 keyIdeas:
@@ -12,13 +13,7 @@ keyIdeas:
     faster GPT-2 training at 1k context)."
 ---
 
-## Mission briefing
-
-Every time you need a tool you drive to the garage across town (HBM), drop off a crate the size of a house, then drive back to fetch it.
-
-**Mission:** find out how much of the night you spend in traffic.
-
-## The N² crates
+## The N² matrices
 
 Naive attention runs as separate kernels, and each one writes its N×N result to HBM for the next to read. With 4k tokens and 32 heads that's a GiB per matrix per layer.
 

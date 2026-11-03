@@ -3,18 +3,13 @@ id: cpp-systems/03-ownership/03-weak-ptr-and-cycles
 title: "weak_ptr and Reference Cycles"
 estMinutes: 7
 xp: 90
+fun: 4
 missionIntro: "Two shared_ptrs pointing at each other never die. weak_ptr breaks the cycle."
 keyIdeas:
   - "A cycle of shared_ptrs keeps every member alive forever: the counts never reach zero."
   - "weak_ptr observes without owning: it bumps the weak count, and lock() returns a shared_ptr or null."
   - "Typical pattern: parents own children (shared_ptr or unique_ptr), and children point back with weak_ptr or a raw pointer."
 ---
-
-## Mission briefing
-
-Two gang members each refuse to leave until the other does. Nobody ever leaves, and the safehouse leaks money forever.
-
-**Mission:** make one of them a guest, not an owner.
 
 ## Spot the cycle
 

@@ -3,6 +3,7 @@ id: cpp-systems/12-building-blocks/03-thread-pool
 title: "A Thread Pool with Futures"
 estMinutes: 9
 xp: 110
+fun: 4
 missionIntro: "Spawning a thread costs microseconds. Keep a pool of workers and submit tasks that return std::future."
 keyIdeas:
   - "Workers loop: wait on a condition variable, pop a std::function<void()>, run it."
@@ -10,17 +11,11 @@ keyIdeas:
   - "Shutdown: set a stop flag under the lock, notify_all, then let the jthreads join."
 ---
 
-## Mission briefing
-
-Hire a permanent crew instead of recruiting off the street for every job.
-
-**Mission:** run the crew.
-
 ## Costs
 
 
 
-![Task queue feeding a fixed crew of worker threads, each returning results through futures](/diagrams/cpp-systems/12-building-blocks/03-thread-pool.png)
+![Task queue feeding a fixed set of worker threads, each returning results through futures](/diagrams/cpp-systems/12-building-blocks/03-thread-pool.png)
 
 <Predict
   id="spawn-cost"

@@ -14,7 +14,7 @@ test.describe("python exercises", () => {
   test.describe.configure({ timeout: 180_000 });
 
   test("loads Pyodide, runs softmax, and recovers from a failed load and a timeout", async ({ page, isMobile }) => {
-    test.skip(isMobile, "the softmax exercise is a desktop mission");
+    test.skip(isMobile, "the softmax exercise is a desktop exercise");
 
     const blockRuntime = async () => {
       await page.route(/cdn\.jsdelivr\.net|unpkg\.com/, (route) => route.abort());

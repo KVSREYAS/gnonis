@@ -3,18 +3,13 @@ id: cpp-systems/12-building-blocks/02-spsc-ring-buffer
 title: "Lock-Free SPSC Ring Buffer"
 estMinutes: 10
 xp: 120
-missionIntro: "One producer, one consumer, two atomic indices and no locks. The workhorse of audio, networking and token streaming."
+fun: 4
+missionIntro: "One producer, one consumer, two atomic indices and no locks. Common in audio, networking and token streaming."
 keyIdeas:
   - "A power-of-two capacity lets you wrap indices with `& (N - 1)` instead of %."
   - "The producer owns head and the consumer owns tail. Each reads the other's index with acquire and publishes its own with release."
   - "Put head and tail on separate cache lines to avoid false sharing."
 ---
-
-## Mission briefing
-
-A conveyor belt between two workers. No foreman (lock) needed, as long as each touches only their own end.
-
-**Mission:** build the belt.
 
 ## Index maths
 

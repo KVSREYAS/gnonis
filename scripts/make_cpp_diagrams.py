@@ -205,7 +205,7 @@ a.annotate("",(16.5,1.3),(0.5,1.3),arrowprops=dict(arrowstyle="<->",color=G,lw=2
 note(a,18,0.6,"read the bits with std::bit_cast, not a pointer cast",INK,10)
 save(f,"08-ub/02-aliasing-and-bit-cast")
 
-f,a=fig("Sanitizer cameras",11,4); blank(a,(0,11),(0,3.6))
+f,a=fig("Sanitizers and what they catch",11,4); blank(a,(0,11),(0,3.6))
 for i,(n,w,s,c) in enumerate([("ASan","out-of-bounds, use-after-free, leaks","~2x",B),("UBSan","overflow, bad shifts, misalignment","small",GOLD),("TSan","data races","5-15x",P)]):
     box(a,0.3+i*3.6,1.4,3.2,1.5,f"{n}\n{w}",c,fs=9); note(a,0.3+i*3.6,0.9,f"slowdown {s}",c,10)
 note(a,0.3,0.25,"ASan+UBSan in one build; TSan in a separate job",INK,10)
@@ -325,7 +325,7 @@ p=np.exp(lg-lg.max()); p/=p.sum(); ax[2].bar(range(3),p,color=G); ax[2].set_titl
 for x in ax: x.set_xticks(range(3),["t0","t1","t2"])
 f.suptitle("STABLE SOFTMAX",color=G,fontweight="bold",fontsize=15,x=0.1,ha="left"); save(f,"13-capstone/03-softmax-and-sampling")
 
-# ---------- oop (Class Act Garage)
+# ---------- oop
 f,a=fig("A class: public door, private room",10,4.6); blank(a,(0,10),(0,4.4))
 a.add_patch(FancyBboxPatch((0.3,0.4),9.4,3.4,boxstyle="round,pad=0.02",fc=G+"10",ec=G,lw=2.5)); note(a,0.5,3.45,"class Safe",G,12,fontweight="bold")
 box(a,0.7,1.0,3.6,1.9,"public:\nopen(guess)\nvalue()",B,fc=B+"15"); box(a,5.6,1.0,3.6,1.9,"private:\nint code\n(locked room)",R,fc=R+"15")

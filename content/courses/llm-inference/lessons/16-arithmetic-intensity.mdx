@@ -3,8 +3,9 @@ id: llm-inference/04-gpu-memory-roofline/02-arithmetic-intensity
 title: Arithmetic intensity
 estMinutes: 3
 xp: 80
+fun: 5
 missionIntro: FLOPs per byte moved. The single number that tells you whether a
-  kernel is starved or saturated.
+  kernel is limited by memory or by compute.
 keyIdeas:
   - Arithmetic intensity = FLOPs performed / bytes moved to and from memory.
   - A big square matmul has high intensity (about n/3 in fp16). A matrix-vector
@@ -12,12 +13,6 @@ keyIdeas:
   - Batch-B decode reuses each weight B times, so its intensity is roughly B
     FLOP per byte in fp16.
 ---
-
-## Mission briefing
-
-FLOPs per byte is the only number that says whether your GPU is working or waiting.
-
-**Mission:** Count how much work you get done per trip to the garage. Then explain why decode keeps coming back with one screw.
 
 ## FLOPs per byte
 

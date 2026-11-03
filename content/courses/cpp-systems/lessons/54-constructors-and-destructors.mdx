@@ -3,6 +3,7 @@ id: cpp-systems/oop/02-constructors-and-destructors
 title: "Constructors, Destructors, this and const"
 estMinutes: 8
 xp: 90
+fun: 5
 missionIntro: "Constructors set an object up and destructors clean it up. `this` points at the current object, and const methods promise not to change it."
 keyIdeas:
   - "Use the member initialiser list `: a_(a), b_(b)` to initialise members directly."
@@ -10,13 +11,7 @@ keyIdeas:
   - "`this` is a pointer to the current object. A `const` method can be called on const objects and can't modify members."
 ---
 
-## Mission briefing
-
-Every car rolls off the line fully assembled and gets scrapped properly at the end. No half-built Sabres on this lot.
-
-**Mission:** write the assembly line.
-
-## Birth and death
+## Construction and destruction
 
 Constructors run when the object is created. Destructors run in reverse order when it dies.
 
@@ -61,8 +56,8 @@ Inside a method, `this->fuel_` and plain `fuel_` mean the same thing. Mark a met
   language="cpp"
   prompt="Write `class Account` with a constructor `Account(std::string owner, long balance)` using an initialiser list, `const std::string& owner() const`, `long balance() const`, and `bool withdraw(long amount)`. withdraw refuses (returns false) when the amount is more than the balance or negative."
   starter={"#include <string>\nclass Account {\npublic:\n    Account(std::string owner, long balance) {}\n    const std::string& owner() const { static std::string s; return s; }\n    long balance() const { return 0; }\n    bool withdraw(long amount) { return false; }\n};\n"}
-  visibleTests={"#include \"check.h\"\nint main() {\n    Account a(\"CJ\", 100);\n    CHECK(a.owner() == \"CJ\" && a.balance() == 100);\n    return 0;\n}\n"}
-  tests={"#include \"check.h\"\nint main() {\n    Account a(\"CJ\", 100);\n    CHECK(a.owner() == \"CJ\" && a.balance() == 100);\n    CHECK(a.withdraw(30) && a.balance() == 70);\n    CHECK(!a.withdraw(71) && a.balance() == 70);\n    CHECK(!a.withdraw(-5) && a.balance() == 70);\n    CHECK(a.withdraw(70) && a.balance() == 0);\n    const Account b(\"Sweet\", 5);\n    CHECK(b.balance() == 5);\n    return 0;\n}\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    Account a(\"Ana\", 100);\n    CHECK(a.owner() == \"Ana\" && a.balance() == 100);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\nint main() {\n    Account a(\"Ana\", 100);\n    CHECK(a.owner() == \"Ana\" && a.balance() == 100);\n    CHECK(a.withdraw(30) && a.balance() == 70);\n    CHECK(!a.withdraw(71) && a.balance() == 70);\n    CHECK(!a.withdraw(-5) && a.balance() == 70);\n    CHECK(a.withdraw(70) && a.balance() == 0);\n    const Account b(\"Sweet\", 5);\n    CHECK(b.balance() == 5);\n    return 0;\n}\n"}
   solution={"#include <string>\n#include <utility>\nclass Account {\n    std::string owner_;\n    long balance_;\npublic:\n    Account(std::string owner, long balance) : owner_(std::move(owner)), balance_(balance) {}\n    const std::string& owner() const { return owner_; }\n    long balance() const { return balance_; }\n    bool withdraw(long amount) {\n        if (amount < 0 || amount > balance_) return false;\n        balance_ -= amount;\n        return true;\n    }\n};\n"}
   hints={["Store the owner and balance as private members.", "The hidden test calls balance() on a const object, so it must be a const method."]}
   explanation="A class guards its own rules: no negative withdrawals, no overdrafts."

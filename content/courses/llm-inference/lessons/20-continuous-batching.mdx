@@ -1,24 +1,19 @@
 ---
 id: llm-inference/05-batching/01-continuous-batching
-title: "Continuous batching: Never Wait for the Slowpoke"
+title: "Continuous Batching"
 estMinutes: 3
 xp: 90
+fun: 3
 missionIntro: Static batches wait for their longest member. Continuous batching
-  swaps finished riders out at every decode step.
+  replaces finished requests at every decode step.
 keyIdeas:
   - Decode is memory-bound, so batching many sequences reuses each weight read
     and multiplies throughput.
   - Static batching holds the whole batch until the longest request finishes;
-    short requests idle in their seats.
+    short requests idle in their slots.
   - Continuous (iteration-level) batching, from Orca, admits and evicts requests
     at every decode step.
 ---
-
-## Mission briefing
-
-CJ, the bus to Batch Boulevard leaves when *everyone* is aboard. Problem: one passenger is writing a
-1,000-token novel while three others wanted a "yes". Old-school **static batching** makes the whole bus
-wait. Your job: run a bus that picks up and drops off riders at **every stop**.
 
 ## Why batch at all?
 
@@ -26,9 +21,9 @@ At batch 1, decode reads every weight to produce **one** token (you met this on 
 32 sequences in the batch and the same weight read produces **32** tokens. Throughput climbs almost
 linearly until you hit the compute roof or run out of KV memory.
 
-## The slowpoke problem
+## The longest-request problem
 
-In a static batch, every seat stays reserved until the longest request finishes.
+In a static batch, every slot stays reserved until the longest request finishes.
 
 <Predict
   id="static-waste"
@@ -69,9 +64,9 @@ Every decode step, the scheduler runs the same short loop.
   explanation="Evict, free, admit, run, append. Repeat forever, or until the server catches fire."
 />
 
-## Street wisdom
+## Summary
 
-Static batching is a restaurant that seats a table of four and won't seat anyone else until the slowest
-eater finishes dessert. Continuous batching is a sushi conveyor belt.
+Static batching admits new requests only after every request in the batch has finished. Continuous batching
+removes a finished request and admits a waiting one at every decode step, so slots never sit idle.
 
 Sources: [Orca, OSDI 2022](https://www.usenix.org/conference/osdi22/presentation/yu), [Anyscale: continuous batching](https://www.anyscale.com/blog/continuous-batching-llm-inference)

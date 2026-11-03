@@ -1,9 +1,10 @@
 ---
 id: cpp-systems/12-building-blocks/04-boss-builders-yard
-title: "Boss: Builders' Yard"
+title: "Module test: Systems building blocks"
 estMinutes: 14
 xp: 240
-missionIntro: "Arenas, rings and pools at speed. Then build an object pool with a free list."
+fun: 5
+missionIntro: "Arenas, rings and pools in a timed test. Then build an object pool with a free list."
 kind: boss
 keyIdeas:
   - "Arenas bump and reset."
@@ -11,24 +12,22 @@ keyIdeas:
   - "Pools reuse threads, and futures carry results and exceptions."
 ---
 
-## Mission briefing
+## Module test
 
-The Builders' Yard foreman inspects your tools.
-
-Six questions, then the getaway: a free-list pool.
+Six timed questions on Systems building blocks. 3 wrong answers end the test. Then a coding task: free-list pool.
 
 <Boss
   id="yard"
-  title="Builders' Yard"
-  briefing="Six questions, three hearts, three minutes. Measure twice."
+  title="Module test: Systems building blocks"
+  briefing="Six questions, 3 minutes. 3 wrong answers end the test."
   timeLimit={180}
   playerHp={3}
   parts={[{"type": "predict", "prompt": "Arena offset 5, alloc 4 bytes at align 8. New offset?", "answer": 12, "tolerance": {"mode": "absolute", "value": 0}, "explanation": "align_up(5,8)=8, plus 4."}, {"type": "predict", "prompt": "Ring capacity 16. Slot for counter 35?", "answer": 3, "tolerance": {"mode": "absolute", "value": 0}, "explanation": "35 & 15."}, {"type": "mcq", "prompt": "SPSC full condition with monotonic counters?", "options": ["head == tail", "head − tail == N", "tail > head", "head == 0"], "answer": 1, "explanation": "N in flight."}, {"type": "mcq", "prompt": "Task throws inside packaged_task. Caller sees…", "options": ["terminate", "the exception from future.get()", "nothing", "a null future"], "answer": 1, "explanation": "Stored in the shared state."}, {"type": "mcq", "prompt": "Standard arena resource?", "options": ["new_delete_resource", "monotonic_buffer_resource", "unsynchronized_pool_resource", "null_memory_resource"], "answer": 1, "explanation": "Monotonic = bump."}, {"type": "mcq", "prompt": "Why must a pool's jthreads be declared after its queue and mutex?", "options": ["Style", "Members are destroyed in reverse order, so the workers join before what they use is destroyed", "Faster", "ABI"], "answer": 1, "explanation": "Reverse declaration order."}]}
-  explanation="Builders' Yard is cleared. Solid work."
+  explanation="Module test passed: Systems building blocks."
   devices={["phone", "desktop"]}
 />
 
-## Getaway: free-list pool
+## Coding task: free-list pool
 
 Hand objects out of a fixed block and take them back, with no heap traffic.
 
@@ -39,7 +38,7 @@ Hand objects out of a fixed block and take them back, with no heap traffic.
   prompt="Implement `template<class T, std::size_t N> class Pool` with fixed storage for N objects (alignas(T) std::byte storage[N][sizeof(T)]) and an intrusive free list of indices. `template<class... A> T* create(A&&...)` returns nullptr when exhausted (placement-new with perfect forwarding), `void destroy(T*)` calls the dtor and pushes the slot back, and `std::size_t live() const` counts live objects. The destructor must destroy anything still live."
   starter={"#include <cstddef>\n#include <new>\n#include <utility>\ntemplate<class T, std::size_t N> class Pool {\npublic:\n    template<class... A> T* create(A&&... a) { return nullptr; }\n    void destroy(T* p) {}\n    std::size_t live() const { return 0; }\n};\n"}
   visibleTests={"#include \"check.h\"\n\nint main() { Pool<int, 2> p; int* a = p.create(5); CHECK(a && *a == 5 && p.live() == 1); p.destroy(a); CHECK(p.live() == 0); return 0; }\n"}
-  tests={"#include \"check.h\"\n\n#include <string>\n#include <memory>\nstatic int alive = 0;\nstruct Tracked { std::string s; Tracked(std::string x) : s(std::move(x)) { ++alive; } ~Tracked() { --alive; } };\nint main() {\n    { Pool<int, 2> p; int* a = p.create(5); int* b = p.create(6); CHECK(a && b && !p.create(7));\n      p.destroy(a); int* c = p.create(8); CHECK(c == a && *c == 8 && *b == 6); }\n    { Pool<Tracked, 3> p; auto* x = p.create(\"grove\"); p.create(std::string(40, 'z')); CHECK(alive == 2 && x->s == \"grove\");\n      p.destroy(x); CHECK(alive == 1); }\n    CHECK(alive == 0);\n    Pool<std::unique_ptr<int>, 1> up; auto* u = up.create(std::make_unique<int>(3)); CHECK(**u == 3);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n\n#include <string>\n#include <memory>\nstatic int alive = 0;\nstruct Tracked { std::string s; Tracked(std::string x) : s(std::move(x)) { ++alive; } ~Tracked() { --alive; } };\nint main() {\n    { Pool<int, 2> p; int* a = p.create(5); int* b = p.create(6); CHECK(a && b && !p.create(7));\n      p.destroy(a); int* c = p.create(8); CHECK(c == a && *c == 8 && *b == 6); }\n    { Pool<Tracked, 3> p; auto* x = p.create(\"apple\"); p.create(std::string(40, 'z')); CHECK(alive == 2 && x->s == \"apple\");\n      p.destroy(x); CHECK(alive == 1); }\n    CHECK(alive == 0);\n    Pool<std::unique_ptr<int>, 1> up; auto* u = up.create(std::make_unique<int>(3)); CHECK(**u == 3);\n    return 0;\n}\n"}
   solution={"#include <cstddef>\n#include <new>\n#include <utility>\n#include <array>\ntemplate<class T, std::size_t N> class Pool {\n    alignas(T) std::byte storage_[N][sizeof(T)];\n    std::array<std::size_t, N> next_{}; std::array<bool, N> used_{};\n    std::size_t free_ = 0, live_ = 0;\n    T* slot(std::size_t i) { return std::launder(reinterpret_cast<T*>(storage_[i])); }\npublic:\n    Pool() { for (std::size_t i = 0; i < N; ++i) next_[i] = i + 1; }\n    Pool(const Pool&) = delete; Pool& operator=(const Pool&) = delete;\n    ~Pool() { for (std::size_t i = 0; i < N; ++i) if (used_[i]) slot(i)->~T(); }\n    template<class... A> T* create(A&&... a) {\n        if (free_ == N) return nullptr;\n        std::size_t i = free_;\n        T* p = ::new (storage_[i]) T(std::forward<A>(a)...);\n        free_ = next_[i]; used_[i] = true; ++live_; return p;\n    }\n    void destroy(T* p) {\n        std::size_t i = (reinterpret_cast<std::byte*>(p) - &storage_[0][0]) / sizeof(T);\n        p->~T(); used_[i] = false; next_[i] = free_; free_ = i; --live_;\n    }\n    std::size_t live() const { return live_; }\n};\n"}
   hints={["Free list: next_[i] links free slots, and free_ == N means empty.", "std::forward the constructor arguments."]}
   explanation="Fixed-size pools give O(1) create and destroy with no fragmentation. Inference servers use them for request and sequence objects."

@@ -19,7 +19,7 @@ async function openPythonEditor(page: Page) {
 
 test.describe("editor caret", () => {
   test("is a wide white bar in dark mode and a dark bar in light mode", async ({ page, isMobile }) => {
-    test.skip(isMobile, "the code editor is a desktop mission");
+    test.skip(isMobile, "the code editor is a desktop exercise");
     test.setTimeout(60_000);
 
     await page.addInitScript(() => {

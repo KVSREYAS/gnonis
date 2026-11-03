@@ -3,18 +3,13 @@ id: cpp-systems/06-layout/03-aligned-allocation
 title: "Aligned Allocation"
 estMinutes: 7
 xp: 90
+fun: 5
 missionIntro: "malloc gives you 16-byte alignment. SIMD wants 32 or 64. Here's how to get it, and how to round pointers yourself."
 keyIdeas:
   - "`new` respects alignas on types since C++17 (it calls operator new with std::align_val_t)."
   - "std::aligned_alloc(align, size) needs size to be a multiple of align. Free it with std::free."
   - "Round up to a power-of-two alignment with `(x + a - 1) & ~(a - 1)`."
 ---
-
-## Mission briefing
-
-The vault only opens if you park exactly on the line. Being off by 4 bytes means no heist.
-
-**Mission:** park on 64-byte boundaries every time.
 
 ## The bit trick
 

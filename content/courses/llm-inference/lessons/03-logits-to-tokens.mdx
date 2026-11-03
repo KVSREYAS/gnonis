@@ -3,6 +3,7 @@ id: llm-inference/01-tokens-forward-pass/03-logits-to-tokens
 title: From logits to the next token
 estMinutes: 4
 xp: 70
+fun: 4
 missionIntro: Softmax, temperature, top-k and top-p. The knobs between raw
   scores and the word you read.
 keyIdeas:
@@ -12,12 +13,6 @@ keyIdeas:
     flatter (more random).
   - Top-k and top-p cut the tail of the distribution before sampling.
 ---
-
-## Mission briefing
-
-128,000 candidates, one job opening. Temperature decides how tipsy the hiring manager is.
-
-**Mission:** Rig the lottery. Tune the sampler so the model says something sensible without sounding like a robot or a drunk.
 
 ## Softmax
 

@@ -3,6 +3,7 @@ id: llm-inference/02-attention/03-heads-mha-gqa
 title: Heads, MQA and GQA
 estMinutes: 4
 xp: 60
+fun: 3
 missionIntro: Many small attention heads beat one big one. Sharing their keys
   and values saves inference memory.
 keyIdeas:
@@ -11,12 +12,6 @@ keyIdeas:
   - MQA shares one K/V head across all query heads, and GQA shares one per group.
   - Fewer KV heads mean a smaller KV cache and less memory traffic during decode.
 ---
-
-## Mission briefing
-
-Many small heads beat one big one. Make them carpool on keys and values and your memory bill drops.
-
-**Mission:** Eight crews, one city. Figure out how many getaway cars they actually need.
 
 ## Many heads
 

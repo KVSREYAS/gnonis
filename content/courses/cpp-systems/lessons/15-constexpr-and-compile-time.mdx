@@ -3,18 +3,13 @@ id: cpp-systems/04-templates/03-constexpr-and-compile-time
 title: "constexpr, consteval and if constexpr"
 estMinutes: 8
 xp: 100
+fun: 4
 missionIntro: "Push work to compile time: lookup tables, checked constants, and branches that vanish per type."
 keyIdeas:
   - "constexpr functions can run at compile time when given constant arguments. consteval functions must."
   - "if constexpr discards the untaken branch per instantiation, so it can contain code that wouldn't compile for that T."
   - "static_assert turns compile-time computations into tests."
 ---
-
-## Mission briefing
-
-Why do the maths during the heist when you can do it while planning? Every value the compiler computes is one the CPU never has to.
-
-**Mission:** move the work to compile time.
 
 ## if constexpr
 

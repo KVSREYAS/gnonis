@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Heart, Skull, Timer } from "lucide-react";
+import { Heart, Timer, ClipboardCheck } from "lucide-react";
 import type { BossPart, ExerciseOf } from "@/lib/content/schema";
 import { bossAnswer, bossTimeout, initialBoss, type BossState, type Grade } from "@/lib/grading";
 import { cn } from "@/lib/utils";
@@ -77,11 +77,11 @@ export function BossWidget({ id, exercise, device, setAction, onGrade, locked }:
 
   const finish = () => {
     if (state.status === "won")
-      onGrade({ correct: true, message: `Boss down with ${state.playerHp} heart${state.playerHp === 1 ? "" : "s"} and ${mmss(timeLeft)} to spare. ${exercise.explanation}` });
+      onGrade({ correct: true, message: `Passed with ${state.playerHp} ${state.playerHp === 1 ? "life" : "lives"} and ${mmss(timeLeft)} to spare. ${exercise.explanation}` });
     else
       onGrade({
         correct: false,
-        message: state.reason === "time" ? "Out of time. The boss got away. Run it back." : "Out of hearts. Regroup and run it back.",
+        message: state.reason === "time" ? "Out of time. Try the test again." : "No lives left. Try the test again.",
       });
   };
 
@@ -92,7 +92,7 @@ export function BossWidget({ id, exercise, device, setAction, onGrade, locked }:
       : phase === "feedback"
         ? { label: state.status === "fighting" ? (last?.correct ? "Next hit" : "Try again") : "See result", onPress: advance }
         : phase === "over"
-          ? { label: state.status === "won" ? "Claim the win" : "Accept defeat", onPress: finish }
+          ? { label: state.status === "won" ? "Continue" : "End the test", onPress: finish }
           : partAction;
   usePrimaryAction(setAction, action);
 
@@ -104,20 +104,20 @@ export function BossWidget({ id, exercise, device, setAction, onGrade, locked }:
       <div className="mb-4 rounded-lg border-2 border-danger/60 bg-ink p-3">
         <div className="mb-2 flex items-center justify-between gap-3">
           <p className="flex items-center gap-2 font-display text-xl tracking-wide text-foreground">
-            <Skull className="size-5 text-danger" aria-hidden /> {exercise.title.toUpperCase()}
+            <ClipboardCheck className="size-5 text-danger" aria-hidden /> {exercise.title.toUpperCase()}
           </p>
           <p className={cn("flex items-center gap-1 font-display text-xl tabular-nums", timeLeft <= 20 ? "text-danger" : "text-gold-ink")} aria-label={`Time left ${mmss(timeLeft)}`} data-testid="boss-timer">
             <Timer className="size-5" aria-hidden /> {mmss(timeLeft)}
           </p>
         </div>
-        <div className="h-4 overflow-hidden rounded bg-panel-2" role="progressbar" aria-label="Boss health" aria-valuemin={0} aria-valuemax={total} aria-valuenow={state.bossHp}>
+        <div className="h-4 overflow-hidden rounded bg-panel-2" role="progressbar" aria-label="Questions remaining" aria-valuemin={0} aria-valuemax={total} aria-valuenow={state.bossHp}>
           <div className="h-full bg-danger transition-[width] duration-300" style={{ width: `${bossFrac * 100}%` }} />
         </div>
         <div className="mt-2 flex items-center justify-between text-sm text-muted-foreground">
           <span>
-            Boss HP {state.bossHp}/{total}
+            Questions left {state.bossHp}/{total}
           </span>
-          <span className="flex items-center gap-1" aria-label={`${state.playerHp} hearts left`}>
+          <span className="flex items-center gap-1" aria-label={`${state.playerHp} lives left`}>
             {Array.from({ length: exercise.playerHp }, (_, i) => (
               <Heart key={i} className={cn("size-5", i < state.playerHp ? "fill-danger text-danger" : "text-muted-foreground/50")} aria-hidden />
             ))}
@@ -127,12 +127,12 @@ export function BossWidget({ id, exercise, device, setAction, onGrade, locked }:
 
       {phase === "briefing" && (
         <div className="rounded-lg border border-border bg-ink p-4">
-          <p className="mb-2 font-display text-lg tracking-wide text-gold-ink">MISSION BRIEFING</p>
+          <p className="mb-2 font-display text-lg tracking-wide text-gold-ink">INSTRUCTIONS</p>
           <p className="text-base text-foreground">
             <InlineText text={exercise.briefing} />
           </p>
           <p className="mt-2 text-sm text-muted-foreground">
-            {total} parts · {exercise.playerHp} hearts · {mmss(exercise.timeLimit)} on the clock. The timer pauses while you read feedback.
+            {total} parts · {exercise.playerHp} lives · {mmss(exercise.timeLimit)} on the clock. The timer pauses while you read feedback.
           </p>
         </div>
       )}
@@ -157,7 +157,7 @@ export function BossWidget({ id, exercise, device, setAction, onGrade, locked }:
               role="status"
             >
               <strong className={cn("mr-1 font-display tracking-wide", last.correct ? "text-money-ink" : "text-danger")}>
-                {last.correct ? "HIT!" : "OUCH, −1 HEART."}
+                {last.correct ? "CORRECT." : "WRONG, −1 LIFE."}
               </strong>
               {last.message}
             </p>
@@ -168,14 +168,14 @@ export function BossWidget({ id, exercise, device, setAction, onGrade, locked }:
       {phase === "over" && (
         <div className={cn("rounded-lg border-2 bg-ink p-5 text-center", state.status === "won" ? "border-money" : "border-danger")} data-testid="boss-result">
           <p className={cn("font-display text-4xl tracking-wide", state.status === "won" ? "text-gold-ink" : "text-danger")}>
-            {state.status === "won" ? "BOSS DOWN" : "WASTED"}
+            {state.status === "won" ? "TEST PASSED" : "TEST FAILED"}
           </p>
           <p className="mt-2 text-base text-foreground">
             {state.status === "won"
-              ? `${state.playerHp} heart${state.playerHp === 1 ? "" : "s"} left · ${mmss(timeLeft)} remaining`
+              ? `${state.playerHp} ${state.playerHp === 1 ? "life" : "lives"} left · ${mmss(timeLeft)} remaining`
               : state.reason === "time"
                 ? "The clock ran out."
-                : "No hearts left."}
+                : "No lives left."}
           </p>
         </div>
       )}

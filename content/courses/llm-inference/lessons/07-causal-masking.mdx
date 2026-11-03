@@ -3,7 +3,8 @@ id: llm-inference/02-attention/02-causal-masking
 title: Causal masking
 estMinutes: 3
 xp: 60
-missionIntro: A language model must not peek at the future. One triangle of
+fun: 5
+missionIntro: A language model must not use future tokens. One triangle of
   minus-infinity makes sure of it.
 keyIdeas:
   - Token i may only attend to tokens 0..i. Future scores are set to minus
@@ -13,12 +14,6 @@ keyIdeas:
   - Masking happens before softmax. After it, the probabilities would no longer
     sum to 1.
 ---
-
-## Mission briefing
-
-No spoilers. Token 5 doesn't get to read token 6's lines, and minus infinity is the bouncer.
-
-**Mission:** Someone is leaking tomorrow's script to today's actors. Find the leak and seal it.
 
 ## No peeking
 
@@ -58,8 +53,8 @@ has no future keys anyway.
 
 ## Spot the leak
 
-Off-by-one errors in mask code are a classic bug. They do not crash. The model just quietly
-learns to cheat, and then falls apart at generation time.
+Off-by-one errors in mask code are a classic bug. They do not crash. The model quietly
+learns to use future tokens during training, and then performs badly at generation time.
 
 <Debug
   id="leaky-mask"

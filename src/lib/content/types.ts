@@ -16,6 +16,8 @@ export type LessonData = {
   summary: string;
   xp: number;
   minutes: number;
+  /** Fun meter 1-5, or null when the lesson has none. */
+  fun: number | null;
   keyIdeas: string[];
   blocks: BodyBlock[];
   exercises: Record<string, Exercise>;
@@ -44,6 +46,7 @@ export type LessonSummary = {
   kind: LessonData["kind"];
   xp: number;
   minutes: number;
+  fun: number | null;
   exerciseIds: string[];
   exerciseHashes: Record<string, string>;
   desktopOnlyIds: string[];
@@ -70,6 +73,7 @@ export function summarizeLesson(l: LessonData): LessonSummary {
     kind: l.kind,
     xp: l.xp,
     minutes: l.minutes,
+    fun: l.fun,
     exerciseIds: ids,
     exerciseHashes: l.exerciseHashes,
     desktopOnlyIds: ids.filter((id) => !supports(l.exercises[id], "phone")),

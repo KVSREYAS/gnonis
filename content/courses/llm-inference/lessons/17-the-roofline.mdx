@@ -3,8 +3,9 @@ id: llm-inference/04-gpu-memory-roofline/03-the-roofline
 title: The roofline
 estMinutes: 4
 xp: 90
-missionIntro: One plot, two ceilings. Find where your kernel sits and which wall
-  it is pressed against.
+fun: 3
+missionIntro: One plot, two ceilings. Find where your kernel sits and which limit
+  applies to it.
 keyIdeas:
   - Attainable FLOP/s = min(peak FLOP/s, intensity x memory bandwidth).
   - The ridge point (peak / bandwidth) separates memory-bound from
@@ -12,12 +13,6 @@ keyIdeas:
   - Batching or smaller weights move decode to the right on the plot, towards
     the compute roof.
 ---
-
-## Mission briefing
-
-You can only think so fast and fetch so fast. Every kernel is pinned against one of those ceilings.
-
-**Mission:** Two walls, one plot. Find out which one your kernel keeps crashing into.
 
 ## Two ceilings
 

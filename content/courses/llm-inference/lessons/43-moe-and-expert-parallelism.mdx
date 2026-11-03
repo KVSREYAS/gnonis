@@ -3,6 +3,7 @@ id: llm-inference/10-parallelism/03-moe-and-expert-parallelism
 title: MoE Inference and Expert Parallelism
 estMinutes: 4
 xp: 110
+fun: 5
 missionIntro: Mixture-of-experts models store many experts but run only a few
   per token. Memory follows the total and bandwidth follows the active.
 keyIdeas:
@@ -12,12 +13,6 @@ keyIdeas:
   - Expert parallelism (EP) places experts on different GPUs and routes tokens
     with all-to-all dispatch and combine.
 ---
-
-## Mission briefing
-
-Shard City's gang has 256 specialists, but each job only calls in 8. Payroll (memory) is huge, the job itself is cheap.
-
-**Mission:** figure out who to keep on speed dial.
 
 ## Total vs active
 

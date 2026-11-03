@@ -1,9 +1,10 @@
 ---
 id: llm-inference/12-capstone/01-server-architecture
-title: Blueprint of a Tiny Server
+title: Architecture of a Tiny Server
 estMinutes: 3
 xp: 100
-missionIntro: "Every LLM server has the same organs: API, tokenizer, scheduler,
+fun: 3
+missionIntro: "Every LLM server has the same components: API, tokenizer, scheduler,
   block manager, model runner, sampler and a streamer."
 keyIdeas:
   - A request flows from the API through tokenize, schedule, run model, sample
@@ -13,13 +14,7 @@ keyIdeas:
   - "Little's law: concurrent requests = arrival rate × average latency."
 ---
 
-## Mission briefing
-
-Capstone Peak. No more theory: you're building the whole operation from the ground up.
-
-**Mission:** draw the blueprint before you pour concrete.
-
-## The organs
+## The components
 
 Serving engines like vLLM split cleanly into an async API front, a scheduler with waiting, running and swapped queues, a KV block manager, a model runner that executes batched forwards, and a sampler plus detokenizer that stream tokens back.
 

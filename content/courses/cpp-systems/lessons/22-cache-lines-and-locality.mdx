@@ -3,18 +3,13 @@ id: cpp-systems/06-layout/02-cache-lines-and-locality
 title: "Cache Lines and Locality"
 estMinutes: 8
 xp: 100
-missionIntro: "Memory moves in 64-byte cache lines. Touch memory sequentially and the hardware prefetcher makes you look like a genius."
+fun: 5
+missionIntro: "Memory moves in 64-byte cache lines. Touch memory sequentially and the hardware prefetcher loads the next lines before you ask for them."
 keyIdeas:
   - "x86-64 cache lines are 64 bytes, so one miss brings in 16 floats."
   - "Rough latencies: L1 ~1 ns, L2 ~4 ns, L3 ~10–20 ns, DRAM ~80–100 ns."
   - "Row-major arrays should be traversed row by row. Column order strides across lines and wastes most of each one."
 ---
-
-## Mission briefing
-
-Every trip to DRAM is a drive across the whole map. The cache is your pockets: small, but right there.
-
-**Mission:** make every trip count by carrying back 64 bytes you'll actually use.
 
 ## Count the lines
 

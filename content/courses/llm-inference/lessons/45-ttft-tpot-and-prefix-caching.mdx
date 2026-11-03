@@ -1,8 +1,9 @@
 ---
 id: llm-inference/11-serving-systems/01-ttft-tpot-and-prefix-caching
-title: "Serving Metrics and Prefix Caching: Keeping the Customers Happy"
+title: "Serving Metrics and Prefix Caching"
 estMinutes: 3
 xp: 90
+fun: 3
 missionIntro: TTFT, TPOT/ITL, throughput and goodput, plus reusing the KV cache
   of shared prompt prefixes.
 keyIdeas:
@@ -12,11 +13,6 @@ keyIdeas:
   - Prefix caching (vLLM automatic prefix caching, SGLang RadixAttention) skips
     prefill for shared system prompts and chat history.
 ---
-
-## Mission briefing
-
-You run the Cluckin' Bell drive-thru. Customers judge you on two things: how long before the first nugget
-appears (TTFT) and how fast the rest follow (TPOT). Also, everyone orders the same combo intro. Pre-cook it.
 
 ## Two clocks
 
@@ -63,9 +59,9 @@ vLLM calls it automatic prefix caching, and SGLang uses a radix tree (RadixAtten
   explanation="2000 / 2200 = 90.9% of prefill tokens come from the cache."
 />
 
-## Street wisdom
+## Summary
 
-Rating a server by tokens per second alone is like rating a restaurant by meals per hour. Great, until
-your table has waited 40 minutes.
+Tokens per second alone hides latency. A server can have high total throughput while single users wait
+a long time for the first token. Report TTFT and TPOT percentiles together with throughput.
 
 Sources: [NVIDIA LLM benchmarking metrics](https://docs.nvidia.com/nim/benchmarking/llm/latest/metrics.html), [SGLang RadixAttention](https://arxiv.org/abs/2312.07104), [vLLM prefix caching](https://docs.vllm.ai/en/latest/features/automatic_prefix_caching.html), [DistServe](https://arxiv.org/abs/2401.09670)

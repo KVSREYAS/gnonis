@@ -3,6 +3,7 @@ id: llm-inference/11-serving-systems/03-disaggregated-prefill-decode
 title: Disaggregated Prefill and Decode
 estMinutes: 3
 xp: 100
+fun: 3
 missionIntro: Prefill is compute-bound and decode is memory-bound. Run them on
   separate GPU pools and ship the KV cache between them.
 keyIdeas:
@@ -13,12 +14,6 @@ keyIdeas:
   - DistServe reports up to 7.4x more requests or 12.6x tighter SLOs within
     latency targets.
 ---
-
-## Mission briefing
-
-The kitchen at Cluckin' Bell has one grill for big orders and one fryer for drip-feeding fries, and they keep fighting over it.
-
-**Mission:** build two kitchens and a conveyor between them.
 
 ## Interference
 
@@ -33,7 +28,7 @@ In one engine, a long prefill delays every decode step (worse TPOT), and decodes
   explanation="Each pool optimises for its own SLO: TTFT for prefill, TPOT for decode."
 />
 
-## Two pools and a conveyor
+## Two GPU pools
 
 The prefill pool computes the KV and ships it over NVLink or RDMA to the decode pool. Each pool picks its own GPU count and parallelism.
 
