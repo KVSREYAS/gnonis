@@ -30,7 +30,9 @@ In one engine, a long prefill delays every decode step (worse TPOT), and decodes
 
 ## Two GPU pools
 
-The prefill pool computes the KV and ships it over NVLink or RDMA to the decode pool. Each pool picks its own GPU count and parallelism.
+The prefill pool runs the prompt, produces the first token and the KV cache, and ships the KV over NVLink or RDMA (remote direct memory access, a GPU-to-GPU copy across machines that skips the CPU) to the decode pool. The decode pool continues from the second token. Each pool picks its own GPU count and parallelism: prefill GPUs can use small batches and more tensor parallelism for fast TTFT, decode GPUs large batches for throughput.
+
+DistServe (OSDI 2024) places the two pools to maximise goodput. Splitwise (Microsoft) runs prefill and decode on different machine types, even different GPU generations. Mooncake (Moonshot AI) builds the design around a large KV cache pool kept in CPU memory and SSD across the cluster.
 
 Sources: [DistServe](https://arxiv.org/abs/2401.09670), [Splitwise](https://arxiv.org/abs/2311.18677), [Mooncake](https://arxiv.org/abs/2407.00079)
 

@@ -40,7 +40,7 @@ Each stage owns a block of layers. Stage k finishes a micro-batch and sends its 
 
 ## Bubbles
 
-At the start and end some stages sit idle. More micro-batches shrink the bubble: GPipe's (p − 1) / (m + p − 1).
+At the start and end some stages sit idle. With p stages and m equal micro-batches, the last micro-batch leaves the last stage after m + p − 1 time slots. Each stage is busy for m of those slots, so the idle share is (p − 1) / (m + p − 1), the formula from GPipe. More micro-batches shrink the bubble.
 
 Sources: [GPipe](https://arxiv.org/abs/1811.06965), [Megatron-LM PP](https://arxiv.org/abs/2104.04473)
 

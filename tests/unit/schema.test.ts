@@ -213,7 +213,7 @@ describe("loader", () => {
       .flatMap((l) => l.blocks)
       .filter((b) => b.kind === "card")
       .flatMap((b) => (b.kind === "card" ? [...b.markdown.matchAll(/\]\((\/diagrams\/[^)]+)\)/g)].map((m) => m[1]) : []));
-    expect(new Set(diagrams).size).toBe(40);
+    expect(new Set(diagrams).size).toBe(41);
     expect(diagrams).toContain("/diagrams/llm-inference/05-batching/01-continuous-batching.png");
 
     const sample = courses[1];
@@ -236,7 +236,7 @@ describe("loader", () => {
   it("covers every original widget type somewhere in the LLM course", () => {
     const { courses } = loadAllCourses();
     const types = new Set(courses[0].modules.flatMap((m) => m.lessons.flatMap((l) => Object.values(l.exercises).map((e) => e.type))));
-    expect([...types].sort()).toEqual(["boss", "code", "debug", "fill", "mcq", "ordering", "predict", "simulator", "stepper"]);
+    expect([...types].sort()).toEqual(["boss", "code", "debug", "fill", "mcq", "ordering", "predict", "simulator", "slider-diagram", "stepper"]);
   });
 
   it("reports broken references in a new pack without code changes", () => {

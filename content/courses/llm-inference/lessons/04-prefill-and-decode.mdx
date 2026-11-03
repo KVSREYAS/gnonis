@@ -64,8 +64,8 @@ $$T \approx \text{TTFT} + (N - 1) \times \text{TPOT}$$
 Prefill of 2,000 prompt tokens loads each weight once and uses it 2,000 times. That is plenty of
 maths per byte, so the GPU's compute units are the limit.
 
-Decode at batch size 1 loads **every weight** to process **one token**. The tensor cores sit mostly
-idle, waiting on memory. That one fact drives batching, quantization and speculative decoding,
+Decode at batch size 1 loads **every weight** to process **one token**. The tensor cores (the GPU
+units that do matrix multiplication, covered in module 4) sit mostly idle, waiting on memory. That one fact drives batching, quantization and speculative decoding,
 which you will meet later.
 
 <Fill

@@ -17,7 +17,11 @@ keyIdeas:
 
 ## Extra heads and trees
 
-Medusa bolts k extra heads onto the target to predict tokens t+2, t+3 and so on. It builds a tree of top candidates and verifies them all at once. EAGLE drafts the next hidden feature instead of the next token, and EAGLE-2 and 3 adapt the tree dynamically.
+Medusa adds k extra output heads to the target model. Each is a small layer on the last hidden state: head 1 predicts token t+2, head 2 token t+3, and so on, while the normal LM head predicts t+1. Medusa-1 trains only the heads and keeps the model frozen. Medusa-2 trains the heads and the model together, which gives higher acceptance.
+
+EAGLE drafts the next **feature** (the target's last hidden-state vector) with one light transformer layer, then turns it into a token with the target's own LM head. EAGLE-2 and 3 grow the candidate tree dynamically.
+
+Both build a **tree** of candidates: several options for the next token, several for the one after each. The tree is flattened into one sequence and verified in one pass with a **tree attention mask**: each candidate may attend to the prompt and to its own ancestors in the tree, and nothing else.
 
 ![A candidate token tree: 3 first-token options each with 2 children, verified in one pass](/diagrams/llm-inference/09-speculative-decoding/03-medusa-eagle-and-lookup.png)
 

@@ -41,7 +41,9 @@ If each drafted token is accepted with probability α and you draft γ, the targ
 
 ## The cost of drafting
 
-Drafting γ tokens costs γc target-passes of time. The speedup is the ratio of the two. Larger γ helps only while α^γ is still meaningful.
+Drafting γ tokens costs γc target-passes of time, where c is the time of one draft step divided by the time of one target step. One iteration therefore costs γc + 1 target-passes and yields (1 − α^(γ+1)) / (1 − α) tokens. The speedup is the ratio of the two. Larger γ helps only while α^γ is still meaningful.
+
+**Distilling** a draft means training the small model to imitate the target's output probabilities. Its guesses then agree with the target more often, which raises α.
 
 Source: [Leviathan et al. 2023](https://arxiv.org/abs/2211.17192)
 

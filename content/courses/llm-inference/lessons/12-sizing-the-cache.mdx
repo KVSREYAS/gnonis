@@ -23,7 +23,7 @@ $$\text{bytes/token} = 2 \times L \times H_{kv} \times d_{head} \times b$$
 - $L$: number of layers.
 - $H_{kv}$: KV heads (fewer than query heads with GQA).
 - $d_{head}$: head dimension.
-- $b$: bytes per element (2 for fp16 and bf16, 1 for fp8).
+- $b$: bytes per element (2 for fp16 and bf16, 1 for fp8). fp16 and bf16 are two 16-bit floating-point formats, and fp8 is an 8-bit format (module 7).
 
 ![Bar chart of KV bytes per token for Llama 2 7B, Llama 3 8B and Llama 3 70B](/diagrams/llm-inference/03-kv-cache/02-sizing-the-cache.png)
 

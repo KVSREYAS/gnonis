@@ -30,10 +30,17 @@ pass, which costs about the same as one decode step because decode is memory-bou
   explanation="The accept/reject rule plus resampling from the residual distribution makes it provably identical at any temperature."
 />
 
+## The accept rule
+
+Verification checks the drafts in order. With greedy decoding, draft token i is accepted if it equals the target's top choice at that position. With sampling, it is accepted with probability min(1, p(x) / q(x)), where p is the target's probability for that token and q the draft's. At the first rejection, the target samples a replacement from the leftover distribution max(0, p − q), normalised, and the remaining drafts are thrown away.
+
+If every draft is accepted, the target's prediction at the last position is still unused, so it gives one extra token for free: the **bonus token**. One target pass therefore yields between 1 and γ + 1 tokens.
+
 ## How many tokens per pass?
 
-If each draft token is accepted with probability alpha and the draft proposes gamma tokens, the expected
-number of tokens per target pass is (1 - alpha^(gamma+1)) / (1 - alpha).
+If each draft token is accepted with probability alpha (α) and the draft proposes gamma (γ) tokens, the
+expected number of tokens per target pass is (1 - alpha^(gamma+1)) / (1 - alpha). This is the same
+formula as the concept page, with a = α and k = γ. It assumes each draft is accepted independently.
 
 <Predict
   id="expected-tokens"

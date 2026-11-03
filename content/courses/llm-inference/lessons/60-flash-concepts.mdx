@@ -13,7 +13,7 @@ keyIdeas:
 ---
 ## Where naive attention loses time
 
-A straightforward implementation does three kernels:
+A straightforward implementation does three kernels (four if scaling and masking run as a separate kernel, as in the next lesson):
 
 1. S = Q K^T, write S (T x T) to HBM
 2. read S, compute P = softmax(S), write P to HBM

@@ -68,7 +68,7 @@ Drag the batch size and watch the dot climb the slope.
   params={{"gpu":2,"batch":1,"weightBytes":2,"paramsB":8}}
   locked={["paramsB"]}
   goal={{"output":"computeBound","op":"gte","value":1,"description":"get the operating point past the ridge (Compute-bound = 1)."}}
-  explanation={"In fp16, intensity ≈ batch, so you need about 512 sequences on an H100 (ridge ≈ 295). With int4 weights, a batch of 128 already crosses it. Attention's KV reads are ignored here, and in practice they stay memory-bound."}
+  explanation={"In fp16, intensity ≈ batch, so you need a batch of about 300 to pass the H100 ridge (≈ 295). The first power-of-two batch past it is 512. With int4 weights, intensity ≈ 4 × batch, so about 74 sequences are enough, and a batch of 128 crosses it. Attention's KV reads are ignored here, and in practice they stay memory-bound."}
 />
 
 <MCQ

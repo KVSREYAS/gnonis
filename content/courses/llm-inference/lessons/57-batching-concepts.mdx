@@ -35,7 +35,7 @@ Problem: outputs have different lengths. If one request needs 500 tokens and the
 2. Add waiting requests into the freed slots.
 3. Run one forward pass for the current set.
 
-No slot waits for another sequence to finish. vLLM, TGI, TensorRT-LLM and SGLang all use it. Reported throughput gains over static batching are often several times.
+No slot waits for another sequence to finish. vLLM, TGI (Hugging Face Text Generation Inference), TensorRT-LLM and SGLang all use it. Reported throughput gains over static batching are often several times.
 
 ![Static batch with idle slots vs continuous batch refilling](/diagrams/llm-inference/05-batching/01-continuous-batching.png)
 
@@ -43,30 +43,39 @@ No slot waits for another sequence to finish. vLLM, TGI, TensorRT-LLM and SGLang
 
 Per-step time stays roughly flat while the step is memory-bound, then rises once the batch is large enough that compute or KV reads dominate.
 
-Illustrative numbers for one GPU:
+Numbers for Llama 3 8B in fp16 on one H100, each sequence holding 2,048 tokens of context. Step time = (16 GB of weights + batch × 0.27 GB of KV) / 3.35 TB/s, the formula from lesson 2 of this module:
 
 | batch | step time | tokens/s total | tokens/s per user |
 | --- | --- | --- | --- |
-| 1 | 10 ms | 100 | 100 |
-| 16 | 12 ms | 1,333 | 83 |
-| 64 | 20 ms | 3,200 | 50 |
-| 256 | 60 ms | 4,267 | 17 |
+| 1 | 4.9 ms | 204 | 204 |
+| 16 | 6.1 ms | 2,640 | 165 |
+| 64 | 9.9 ms | 6,465 | 101 |
+| 128 | 15.0 ms | 8,530 | 67 |
 
 Throughput keeps climbing with diminishing returns. Each user's speed keeps falling. A service picks a batch limit that meets its per-user speed target. KV memory also caps the batch, as computed in module 3.
 
 ![Throughput and per-user speed vs batch size](/diagrams/llm-inference/05-batching/02-batch-size-vs-latency.png)
 
-## Chunked prefill
+## Chunked prefill: the problem
 
-A new request with a 16,000-token prompt needs a large prefill. If the server runs it as one step, every decoding user waits for that step, and their token stream pauses visibly.
+Recall the two phases from module 1. **Prefill** runs all prompt tokens through the model in one pass, fills the KV cache for them and produces the first token. It is compute-bound. **Decode** produces one token per step per sequence and is memory-bound.
 
-**Chunked prefill** splits the prompt into chunks (e.g. 512 tokens) and runs one chunk per step, **mixed with** the decode tokens of other sequences. Each step has a **token budget**, such as 2,048 tokens total: decodes take 1 each, and the remainder goes to prefill chunks.
+With continuous batching, a new request's prefill runs inside a step next to everyone else's decodes. Every decoding user gets one token per step, so a step's length is the gap between their tokens.
+
+A 16,000-token prompt is about 2 × 8 × 10^9 × 16,000 ≈ 2.6 × 10^14 FLOPs for an 8B model, roughly 0.6 s on an H100. If it runs as one step, every decoding user's stream pauses for that 0.6 s, instead of the usual 10 ms or so. This pause is a **generation stall**, and it shows up as a spike in inter-token latency.
+
+## Chunked prefill: the fix
+
+**Chunked prefill** splits the prompt's prefill into pieces with a fixed number of tokens (**chunks**, e.g. 512) and runs one chunk per step, **mixed with** the decode tokens of other sequences. Each step has a **token budget**, such as 2,048 tokens: running decodes take 1 each, and the remainder goes to a prefill chunk.
 
 Effects:
 
-- decode users see steady token timing
-- the long prompt's first token arrives a bit later
-- mixed steps use the GPU better, since prefill adds compute to memory-bound decode steps
+- decode users see steady token timing, because no step is much longer than the budget allows
+- the long prompt's first token arrives a bit later, because its prefill is spread over several steps (a smaller budget means more steps: better TPOT, worse TTFT)
+- each chunk writes its own keys and values into the KV cache, and reads back the KV of the earlier chunks of the same prompt
+- mixed steps use the GPU better, since prefill adds arithmetic to memory-bound decode steps
+
+Lesson 3 of this module works through the numbers, the KV cache effects and how vLLM and Sarathi-Serve set the budget.
 
 ![Prefill split into chunks mixed with decode tokens](/diagrams/llm-inference/05-batching/03-chunked-prefill.png)
 

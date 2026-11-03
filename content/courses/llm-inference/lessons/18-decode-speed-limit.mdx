@@ -45,7 +45,8 @@ To decode faster for a single user, read fewer bytes or read them faster:
 
 - **Quantize** weights to int8 or int4 (module 7).
 - Use a GPU with more **bandwidth**.
-- **Split** the model across GPUs so each reads less (module 10).
+- **Split** each weight matrix across GPUs (tensor parallelism, module 10), so every GPU reads only
+  its share and the reads happen in parallel.
 - **Speculate**: verify several draft tokens per weight read (module 9).
 
 <Simulator

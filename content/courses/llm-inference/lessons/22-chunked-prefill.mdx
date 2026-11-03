@@ -1,23 +1,42 @@
 ---
 id: llm-inference/05-batching/03-chunked-prefill
 title: "Chunked Prefill"
-estMinutes: 4
+estMinutes: 14
 xp: 90
-fun: 3
-missionIntro: One giant prompt can freeze every running chat. Chop prefill into
-  chunks and share each step's token budget.
+fun: 4
+missionIntro: A long prompt's prefill can pause every running chat. Chunked
+  prefill splits it into fixed-size pieces and runs one piece per step,
+  next to the other users' decode tokens.
 keyIdeas:
-  - A long prefill in the same step as decodes stalls every running sequence and
-    spikes inter-token latency.
-  - Chunked prefill splits a prompt into pieces that fit a per-step token budget
-    (Sarathi-Serve).
-  - Each decode costs one token of budget, and whatever is left goes to a
-    prefill chunk.
+  - Prefill runs the whole prompt through the model and produces the first
+    token. Decode then makes one token per step for each sequence.
+  - Without chunking, a long prefill makes one very long step, and every
+    decoding user waits for it, so their inter-token latency spikes.
+  - Chunked prefill splits the prompt into chunks that fit a per-step token
+    budget. Each step runs all decodes first (1 token each), then a prefill
+    chunk with the leftover budget.
+  - A smaller budget gives shorter steps (better TPOT) but more steps for the
+    long prompt (worse TTFT). vLLM calls this budget max_num_batched_tokens.
+  - Each chunk writes its keys and values into the KV cache, and its attention
+    reads the KV of all earlier chunks of the same prompt.
 ---
+
+## Prefill and decode, again
+
+A request goes through two phases.
+
+- **Prefill**: the model reads all prompt tokens in one forward pass. It writes the key and value of every prompt token into the KV cache and produces the first output token. A prompt of n tokens means matrix multiplications with n rows, so prefill does a lot of arithmetic and is usually **compute-bound**.
+- **Decode**: every later step feeds in one new token per sequence. The step must still read all weights from memory, so decode is **memory-bound**.
+
+With continuous batching (lesson 1 of this module), one forward pass can hold decode tokens from many users plus prefill tokens of new requests. A **scheduler step** (also called an iteration) is one such forward pass. Every user who is decoding gets exactly one new token per step, so the length of a step is the gap between two of their tokens.
 
 ## The prefill stall
 
-Continuous batching mixes new prefills with ongoing decodes. A huge prefill can take hundreds of milliseconds of compute, and every decoding user waits for that whole step. Their inter-token latency spikes, and streams visibly stutter.
+Suppose 96 users are decoding and each step takes about 10 ms. Now a request arrives with an 8,192-token prompt.
+
+If the scheduler puts the whole prefill into the next step, that step must do 8,192 tokens of compute. For an 8B model that is 2 × 8 × 10^9 × 8,192 ≈ 1.3 × 10^14 FLOPs, about 330 ms on an H100 at a realistic 400 TFLOP/s.
+
+All 96 users get no token during those 330 ms. Their stream pauses for 33 normal step times, then continues. This pause is called a **generation stall** (the Sarathi-Serve paper's term). It shows up as a spike in **inter-token latency** (ITL, the gap between two streamed tokens) and in the p99 of TPOT, even if the average looks fine.
 
 <MCQ
   id="what-improves"
@@ -28,9 +47,19 @@ Continuous batching mixes new prefills with ongoing decodes. A huge prefill can 
   explanation={"Without chunking, a 10k-token prefill makes every running user wait for it. Chunking caps each step's work, so decode steps stay short and predictable. Sarathi-Serve calls these stall-free schedules."}
 />
 
-## Chop it up
+## What chunked prefill does
 
-Sarathi-Serve (OSDI 2024) splits prefills into chunks and builds each step from a fixed token budget: all running decodes first, then a prefill chunk to fill the rest. vLLM and SGLang ship this as chunked prefill.
+**Chunked prefill** splits a long prompt's prefill into pieces of a fixed number of tokens, called **chunks**, and runs one chunk per step across several steps.
+
+Each step has a **token budget**: the most tokens the step may process. The scheduler fills it in this order:
+
+1. One token for every running decode.
+2. The next chunk of any prefill that is already in progress.
+3. Chunks of new waiting requests, while budget is left.
+
+Example: budget 2,048 and 96 decodes. The decodes use 96 tokens, so this step carries a 1,952-token prefill chunk. The 8,192-token prompt finishes after 5 steps (4 × 1,952 + 384). Only the step that processes the last chunk produces the request's first output token.
+
+Sarathi-Serve (OSDI 2024) introduced this "stall-free" schedule. vLLM and SGLang ship it as chunked prefill.
 
 ![Per-step token budget: unchunked prefill causes one huge step, chunked prefill spreads it under a budget line](/diagrams/llm-inference/05-batching/03-chunked-prefill.png)
 
@@ -53,11 +82,60 @@ Sarathi-Serve (OSDI 2024) splits prefills into chunks and builds each step from 
   explanation="Each decode uses 1 token of budget: 2,048 − 96 = 1,952."
 />
 
-## How many chunks?
+## A timeline with and without chunks
 
-Chunk size trades TTFT for smooth decoding. Smaller chunks keep decode steps short, but the long prompt takes more steps to finish.
+The diagram shows the same four steps of time for two decoding users (A and B) and one new request C with a long prompt. Without chunking, C's whole prefill sits in one step and A and B wait. With chunking, every step carries A's and B's decode tokens plus one piece of C.
 
-Sources: [Sarathi-Serve](https://arxiv.org/abs/2403.02310), [vLLM chunked prefill docs](https://docs.vllm.ai/en/latest/configuration/optimization.html)
+![Timeline of scheduler steps. Top: one long step holds C's whole prefill and A and B get no tokens during it. Bottom: C's prefill is split into four chunks, each step also carries A and B decode tokens, and C's first token arrives a little later](/diagrams/llm-inference/05-batching/04-chunked-prefill-timeline.png)
+
+<Ordering
+  id="step-fill-order"
+  devices={["phone","desktop"]}
+  prompt="Put the way a stall-free scheduler fills one step's token budget in order."
+  items={["Add one token for every running decode","Add the next chunk of a prefill that is already in progress","Add chunks of new waiting requests while budget is left","Run one forward pass over the whole mixed batch"]}
+  explanation="Decodes first, so running users never stall. Then unfinished prefills, so a started request is not starved. New requests only get what is left."
+/>
+
+## Why mixing is cheap
+
+A decode-only step is memory-bound: the GPU reads all weights to do a little arithmetic per token. The arithmetic units are mostly idle.
+
+A prefill chunk adds arithmetic but almost no new weight reads, because the same weights are already being read for the decodes. So, up to a point, adding a few hundred prefill tokens to a decode step barely changes its time. Sarathi-Serve measured that the cost of the linear layers for 1 decode token is about the same as for 128 prefill tokens, and that step time stays nearly flat until the step holds a few hundred tokens.
+
+Past that point the step becomes compute-bound and its time grows with every extra token. The token budget decides where on that curve each step sits.
+
+## Chunk size: TTFT against TPOT
+
+Use a simple cost model with round numbers for an 8B model on one H100:
+
+- a step with only the decodes takes **10 ms**
+- each prefill token in the step adds **0.04 ms** (16 GFLOPs at 400 TFLOP/s)
+
+The 8,192-token prompt then needs 8,192 × 0.04 = 328 ms of prefill compute, whatever the chunk size. Each chunk also pays the 10 ms step.
+
+## The trade-off in numbers
+
+Same cost model, 8,192-token prompt:
+
+| chunk size | steps for the prompt | step time (decoders' gap) | TTFT of the long prompt |
+| --- | --- | --- | --- |
+| 8,192 (no chunking) | 1 | 10 + 328 = 338 ms | 338 ms |
+| 2,048 | 4 | 10 + 82 = 92 ms | 368 ms |
+| 512 | 16 | 10 + 20.5 = 30.5 ms | 488 ms |
+| 256 | 32 | 10 + 10.2 = 20.2 ms | 648 ms |
+
+Smaller chunks protect the decoding users (shorter gaps, better TPOT and ITL) but make the long prompt wait longer for its first token (worse TTFT). This model overstates the cost of small chunks, because real steps stay nearly flat for the first few hundred tokens, but the direction is right.
+
+<Predict
+  id="stall-ms"
+  devices={["phone","desktop"]}
+  prompt="Same cost model: 10 ms per step plus 0.04 ms per prefill token. With a chunk size of 1,024, how long is each step that carries a chunk, in ms?"
+  answer={50.96}
+  tolerance={{"mode":"relative","value":0.02}}
+  unit="ms"
+  hint="10 + 0.04 × 1,024"
+  explanation="10 + 40.96 = 50.96 ms. Each decoding user sees a 51 ms gap during those steps instead of 10 ms."
+/>
 
 <Predict
   id="chunk-count"
@@ -67,4 +145,93 @@ Sources: [Sarathi-Serve](https://arxiv.org/abs/2403.02310), [vLLM chunked prefil
   tolerance={{"mode":"absolute","value":0}}
   unit="steps"
   explanation="8,192 / 512 = 16 steps, with decodes for everyone else riding along in each one."
+/>
+
+## Tune the chunk size
+
+Move the slider to change the chunk size and watch the gap that decoding users see while the long prompt is being prefilled. The curve uses the cost model above.
+
+<SliderDiagram
+  id="gap-slider"
+  devices={["phone","desktop"]}
+  prompt="Your SLO says no decoding user may wait more than 50 ms between tokens. Find a chunk size that meets it."
+  xLabel="Chunk size (prefill tokens per step)"
+  yLabel="Step time seen by decoders"
+  unit="ms"
+  min={256}
+  max={8192}
+  step={256}
+  initial={8192}
+  points={[{"x":256,"y":20.2},{"x":512,"y":30.5},{"x":768,"y":40.7},{"x":1024,"y":51},{"x":1536,"y":71.4},{"x":2048,"y":91.9},{"x":3072,"y":132.9},{"x":4096,"y":173.8},{"x":6144,"y":255.8},{"x":8192,"y":337.7}]}
+  goal={{"op":"lte","value":50,"description":"Keep the step time at or below 50 ms."}}
+  explanation="Step time is 10 ms plus 0.04 ms per chunk token, so the chunk must be under 1,000 tokens. 768 or less works."
+/>
+
+<SliderDiagram
+  id="ttft-slider"
+  devices={["phone","desktop"]}
+  prompt="Now look at the long prompt's own TTFT. Find a chunk size that keeps it at or below 450 ms."
+  xLabel="Chunk size (prefill tokens per step)"
+  yLabel="TTFT of the 8,192-token prompt"
+  unit="ms"
+  min={256}
+  max={8192}
+  step={256}
+  initial={256}
+  points={[{"x":256,"y":647.7},{"x":512,"y":487.7},{"x":768,"y":437.7},{"x":1024,"y":407.7},{"x":1536,"y":387.7},{"x":2048,"y":367.7},{"x":3072,"y":357.7},{"x":4096,"y":347.7},{"x":6144,"y":347.7},{"x":8192,"y":337.7}]}
+  goal={{"op":"lte","value":450,"description":"Keep TTFT at or below 450 ms."}}
+  explanation="TTFT = 328 ms of prefill compute + 10 ms for each chunk. Fewer, bigger chunks pay the 10 ms fewer times. 768 tokens or more meets 450 ms."
+/>
+
+<MCQ
+  id="pick-chunk"
+  devices={["phone","desktop"]}
+  prompt="Which chunk size meets both targets: decoders' step time ≤ 50 ms and TTFT ≤ 450 ms?"
+  options={["256","768","2,048","8,192 (no chunking)"]}
+  answer={1}
+  explanation="768 gives a 40.7 ms step and a 437.7 ms TTFT. 256 is too slow for the long prompt's TTFT. 2,048 and 8,192 make the decoders wait too long."
+/>
+
+## What happens to the KV cache
+
+Chunking does not change how much KV cache a request needs in the end: 8,192 tokens × 128 KiB is still 1 GiB for Llama 3 8B. It changes when and how that cache is written and read.
+
+1. **Written piece by piece.** Each chunk computes keys and values for its own tokens and appends them to the request's KV blocks. The server only needs blocks for the chunks scheduled so far, so memory for a long prompt is taken step by step.
+2. **Earlier chunks are read again.** Chunk k uses causal attention over the whole prompt so far, so its queries must read the keys and values of chunks 1 to k − 1 back from the KV cache in HBM. The first chunk's KV is read by every later chunk, the second by all chunks after it, and so on.
+3. **Same arithmetic.** The attention FLOPs are the same as one big prefill. Only the extra KV reads are new.
+
+## How much the extra reads cost
+
+Sarathi-Serve reports that the extra reads cost little: with 2,048-token chunks the overhead is almost zero, and with 512-token chunks the total prefill takes at most about 25% longer.
+
+<Predict
+  id="kv-reread"
+  devices={["phone","desktop"]}
+  prompt="An 8,192-token prompt is prefilled in 16 chunks of 512 tokens. Chunk k reads the KV of the (k − 1) × 512 tokens before it. How many tokens' worth of KV are read again in total, across all 16 chunks?"
+  answer={61440}
+  tolerance={{"mode":"relative","value":0.01}}
+  unit="tokens"
+  hint="512 × (0 + 1 + 2 + … + 15)"
+  explanation="512 × 120 = 61,440 token-KVs. At 128 KiB each that is about 8 GB, roughly 2.4 ms of HBM time on an H100 spread over 16 steps. Small next to 328 ms of prefill compute."
+/>
+
+## How real systems use it
+
+- **Sarathi-Serve** (Agrawal et al., OSDI 2024) builds every batch as: all running decodes, then any partly done prefill, then new prefills, within a token budget picked from the latency target. They used 512 tokens for strict targets and 2,048 for relaxed ones. It served up to 2.6x more load for Mistral-7B on one A100 and up to 3.7x for Yi-34B on two A100s than vLLM at that time, under the same p99 latency targets.
+- **vLLM** (V1 engine) turns chunked prefill on by default. It schedules all pending decodes first, then prefills into the budget `max_num_batched_tokens`, chunking any prompt that does not fit. Its docs say smaller values (such as 2,048) give better ITL and larger values give better TTFT.
+- **SGLang** exposes the same idea as `--chunked-prefill-size`.
+
+## Two details from the paper
+
+Budgets should be multiples of the GPU's matmul tile size (a 257-token chunk was up to 32% slower than 256), and uniform step sizes also shrink pipeline-parallel bubbles (module 10).
+
+Sources: [Sarathi-Serve](https://arxiv.org/abs/2403.02310), [vLLM optimization and tuning](https://docs.vllm.ai/en/latest/configuration/optimization.html), [SGLang server arguments](https://docs.sglang.io/docs/advanced_features/server_arguments)
+
+<MCQ
+  id="vllm-knob"
+  devices={["phone","desktop"]}
+  prompt="Your vLLM server streams smoothly, but long-prompt users complain about TTFT. Which change to max_num_batched_tokens helps them, and what does it cost?"
+  options={["Lower it: TTFT improves, decode gaps also shrink","Raise it: long prompts finish prefill in fewer steps, but decoding users see longer gaps","Raise it: both TTFT and decode gaps shrink","It has no effect on TTFT"]}
+  answer={1}
+  explanation="A bigger budget means bigger chunks, so fewer steps for the long prompt and a lower TTFT. Each of those steps is longer, so other users' inter-token latency goes up."
 />

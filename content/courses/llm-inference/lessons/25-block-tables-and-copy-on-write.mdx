@@ -17,7 +17,7 @@ keyIdeas:
 
 ## Reference counts
 
-Each physical block records how many sequences point at it. Parallel sampling (n > 1) maps every sample's logical prompt blocks to the same physical blocks. When a sample finishes, it decrements the counts, and blocks at zero return to the free pool.
+Each physical block records how many sequences point at it: its **reference count**. **Parallel sampling** (the request parameter n > 1) means generating n different answers to one prompt. It maps every sample's logical prompt blocks to the same physical blocks. When a sample finishes, it decrements the counts, and blocks at zero return to the free pool.
 
 ![Four samples mapping shared prompt blocks (ref count 4) plus private copied blocks](/diagrams/llm-inference/06-paged-attention/02-block-tables-and-copy-on-write.png)
 
@@ -27,7 +27,7 @@ Each physical block records how many sequences point at it. Parallel sampling (n
   prompt="When does vLLM copy a KV block?"
   options={["Every time a token is generated","When a sequence appends to a block whose reference count is above 1","When the GPU runs out of memory","Never; blocks are immutable"]}
   answer={1}
-  explanation="Like fork() in an OS: share until somebody writes."
+  explanation="Blocks stay shared until a sequence needs to write into one. Only then is that one block copied, and the counts are updated."
 />
 
 ## Copy on write
