@@ -34,7 +34,7 @@ Serving engines like vLLM split cleanly into an async API front, a scheduler wit
   prompt="Which component decides each step which sequences run and how many prefill tokens to add?"
   options={["Tokenizer","Scheduler","Sampler","HTTP layer"]}
   answer={1}
-  explanation="The scheduler (with the block manager) is the brain. The model runner is the muscle."
+  explanation="The scheduler, together with the block manager, makes every decision about who runs. The model runner only executes the batch it is given."
 />
 
 ## How big?

@@ -8,7 +8,7 @@ missionIntro: Split every weight matrix across GPUs. Each layer then needs an
   all-reduce, so keep it on NVLink.
 keyIdeas:
   - Megatron-style TP splits the first MLP matrix by columns and the second by
-    rows, so each block needs one all-reduce.
+    rows, so each MLP needs one all-reduce.
   - With attention and MLP each needing one, that's 2 all-reduces per layer in
     the forward pass.
   - A ring all-reduce sends 2(N−1)/N × the tensor size per GPU, so TP lives
@@ -44,7 +44,9 @@ Megatron-LM shards the first MLP weight by columns (each GPU computes part of th
 
 ## Communication cost
 
-Each all-reduce moves about twice the activation size per GPU. That's fast on NVLink and painful across nodes.
+Each all-reduce moves about twice the activation size per GPU. The common **ring all-reduce** arranges N GPUs in a ring and cuts the tensor into N pieces. Phase 1 (reduce-scatter): in N − 1 rounds, each GPU sends one piece to its neighbour and adds the piece it receives, so each GPU ends up with the full sum of one piece. Phase 2 (all-gather): in another N − 1 rounds, the summed pieces are passed around until every GPU has all of them. Each round sends 1/N of the tensor, so each GPU sends 2(N − 1)/N times the tensor size in total.
+
+That is fast on NVLink and painful across nodes.
 
 Source: [Megatron-LM](https://arxiv.org/abs/1909.08053)
 

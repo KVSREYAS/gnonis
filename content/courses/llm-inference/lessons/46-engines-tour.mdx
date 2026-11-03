@@ -17,7 +17,7 @@ keyIdeas:
 
 ## Datacenter engines
 
-**vLLM** is the default open-source server. **SGLang** adds RadixAttention and a structured-generation frontend, and shines on prefix-heavy and agent workloads. **TensorRT-LLM** compiles models into optimised NVIDIA engines with in-flight batching and FP8/FP4.
+**vLLM** is the default open-source server. **SGLang** adds RadixAttention and a structured-generation frontend (it can force output to match a format such as a JSON schema), and shines on prefix-heavy and agent workloads. **TensorRT-LLM** compiles models into optimised NVIDIA engines with in-flight batching and FP8/FP4.
 
 ![Four engines placed on a map: datacenter vs local, flexibility vs peak NVIDIA performance](/diagrams/llm-inference/11-serving-systems/02-engines-tour.png)
 

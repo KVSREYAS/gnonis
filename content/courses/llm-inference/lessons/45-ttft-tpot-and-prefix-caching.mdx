@@ -47,7 +47,10 @@ Total time is roughly TTFT plus TPOT for every token after the first.
 ## Prefix caching
 
 If many requests start with the same system prompt, keep its KV blocks and skip that part of prefill.
-vLLM calls it automatic prefix caching, and SGLang uses a radix tree (RadixAttention).
+
+How vLLM finds a match: each **full** KV block gets a hash computed from its own tokens **and** the hash of the block before it. So two blocks have the same hash only if the whole prompt up to and including that block is the same. A new request hashes its prompt block by block, reuses every block already in the cache, and prefills only the rest. Keys and values depend on all earlier tokens, which is why the hash must cover the whole prefix and not just one block.
+
+vLLM calls this automatic prefix caching. SGLang keeps cached prefixes in a radix tree (RadixAttention), where requests with a shared beginning share a path from the root.
 
 <Predict
   id="prefix-saving"

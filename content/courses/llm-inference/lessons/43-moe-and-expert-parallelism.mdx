@@ -16,7 +16,7 @@ keyIdeas:
 
 ## Total vs active
 
-A router picks the top-k experts per token. Mixtral uses 8 experts with top-2. DeepSeek-V3 uses 256 routed experts plus 1 shared, with 8 active. You need memory for the total and bandwidth for the active.
+A router (a small linear layer with a softmax) scores every expert for each token, picks the top-k, and adds their outputs weighted by those scores. Mixtral uses 8 experts with top-2. DeepSeek-V3 uses 256 routed experts plus 1 shared, with 8 active. You need memory for the total and bandwidth for the active.
 
 ![Router sending a token to the top-2 of 8 experts, with total versus active parameter bars](/diagrams/llm-inference/10-parallelism/03-moe-and-expert-parallelism.png)
 
