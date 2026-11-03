@@ -18,6 +18,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { ZodError } from "zod";
+import YAML from "yaml";
+import { CATEGORIES, CategorySchema } from "../src/lib/content/schema";
 import { decideBaselineDiff } from "../src/lib/content/baseline";
 import { collectIdsFromRoot, diffRetiredRenames, diffVanished, idsFromCourses } from "../src/lib/content/ids";
 import { loadAllCourses, DEFAULT_CONTENT_ROOT, type ContentIssue } from "../src/lib/content/loader";
@@ -99,6 +101,13 @@ for (const c of courses)
   for (const m of c.modules)
     for (const l of m.lessons)
       if (l.fun == null) idIssues.push({ file: `${c.slug}/${m.slug}/${l.slug}`, message: "missing `fun` (1-5) in frontmatter" });
+
+// Every course names its homepage category (cs, economics, game-theory).
+for (const c of courses) {
+  const raw = YAML.parse(fs.readFileSync(path.join(DEFAULT_CONTENT_ROOT, c.slug, "course.yaml"), "utf8")) as { category?: unknown };
+  if (!CategorySchema.safeParse(raw?.category).success)
+    idIssues.push({ file: `${c.slug}/course.yaml`, message: `category must be one of ${CATEGORIES.map((x) => x.id).join(", ")}` });
+}
 
 const retired = readIdFile("content/retired-ids.yaml", getRetiredIds, idIssues, EMPTY_RETIRED);
 const renames = readIdFile("content/renames.yaml", getRenameMap, idIssues, EMPTY_RENAMES);

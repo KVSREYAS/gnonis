@@ -1,0 +1,54 @@
+---
+id: game-theory/07-auctions/00-auction-concepts
+title: 'Concepts: auction formats and bidding'
+estMinutes: 7
+xp: 60
+fun: 2
+missionIntro: The main auction types, private values, and why the best bid depends on the rules.
+keyIdeas:
+- English, Dutch, first-price sealed and second-price sealed are the four classic formats.
+- In a second-price auction, bidding your true value is a dominant strategy.
+- In a first-price auction you shade your bid below your value.
+- 'Revenue equivalence: under standard conditions all four raise the same expected revenue.'
+---
+
+## Four formats
+
+- **English**: the price rises in public until one bidder is left. Used for art and cricket player auctions.
+- **Dutch**: the price falls until someone accepts. Used for flowers in the Netherlands.
+- **First-price sealed bid**: everyone submits one secret bid. Highest bid wins and pays **its own bid**. Common in government tenders.
+- **Second-price sealed bid** (Vickrey): highest bid wins but pays the **second-highest bid**. Online ad auctions are close cousins.
+
+In a **private value** auction, each bidder knows what the item is worth to them, and values differ.
+
+## Second price: bid your value
+
+William Vickrey showed in 1961 that in a second-price auction, bidding exactly your value is a **dominant strategy**.
+
+- Bid more than your value: you only change the outcome when someone else bid between your value and your bid. Then you win and pay more than the item is worth to you.
+- Bid less: you only change the outcome when the top rival bid is between your bid and your value. Then you lose an item you would have bought at a profit.
+
+Your bid decides whether you win, never what you pay. So tell the truth.
+
+## First price: shade
+
+In a first-price auction you pay your own bid. Bid your value and your profit is zero even when you win. So you **shade**: bid below your value.
+
+How much? With n bidders whose values are spread evenly, the equilibrium bid is (n − 1)/n of your value. With 2 bidders, bid half; with 4, bid three quarters. More rivals, less shading.
+
+![Second price: bid = value. First price: bid (n−1)/n of value](/diagrams/game-theory/auction-bids.png)
+
+## Revenue equivalence and the winner's curse
+
+**Revenue equivalence**: with private values spread the same way and risk-neutral bidders, all four formats give the seller the same expected revenue. Bidders shade in first-price exactly enough to offset the second-price discount.
+
+When the item has a **common value** (an oil field worth the same to everyone, but nobody knows how much), the winner is the one who guessed highest, and often overpaid. That is the **winner's curse**. Smart bidders bid below their estimate to allow for it.
+
+<Predict
+  id="shade"
+  prompt={"First-price auction, 5 bidders with evenly spread values. Your value is ₹80. Equilibrium bid in ₹?"}
+  answer={64}
+  tolerance={{"mode": "absolute", "value": 0.5}}
+  explanation={"(5 − 1)/5 × 80 = 64."}
+  unit={"₹"}
+/>

@@ -1,0 +1,27 @@
+---
+id: game-theory/05-sequential-games/03-test-sequential
+title: 'Module test: Sequential games'
+estMinutes: 3
+xp: 150
+fun: 4
+missionIntro: A timed test on backward induction.
+kind: boss
+keyIdeas:
+- Solve from the end.
+- Non-credible threats are ignored.
+- 'Subgame perfect: a best move at every node.'
+---
+
+## Module test
+
+4 timed questions on sequential games. 3 wrong answers end the test, and you can retry as often as you like.
+
+<Boss
+  id="module-test"
+  title={"Module test: Sequential games"}
+  briefing={"4 questions, 3 minutes. 3 wrong answers end the test."}
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "mcq", "prompt": "Backward induction starts:", "options": ["At the first move", "At the last decisions", "At random", "With the biggest payoff"], "answer": 1, "explanation": "Solve the final decisions first."}, {"type": "mcq", "prompt": "In the entry game, Old's threat of a price war is:", "options": ["Credible", "Not credible", "Dominant", "Mixed"], "answer": 1, "explanation": "Old prefers sharing once New has entered."}, {"type": "predict", "prompt": "Centipede: pot 4, doubling. Taking at stage 3 (pot 16) gives the taker how many coins?", "answer": 12, "tolerance": {"mode": "absolute", "value": 0}, "explanation": "3/4 of 16.", "unit": "coins"}, {"type": "fill", "text": "An equilibrium with a best move at every decision node is called subgame {{0}}.", "chips": ["perfect", "mixed", "dominant"], "answers": ["perfect"], "explanation": "Subgame perfect equilibrium."}]}
+  explanation={"Module test passed: Sequential games."}
+/>

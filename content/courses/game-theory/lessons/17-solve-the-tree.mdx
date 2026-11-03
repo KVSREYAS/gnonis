@@ -1,0 +1,42 @@
+---
+id: game-theory/05-sequential-games/01-solve-the-tree
+title: Solve the tree
+estMinutes: 7
+xp: 100
+fun: 5
+missionIntro: Pick the move each player will really make, from the bottom up.
+keyIdeas:
+- Start with the decisions closest to the payoffs.
+- The mover compares only their own payoff.
+- Moves at unreached nodes still need an answer.
+---
+
+## How to play
+
+Each box is a decision. Tap the move the player in that box would really choose. The first number of each payoff is gold's, the second is green's. Answer **every** box, including ones that end up off the main path.
+
+Warm up with the entry game from the last lesson, then a harder product launch.
+
+<Game
+  id="entry"
+  game={"game-tree"}
+  prompt={"Solve the entry game by backward induction."}
+  config={{"tree": {"id": "new", "player": 0, "label": "enter the market?", "moves": [{"label": "Enter", "next": {"id": "old", "player": 1, "label": "how to respond?", "moves": [{"label": "Price war", "next": {"id": "l1", "payoffs": [-2, 1]}}, {"label": "Share the market", "next": {"id": "l2", "payoffs": [2, 2]}}]}}, {"label": "Stay out", "next": {"id": "l3", "payoffs": [0, 5]}}]}, "players": ["New firm", "Old firm"]}}
+  explanation={"Old would share (2 beats 1), so New compares 2 from entering with 0 from staying out, and enters."}
+/>
+
+## Now three levels
+
+In the next tree you launch a product (big, small, or not at all). Your rival then decides whether to copy you. After a big launch that gets copied, you choose whether to start a price war. Work from the bottom: what do you do after being copied? Then what does the rival do? Then what launch do you choose?
+
+<Game
+  id="launch"
+  game={"game-tree"}
+  prompt={"Solve the product launch."}
+  config={{"tree": {"id": "root", "player": 0, "label": "how to launch?", "moves": [{"label": "Big launch", "next": {"id": "b1", "player": 1, "label": "copy you?", "moves": [{"label": "Copy", "next": {"id": "a2", "player": 0, "label": "then price?", "moves": [{"label": "Price war", "next": {"id": "x1", "payoffs": [1, 1]}}, {"label": "Keep prices", "next": {"id": "x2", "payoffs": [3, 4]}}]}}, {"label": "Ignore", "next": {"id": "x3", "payoffs": [6, 2]}}]}}, {"label": "Small launch", "next": {"id": "b2", "player": 1, "label": "copy you?", "moves": [{"label": "Copy", "next": {"id": "x4", "payoffs": [2, 3]}}, {"label": "Ignore", "next": {"id": "x5", "payoffs": [4, 1]}}]}}, {"label": "Do not launch", "next": {"id": "x6", "payoffs": [0, 6]}}]}, "players": ["You", "Rival"]}}
+  explanation={"After a copied big launch you keep prices (3 beats 1). So the rival copies a big launch (4 beats 2) and copies a small one (3 beats 1). Big gives you 3, small 2, no launch 0. Launch big."}
+/>
+
+## Notice
+
+The rival copies a big launch even though ignoring would give **you** 6. And your threat of a price war after being copied is empty: when the moment comes, you would keep prices. Backward induction strips away threats and promises that nobody would follow through on.

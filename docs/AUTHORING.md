@@ -30,6 +30,7 @@ lessons:
   - hello
 tagline: One line on the card.
 level: intro            # intro | intermediate | advanced
+category: cs            # cs | economics | game-theory (required; picks the homepage shelf)
 ```
 
 `id` is the progress id for the course. Use the folder name. `lessons` lists authoring slugs (the part after `nn-` in the filename), in play order.
@@ -91,7 +92,11 @@ Body rules:
 
 Put one example in `content/courses/sample-bits-bytes/lessons/03-field-kit.mdx` so the type is exercised.
 
-Shipped tags: `MCQ`, `Fill`, `Ordering`, `Predict`, `Simulator`, `Stepper`, `Code`, `Debug`, `Boss`, `PredictReveal`, `Envelope`, `Trace`, `DragSort`, `SpotBug`, `Parsons`, `CodeBlanks`, `SliderDiagram`.
+Shipped tags: `MCQ`, `Fill`, `Ordering`, `Predict`, `Simulator`, `Stepper`, `Code`, `Debug`, `Boss`, `PredictReveal`, `Envelope`, `Trace`, `DragSort`, `SpotBug`, `Parsons`, `CodeBlanks`, `SliderDiagram`, `Game`.
+
+## Mini-games
+
+`<Game id="..." game={"pd-match"} prompt={"..."} config={{...}} explanation={"..."} />` plays one of the mini-games in `src/components/games`. Game logic is pure TypeScript in `src/lib/games` (unit-tested in `tests/unit/games.test.ts`), and each game's `config` is checked by its Zod schema in `src/lib/games/configs.ts` during `validate:content` (for example, game trees must have no ties and dominance puzzles must solve to one cell). The action bar stays disabled until the game ends; the exercise passes when the game's goal is met, and a miss offers a retry. Games: pd-match, pd-tournament, nash-hunt, dominance, ultimatum, beauty-contest, auction, centipede, game-tree, penalty-kicks, monty-hall, coordination, hawk-dove, market, lemonade, elasticity, compound, central-bank, commons, comparative-advantage, monopoly, lemons.
 
 ## Code exercises
 

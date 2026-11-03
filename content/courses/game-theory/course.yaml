@@ -1,0 +1,149 @@
+id: game-theory
+title: Game Theory
+description: 'How to think when your best move depends on everyone else''s. Dominance, Nash equilibrium,
+  mixed strategies, backward induction, repeated games, auctions and fairness, taught through games you
+  play: prisoner''s dilemma bots, Nash hunts, Monty Hall, penalty shoot-outs, beauty contests, centipedes
+  and sealed-bid auctions.'
+order: 11
+cover: grid
+prerequisites: []
+tagline: Outthink the bots.
+level: intro
+category: game-theory
+lessons:
+- games-concepts
+- monty-hall
+- test-games
+- dominance-concepts
+- delete-the-dominated
+- beauty-contest
+- test-dominance
+- nash-concepts
+- nash-hunt
+- think-like-the-crowd
+- test-nash
+- mixed-concepts
+- penalty-kicks
+- hawks-and-doves
+- test-mixed
+- sequential-concepts
+- solve-the-tree
+- centipede
+- test-sequential
+- repeated-concepts
+- beat-the-bot
+- axelrod-tournament
+- test-repeated
+- auction-concepts
+- second-price
+- first-price
+- test-auctions
+- fairness-concepts
+- ultimatum
+- shared-lake
+- test-fairness
+districts:
+- id: 01-games-and-payoffs
+  title: Games, players and payoffs
+  district: Games, players and payoffs
+  summary: What counts as a game, how to write one down as a table or a tree, and the probability you
+    need before you can play well.
+  tip: 'TIP: A game is any situation where your best move depends on what others do.'
+  art: grid
+  status: ready
+  lessons:
+  - games-concepts
+  - monty-hall
+  - test-games
+- id: 02-dominance
+  title: Dominant strategies
+  district: Dominant strategies
+  summary: Some choices are best no matter what anyone else does. Find them, delete the bad ones, and
+    watch whole games solve themselves.
+  tip: 'TIP: Never play a strictly dominated strategy.'
+  art: hills
+  status: ready
+  lessons:
+  - dominance-concepts
+  - delete-the-dominated
+  - beauty-contest
+  - test-dominance
+- id: 03-nash-equilibrium
+  title: Nash equilibrium
+  district: Nash equilibrium
+  summary: 'The central idea of game theory: a set of choices where nobody wants to change alone. Hunt
+    them in payoff tables, then play coordination games where finding the same one as the crowd is the
+    whole challenge.'
+  tip: 'TIP: Underline each player''s best reply. Cells underlined twice are equilibria.'
+  art: tower
+  status: ready
+  lessons:
+  - nash-concepts
+  - nash-hunt
+  - think-like-the-crowd
+  - test-nash
+- id: 04-mixed-strategies
+  title: Mixed strategies
+  district: Mixed strategies
+  summary: When being predictable gets you beaten, randomise. Penalty kicks, hawks and doves, and the
+    maths of keeping the other side guessing.
+  tip: 'TIP: In a mixed equilibrium, you mix so that the other player does not care what they do.'
+  art: bridge
+  status: ready
+  lessons:
+  - mixed-concepts
+  - penalty-kicks
+  - hawks-and-doves
+  - test-mixed
+- id: 05-sequential-games
+  title: Sequential games and backward induction
+  district: Sequential games and backward induction
+  summary: When moves happen in turns, solve from the end. Threats that would not be carried out do not
+    count, and sometimes logic tells you to grab the money too early.
+  tip: 'TIP: Start at the last move and work back.'
+  art: pier
+  status: ready
+  lessons:
+  - sequential-concepts
+  - solve-the-tree
+  - centipede
+  - test-sequential
+- id: 06-repeated-games
+  title: Repeated games and cooperation
+  district: Repeated games and cooperation
+  summary: Play the prisoner's dilemma again and again and cooperation can pay. Beat bots, enter Axelrod's
+    tournament, and see what noise does to trust.
+  tip: 'TIP: Be nice, retaliate, forgive, and be easy to read.'
+  art: docks
+  status: ready
+  lessons:
+  - repeated-concepts
+  - beat-the-bot
+  - axelrod-tournament
+  - test-repeated
+- id: 07-auctions
+  title: Auctions
+  district: Auctions
+  summary: 'Sealed bids, hidden values and the winner''s dilemma: bid high to win, bid low to profit.
+    Play first-price and second-price auctions against bots.'
+  tip: 'TIP: In a second-price auction, bid exactly what it is worth to you.'
+  art: skyline
+  status: ready
+  lessons:
+  - auction-concepts
+  - second-price
+  - first-price
+  - test-auctions
+- id: 08-cooperation-and-fairness
+  title: Fairness and shared resources
+  district: Fairness and shared resources
+  summary: People reject free money to punish unfairness, and groups empty shared resources they all depend
+    on. Play both, then see how real groups fix it.
+  tip: 'TIP: Real people care about fairness, and good rules make cooperation pay.'
+  art: desert
+  status: ready
+  lessons:
+  - fairness-concepts
+  - ultimatum
+  - shared-lake
+  - test-fairness

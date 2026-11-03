@@ -1,0 +1,27 @@
+---
+id: game-theory/01-games-and-payoffs/02-test-games
+title: 'Module test: Games and payoffs'
+estMinutes: 3
+xp: 150
+fun: 4
+missionIntro: A timed test on reading games.
+kind: boss
+keyIdeas:
+- Players, strategies, payoffs.
+- Matrix for simultaneous, tree for sequential.
+- 'Monty Hall: switch.'
+---
+
+## Module test
+
+4 timed questions on games and payoffs. 3 wrong answers end the test, and you can retry as often as you like.
+
+<Boss
+  id="module-test"
+  title={"Module test: Games and payoffs"}
+  briefing={"4 questions, 3 minutes. 3 wrong answers end the test."}
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "mcq", "prompt": "In a payoff cell (4, 1), the first number is:", "options": ["The column player's payoff", "The row player's payoff", "The sum", "The probability"], "answer": 1, "explanation": "Row player first."}, {"type": "mcq", "prompt": "Players move one after another and see earlier moves. Draw it as:", "options": ["A payoff matrix", "A game tree", "A bar chart", "A supply curve"], "answer": 1, "explanation": "Trees show order and information."}, {"type": "predict", "prompt": "Monty Hall with 3 doors. Chance that staying wins, in %?", "answer": 33.3, "tolerance": {"mode": "absolute", "value": 1}, "explanation": "Your first pick is right 1/3 of the time.", "unit": "%"}, {"type": "fill", "text": "A game where one player's gain equals the other's loss is called {{0}}.", "chips": ["zero-sum", "cooperative", "repeated"], "answers": ["zero-sum"], "explanation": "Payoffs always add to the same total."}]}
+  explanation={"Module test passed: Games and payoffs."}
+/>

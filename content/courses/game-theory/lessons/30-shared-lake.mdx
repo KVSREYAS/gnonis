@@ -1,0 +1,32 @@
+---
+id: game-theory/08-cooperation-and-fairness/02-shared-lake
+title: The shared lake
+estMinutes: 8
+xp: 100
+fun: 5
+missionIntro: Six boats, one lake. Catch enough to make a living without emptying it.
+keyIdeas:
+- The sustainable total catch is shared by more boats, so each share is smaller.
+- Every extra fish you take is yours, the damage is shared.
+- Others copy greed.
+---
+
+## The lake
+
+This is the tragedy of the commons as a game. The lake holds up to 1,000 fish and regrows fastest when half full: 125 new fish a season. Six boats share it, so a sustainable share is about 21 fish per boat per season.
+
+The five other boats start close to a fair share but copy any overfishing they see from you.
+
+<Game
+  id="lake6"
+  game={"commons"}
+  prompt={"Catch at least 170 fish in 10 seasons and leave at least 400 in the lake."}
+  config={{"seasons": 10, "capacity": 1000, "growth": 0.5, "bots": 5, "greed": 0.1, "maxCatch": 100, "minStock": 400, "target": 170}}
+  explanation={"About 18 to 20 a season works. At 25 or more, the others follow and the lake collapses."}
+/>
+
+## How groups fix it
+
+Elinor Ostrom studied fisheries, forests and irrigation systems that lasted for centuries. Successful ones had clear boundaries, rules made by the users, monitoring, gradual punishments for cheats, and cheap ways to settle disputes. In game terms, they turned a one-shot dilemma into a repeated game with punishment, which is exactly what makes cooperation an equilibrium.
+
+That is the end of the game theory course.

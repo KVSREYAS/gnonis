@@ -1,0 +1,27 @@
+---
+id: economics/08-central-banks/03-test-macro
+title: 'Module test: Central banks and the economy'
+estMinutes: 3
+xp: 150
+fun: 4
+missionIntro: A timed test on GDP, unemployment and monetary policy.
+kind: boss
+keyIdeas:
+- GDP counts final goods.
+- Higher policy rates cool demand.
+- Supply shocks create a trade-off.
+---
+
+## Module test
+
+5 timed questions on central banks and the economy. 3 wrong answers end the test, and you can retry as often as you like.
+
+<Boss
+  id="module-test"
+  title={"Module test: Central banks and the economy"}
+  briefing={"5 questions, 3 minutes. 3 wrong answers end the test."}
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "mcq", "prompt": "Which is counted in GDP?", "options": ["Flour a bakery buys to make bread", "A new phone bought by a consumer", "A second-hand car sale", "Shares bought on the stock market"], "answer": 1, "explanation": "A final good produced this period."}, {"type": "predict", "prompt": "50 million people work and 4 million are looking for work. Unemployment rate in %? (one decimal)", "answer": 7.4, "tolerance": {"mode": "absolute", "value": 0.1}, "explanation": "4 / 54 = 7.4%.", "unit": "%"}, {"type": "ordering", "prompt": "Order the effects of a rate rise.", "items": ["Policy rate rises", "Loan rates rise", "Spending falls", "Inflation slows"], "explanation": "Rates pass through to loans, then spending, then prices."}, {"type": "mcq", "prompt": "A supply shock causes:", "options": ["Higher inflation and higher output", "Higher inflation and lower output", "Lower inflation and higher output", "No change"], "answer": 1, "explanation": "Stagflation."}, {"type": "fill", "text": "The rate the RBI lends to banks at is the {{0}} rate.", "chips": ["repo", "savings", "GDP"], "answers": ["repo"], "explanation": "The main policy rate in India."}]}
+  explanation={"Module test passed: Central banks and the economy."}
+/>

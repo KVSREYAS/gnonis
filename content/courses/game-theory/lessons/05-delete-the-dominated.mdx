@@ -1,0 +1,32 @@
+---
+id: game-theory/02-dominance/01-delete-the-dominated
+title: Delete the dominated
+estMinutes: 6
+xp: 100
+fun: 5
+missionIntro: A 3×3 puzzle. Tap rows and columns to delete dominated strategies until one cell is left.
+keyIdeas:
+- Look for a row that is worse in every remaining column.
+- Then check the column player's payoffs (green).
+- Order can matter for what looks deletable, not for the final answer.
+---
+
+## How to play
+
+Rows are your strategies (your payoffs in gold). Columns are the other player's (their payoffs in green). Tap a row to delete it only if another remaining row gives you **more in every remaining column**. Tap a column only if another remaining column gives **them** more in every remaining row.
+
+Wrong taps cost a mistake. Two mistakes and you replay.
+
+<Game
+  id="solve-3x3"
+  game={"dominance"}
+  prompt={"Delete dominated strategies until one cell is left."}
+  config={{"rows": ["Top", "Middle", "Bottom"], "cols": ["Left", "Centre", "Right"], "payoffs": [[[1, 0], [1, 2], [0, 1]], [[0, 1], [0, 3], [-1, 2]], [[0, 3], [0, 1], [2, 0]]], "maxMistakes": 2}}
+  explanation={"Right is dominated by Centre for the column player. Then Middle and Bottom are dominated by Top. Then Left is dominated by Centre. Top/Centre is the answer."}
+/>
+
+## What you just did
+
+No strategy here was dominant at the start. But Right was always worse than Centre for the column player, so a rational column player never plays it. Once you know that, Bottom stops being attractive for you, and once Bottom is gone, Left stops being attractive for them.
+
+Each step used one more layer of reasoning about the other player's reasoning. The next game tests how many layers real people use.

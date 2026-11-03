@@ -1,0 +1,38 @@
+---
+id: game-theory/07-auctions/02-first-price
+title: First-price auction
+estMinutes: 7
+xp: 100
+fun: 5
+missionIntro: Now you pay what you bid. How much do you shade?
+keyIdeas:
+- Bid below your value.
+- With 4 bidders, about 3/4 of your value is the equilibrium bid.
+- Shading too much loses items, too little leaves no profit.
+---
+
+## How to play
+
+Same values and same rivals, but now the winner pays **their own** bid. The bots shade to about 3/4 of their values, with some noise. Make at least ₹15 profit over 10 rounds.
+
+<Game
+  id="sealed"
+  game={"auction"}
+  prompt={"First-price, 10 rounds, 4 bidders. Make at least ₹15 profit."}
+  config={{"format": "first", "rounds": 10, "bidders": 4, "target": 15}}
+  explanation={"Bidding about 3/4 of your value balances winning often enough against keeping a margin when you win."}
+/>
+
+## Compare
+
+If you averaged your profit per round in both formats, they were probably close. That is revenue equivalence from the buyer's side: the seller gets about the same either way, so bidders do too.
+
+Real sellers still choose formats carefully: first-price is harder to rig with fake bids, second-price is easier for bidders to get right.
+
+<MCQ
+  id="format"
+  prompt={"Which format makes truthful bidding a dominant strategy?"}
+  options={["First-price sealed", "Second-price sealed", "Dutch", "All of them"]}
+  answer={1}
+  explanation={"You pay the second bid, so your bid only decides whether you win."}
+/>

@@ -9,6 +9,7 @@ cover: tower
 prerequisites: []
 tagline: From RAII to a forward pass.
 level: intermediate
+category: cs
 lessons:
 - lifetime-concepts
 - raii-scope-guards

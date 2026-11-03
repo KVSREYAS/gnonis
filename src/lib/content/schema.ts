@@ -51,6 +51,15 @@ export const DistrictSchema = z
   });
 export type DistrictMeta = z.infer<typeof DistrictSchema>;
 
+/** Homepage shelf for a course. Order here is the order on the homepage. */
+export const CATEGORIES = [
+  { id: "cs", label: "CS" },
+  { id: "economics", label: "Economics" },
+  { id: "game-theory", label: "Game Theory" },
+] as const;
+export const CategorySchema = z.enum(["cs", "economics", "game-theory"]);
+export type Category = z.infer<typeof CategorySchema>;
+
 export const CourseSchema = z
   .object({
     id: slug,
@@ -63,6 +72,8 @@ export const CourseSchema = z
     lessons: z.array(slug).default([]),
     tagline: text.optional(),
     level: z.enum(["intro", "intermediate", "advanced"]).default("intermediate"),
+    /** Homepage category. validate:content requires it. */
+    category: CategorySchema.optional(),
     districts: z.array(DistrictSchema).optional(),
   })
   .strict()

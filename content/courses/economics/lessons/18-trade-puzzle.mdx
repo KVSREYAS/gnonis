@@ -1,0 +1,35 @@
+---
+id: economics/05-trade/01-trade-puzzle
+title: 'Trade puzzle: feed both islands'
+estMinutes: 8
+xp: 100
+fun: 5
+missionIntro: Neither island can meet its needs alone. Split the hours and set up a trade so both do.
+keyIdeas:
+- First find who has the lower opportunity cost of each good.
+- Let each specialise (fully or mostly) in that good.
+- Trade at a price between the two costs.
+---
+
+## The puzzle
+
+Two islands, 10 working hours a day each.
+
+- **Asha** makes 4 kg rice or 2 m cloth per hour.
+- **Ben** makes 1 kg rice or 3 m cloth per hour.
+
+Asha needs 20 kg rice and 12 m cloth. Ben needs 8 kg rice and 14 m cloth. Try it alone first: neither can manage. Then specialise and trade. Set how much rice Asha sends Ben and the cloth price per kg.
+
+<Game
+  id="islands"
+  game={"comparative-advantage"}
+  prompt={"Meet both islands' needs. Both \"ends with\" boxes must turn green."}
+  config={{"goods": ["kg rice", "m cloth"], "a": {"name": "Asha", "hours": 10, "perHour": [4, 2]}, "b": {"name": "Ben", "hours": 10, "perHour": [1, 3]}, "needA": [20, 12], "needB": [8, 14]}}
+  explanation={"One answer: Asha spends 7 hours on rice (28 kg) and 3 on cloth (6 m). Ben spends all 10 hours on cloth (30 m). Asha sends 8 kg at 1 m per kg. Asha ends with 20 kg and 14 m, Ben with 8 kg and 22 m. Any price from 0.75 to 2 works here."}
+/>
+
+## Why it worked
+
+Alone, each island can only reach a mix on its own frontier. Asha would need 11 hours to cover her needs, Ben nearly 13. By specialising, the total of both goods goes up, because each hour goes to whoever gives up the least to make that good.
+
+The trade price splits the gain. A price near Asha's cost (0.5) gives most of the gain to Ben, a price near Ben's (3) gives most to Asha. Any price in between leaves both better off than going alone.

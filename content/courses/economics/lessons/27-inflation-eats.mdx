@@ -1,0 +1,42 @@
+---
+id: economics/07-money-and-inflation/02-inflation-eats
+title: Inflation eats savings
+estMinutes: 6
+xp: 100
+fun: 4
+missionIntro: A fixed deposit that looks safe can still lose value.
+keyIdeas:
+- Negative real rates mean savings lose buying power.
+- High inflation hurts savers and helps borrowers with fixed-rate loans.
+- Expected inflation is built into interest rates.
+---
+
+## Who wins and who loses
+
+Unexpected inflation moves wealth around:
+
+- **Savers and lenders lose** when the interest rate does not keep up.
+- **Borrowers with fixed rates gain**, because they repay with rupees that buy less.
+- **People on fixed incomes lose**, such as pensions not linked to prices.
+
+When lenders expect inflation, they ask for higher nominal rates to protect the real rate. This link is called the **Fisher effect**.
+
+<Game
+  id="lose-race"
+  game={"compound"}
+  prompt={"Your aunt keeps ₹10 lakh in a 6.5% deposit for 20 years and adds nothing. Move inflation to find a rate where she still ends with at least ₹10 lakh in today's money."}
+  config={{"start": 1000000, "monthly": 0, "rate": 6.5, "inflation": 8, "years": 20, "goalReal": 1000000, "locked": ["start", "monthly", "rate", "years"]}}
+  explanation={"She keeps her real value only if inflation is at or below 6.5%, the deposit rate. Above it, the real value shrinks every year."}
+/>
+
+## Takeaway
+
+A deposit is safe in nominal terms: the number never falls. In real terms it can lose value every year that inflation is above the interest rate, and tax on the interest makes it worse. That is why long-term savers often hold assets whose returns have tended to beat inflation, while keeping deposits for short-term needs.
+
+<MCQ
+  id="fisher"
+  prompt={"Lenders expect inflation to rise from 4% to 7%. Nominal loan rates will probably:"}
+  options={["Fall", "Rise by about 3 points", "Stay the same", "Fall to zero"]}
+  answer={1}
+  explanation={"Lenders protect the real rate."}
+/>

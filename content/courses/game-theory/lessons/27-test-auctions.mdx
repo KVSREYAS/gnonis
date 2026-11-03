@@ -1,0 +1,27 @@
+---
+id: game-theory/07-auctions/03-test-auctions
+title: 'Module test: Auctions'
+estMinutes: 3
+xp: 150
+fun: 4
+missionIntro: A timed test on auctions.
+kind: boss
+keyIdeas:
+- 'Second price: bid your value.'
+- 'First price: shade by (n − 1)/n.'
+- Winner's curse in common-value auctions.
+---
+
+## Module test
+
+4 timed questions on auctions. 3 wrong answers end the test, and you can retry as often as you like.
+
+<Boss
+  id="module-test"
+  title={"Module test: Auctions"}
+  briefing={"4 questions, 3 minutes. 3 wrong answers end the test."}
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "mcq", "prompt": "In a second-price auction you value the item at ₹50. Best bid?", "options": ["₹40", "₹50", "₹60", "₹0"], "answer": 1, "explanation": "Truthful bidding is dominant."}, {"type": "predict", "prompt": "First-price, 2 bidders, evenly spread values. Your value ₹90. Equilibrium bid in ₹?", "answer": 45, "tolerance": {"mode": "absolute", "value": 0.5}, "explanation": "(2 − 1)/2 × 90 = 45.", "unit": "₹"}, {"type": "mcq", "prompt": "The winner's curse happens when:", "options": ["Values are private", "The item's value is common but uncertain", "There is only one bidder", "Bids are public"], "answer": 1, "explanation": "The highest guess wins and often overpaid."}, {"type": "fill", "text": "A price that falls until someone accepts is a {{0}} auction.", "chips": ["Dutch", "English", "Vickrey"], "answers": ["Dutch"], "explanation": "Used for Dutch flower markets."}]}
+  explanation={"Module test passed: Auctions."}
+/>

@@ -1,0 +1,41 @@
+---
+id: game-theory/04-mixed-strategies/02-hawks-and-doves
+title: Hawks and doves
+estMinutes: 6
+xp: 100
+fun: 5
+missionIntro: Evolutionary game theory. Set the prize and the cost of fighting, and watch a population evolve.
+keyIdeas:
+- Hawks fight for a prize V, and fights cost C to the loser.
+- 'When C > V, neither pure type takes over: the stable share of hawks is V/C.'
+- A strategy that cannot be invaded is an evolutionarily stable strategy (ESS).
+---
+
+## The game
+
+John Maynard Smith and George Price (1973) used game theory for animal conflict. Animals compete for a resource worth **V**.
+
+- **Hawk** always fights. Two hawks fight: one wins V, the other pays the injury cost **C**. On average each gets (V − C)/2.
+- **Dove** displays and backs off. Hawk vs dove: hawk takes V, dove gets 0. Two doves share: V/2 each.
+
+Strategies that earn more than average spread through the population over generations.
+
+## The stable mix
+
+If C is bigger than V, a population of all hawks fights itself to pieces, so doves do better and grow. A population of all doves is easy to exploit, so hawks grow. The population settles where both earn the same: a share of hawks equal to **V/C**.
+
+![Starting from 5% or 95% hawks, the share converges to V/C = 40%](/diagrams/game-theory/hawk-dove.png)
+
+That stable mix is an **evolutionarily stable strategy**: a small group of mutants playing differently cannot do better.
+
+<Game
+  id="evolve"
+  game={"hawk-dove"}
+  prompt={"Set V and C so that the population settles with 25% to 35% hawks."}
+  config={{"start": 0.1, "lo": 0.25, "hi": 0.35, "generations": 150}}
+  explanation={"Any V and C with V/C around 0.3 works, such as V = 3, C = 10."}
+/>
+
+## Takeaway
+
+Mixed equilibria can describe a population rather than one random player: 30% of the animals play hawk, 70% dove. The same idea is used for strategies in markets and for which behaviours survive in a group.

@@ -1,0 +1,27 @@
+---
+id: game-theory/04-mixed-strategies/03-test-mixed
+title: 'Module test: Mixed strategies'
+estMinutes: 3
+xp: 150
+fun: 4
+missionIntro: A timed test on mixing.
+kind: boss
+keyIdeas:
+- Mix to make the other side indifferent.
+- Expected payoff is a probability-weighted average.
+- Hawk-dove settles at V/C.
+---
+
+## Module test
+
+4 timed questions on mixed strategies. 3 wrong answers end the test, and you can retry as often as you like.
+
+<Boss
+  id="module-test"
+  title={"Module test: Mixed strategies"}
+  briefing={"4 questions, 3 minutes. 3 wrong answers end the test."}
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "mcq", "prompt": "In a mixed equilibrium, your mix is chosen to make:", "options": ["Your own payoff as high as possible in every cell", "The other player indifferent between their options", "The game zero-sum", "Both players cooperate"], "answer": 1, "explanation": "The indifference rule."}, {"type": "predict", "prompt": "Hawk-dove with V = 2 and C = 8. Stable share of hawks, in %?", "answer": 25, "tolerance": {"mode": "absolute", "value": 0.5}, "explanation": "V/C = 2/8 = 25%.", "unit": "%"}, {"type": "predict", "prompt": "You win ₹100 with chance 0.25 and ₹20 otherwise. Expected payoff in ₹?", "answer": 40, "tolerance": {"mode": "absolute", "value": 0.5}, "explanation": "0.25 × 100 + 0.75 × 20 = 25 + 15 = 40.", "unit": "₹"}, {"type": "mcq", "prompt": "In matching pennies, the equilibrium mix is:", "options": ["Always heads", "50% heads, 50% tails", "Always tails", "75% heads"], "answer": 1, "explanation": "Any other mix can be exploited."}]}
+  explanation={"Module test passed: Mixed strategies."}
+/>

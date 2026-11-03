@@ -2,11 +2,13 @@ import { Scene } from "@/components/art";
 import { CourseCard } from "@/components/course-card";
 import { getCourses } from "@/lib/content/loader";
 import { summarizeCourse } from "@/lib/content/types";
+import { CATEGORIES } from "@/lib/content/schema";
 
 const TIPS = [
   "Decode at batch size 1 is a race against memory bandwidth, not FLOPs.",
   "The KV cache, not the weights, usually decides how many users fit on a GPU.",
   "Every lesson card is about two minutes. Every module ends with a test.",
+  "In a one-shot prisoner's dilemma, defecting is dominant. Repeat the game and cooperation can pay.",
 ];
 
 export default function Home() {
@@ -20,10 +22,10 @@ export default function Home() {
           <div className="max-w-2xl rounded-xl bg-ink/90 p-5 sm:p-7">
             <p className="text-sm font-bold tracking-widest text-gold-ink uppercase">Gnosis</p>
             <h1 className="mt-1 font-display text-5xl leading-[0.95] tracking-wide text-foreground sm:text-7xl">
-              LEARN HOW MODELS <span className="text-gold-ink">ACTUALLY RUN</span>
+              LEARN HOW THINGS <span className="text-gold-ink">ACTUALLY WORK</span>
             </h1>
             <p className="mt-4 max-w-[60ch] text-lg text-foreground">
-              Short cards, instant feedback, real numbers. Go from tokens and attention to KV caches and rooflines, one lesson at a time.
+              Short cards, instant feedback, real numbers, and games you can play. Computer science, economics and game theory, one lesson at a time.
             </p>
           </div>
         </div>
@@ -33,11 +35,22 @@ export default function Home() {
         <h2 id="packs" className="font-display text-3xl tracking-wide text-foreground">
           CHOOSE A COURSE
         </h2>
-        <div className="mt-5 grid gap-4 md:grid-cols-2">
-          {courses.map((c) => (
-            <CourseCard key={c.slug} course={c} />
-          ))}
-        </div>
+        {CATEGORIES.map((cat) => {
+          const list = courses.filter((c) => c.category === cat.id);
+          if (!list.length) return null;
+          return (
+            <div key={cat.id} className="mt-8" data-testid={`category-${cat.id}`}>
+              <h3 className="border-b border-border pb-2 text-sm font-bold tracking-widest text-gold-ink uppercase">
+                {cat.label} <span className="text-muted-foreground">· {list.length} course{list.length > 1 ? "s" : ""}</span>
+              </h3>
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                {list.map((c) => (
+                  <CourseCard key={c.slug} course={c} />
+                ))}
+              </div>
+            </div>
+          );
+        })}
         <p className="mt-8 border-t border-border pt-4 text-base text-muted-foreground">
           <span className="font-display tracking-widest text-gold-ink">TIP:</span> {TIPS[0]}
         </p>

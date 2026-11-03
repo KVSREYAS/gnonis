@@ -124,6 +124,8 @@ export function exerciseBrief(exercise: Exercise): string {
         `Goal on screen: ${exercise.goal.description}`,
         "The curve samples and the numeric target are not included here.",
       ]);
+    case "game":
+      return bullets([exercise.prompt, `Interactive mini-game: ${exercise.game}. The learner plays it on screen; its settings and winning moves are not included here.`]);
     default: {
       const unreachable: never = exercise;
       return unreachable;

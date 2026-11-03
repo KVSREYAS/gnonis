@@ -1,0 +1,27 @@
+---
+id: game-theory/03-nash-equilibrium/03-test-nash
+title: 'Module test: Nash equilibrium'
+estMinutes: 3
+xp: 150
+fun: 4
+missionIntro: A timed test on equilibria.
+kind: boss
+keyIdeas:
+- No player gains by changing alone.
+- Coordination games have several equilibria.
+- Some games have no pure equilibrium.
+---
+
+## Module test
+
+4 timed questions on nash equilibrium. 3 wrong answers end the test, and you can retry as often as you like.
+
+<Boss
+  id="module-test"
+  title={"Module test: Nash equilibrium"}
+  briefing={"4 questions, 3 minutes. 3 wrong answers end the test."}
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "mcq", "prompt": "A Nash equilibrium is a profile where:", "options": ["Total payoff is highest", "No player can gain by changing only their own choice", "Everyone cooperates", "One player wins"], "answer": 1, "explanation": "The definition."}, {"type": "predict", "prompt": "How many pure-strategy Nash equilibria does the stag hunt have?", "answer": 2, "tolerance": {"mode": "absolute", "value": 0}, "explanation": "Stag/Stag and Hare/Hare."}, {"type": "predict", "prompt": "How many pure-strategy Nash equilibria does matching pennies have?", "answer": 0, "tolerance": {"mode": "absolute", "value": 0}, "explanation": "Whoever is losing always wants to switch."}, {"type": "mcq", "prompt": "People meet at the clock tower at noon without talking. Schelling called this:", "options": ["A dominant strategy", "A focal point", "A mixed strategy", "A sunk cost"], "answer": 1, "explanation": "An equilibrium that stands out."}]}
+  explanation={"Module test passed: Nash equilibrium."}
+/>

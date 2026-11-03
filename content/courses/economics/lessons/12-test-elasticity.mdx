@@ -1,0 +1,27 @@
+---
+id: economics/03-elasticity/03-test-elasticity
+title: 'Module test: Elasticity'
+estMinutes: 3
+xp: 150
+fun: 4
+missionIntro: A timed test on elasticity and revenue.
+kind: boss
+keyIdeas:
+- Elastic above 1, inelastic below 1.
+- 'Inelastic: price up, revenue up.'
+- Substitutes and time make demand more elastic.
+---
+
+## Module test
+
+5 timed questions on elasticity. 3 wrong answers end the test, and you can retry as often as you like.
+
+<Boss
+  id="module-test"
+  title={"Module test: Elasticity"}
+  briefing={"5 questions, 3 minutes. 3 wrong answers end the test."}
+  timeLimit={180}
+  playerHp={3}
+  parts={[{"type": "mcq", "prompt": "Price +10%, quantity −25%. Demand is:", "options": ["Inelastic", "Elastic", "Unit elastic", "Perfectly inelastic"], "answer": 1, "explanation": "25/10 = 2.5 > 1."}, {"type": "mcq", "prompt": "Which is most likely inelastic?", "options": ["A particular brand of jeans", "Cinema tickets", "Electricity for a household", "Restaurant dinners"], "answer": 2, "explanation": "Few substitutes and needed daily."}, {"type": "predict", "prompt": "Price ₹8 → ₹12, quantity 60 → 40 (midpoint). Elasticity?", "answer": 1.0, "tolerance": {"mode": "absolute", "value": 0.05}, "explanation": "%ΔQ = 20/50 = 40%, %ΔP = 4/10 = 40%. Ratio 1."}, {"type": "mcq", "prompt": "Demand is elastic. To raise revenue, the seller should:", "options": ["Raise the price", "Cut the price", "Keep the price", "Stop selling"], "answer": 1, "explanation": "Quantity rises by more than the price falls."}, {"type": "fill", "text": "Over a {{0}} time horizon demand is usually {{1}} elastic.", "chips": ["longer", "shorter", "more", "less"], "answers": ["longer", "more"], "explanation": "People find substitutes given time."}]}
+  explanation={"Module test passed: Elasticity."}
+/>

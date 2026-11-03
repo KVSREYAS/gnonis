@@ -1,0 +1,47 @@
+---
+id: game-theory/06-repeated-games/00-repeated-concepts
+title: 'Concepts: the shadow of the future'
+estMinutes: 7
+xp: 60
+fun: 2
+missionIntro: Why repetition changes the prisoner's dilemma, and the strategies that do well.
+keyIdeas:
+- In a repeated game the same players meet many times.
+- The threat of future punishment can sustain cooperation.
+- 'Tit for tat: cooperate first, then copy the other''s last move.'
+- Mistakes (noise) can trap strict strategies in long feuds.
+---
+
+## One shot versus repeated
+
+In a **one-shot** prisoner's dilemma, defecting dominates. In a **repeated game**, the same players play the same game many times, and each can react to what the other did before.
+
+Now defecting today has a cost: the other player can punish you tomorrow. If the future matters enough, cooperation can be an equilibrium. Robert Axelrod called this **the shadow of the future**.
+
+If both know exactly when the game ends, backward induction unravels cooperation from the last round. Unknown or very long horizons keep it alive.
+
+## Strategies
+
+A strategy in a repeated game is a rule for every situation. Some classics:
+
+- **Always defect** / **always cooperate**.
+- **Grim trigger**: cooperate until the other defects once, then defect forever.
+- **Tit for tat**: cooperate first, then copy the other's last move.
+- **Tit for two tats**: defect only after two defections in a row.
+- **Pavlov** (win-stay, lose-shift): repeat your last move if it scored 3 or 5, switch if it scored 0 or 1.
+
+## Axelrod's tournaments
+
+In 1980 Robert Axelrod invited game theorists to submit strategies for a computer prisoner's dilemma tournament. Each played every other for 200 rounds. The winner, both times, was the shortest entry: **tit for tat**, by Anatol Rapoport.
+
+![Why tit for tat did well: nice, retaliating, forgiving, clear](/diagrams/game-theory/axelrod-traits.png)
+
+Tit for tat never beats its opponent in a single match. It wins on total points, by drawing many others into mutual cooperation.
+
+<MCQ
+  id="tft"
+  prompt={"Tit for tat's opponent defected last round. Tit for tat now:"}
+  options={["Cooperates", "Defects", "Randomises", "Quits"]}
+  answer={1}
+  explanation={"It copies the last move."}
+/>

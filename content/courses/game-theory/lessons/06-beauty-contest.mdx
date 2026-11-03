@@ -1,0 +1,41 @@
+---
+id: game-theory/02-dominance/02-beauty-contest
+title: Guess 2/3 of the average
+estMinutes: 7
+xp: 100
+fun: 5
+missionIntro: The Keynesian beauty contest. Beat a crowd of bots that think a few steps ahead, but not forever.
+keyIdeas:
+- Iterated dominance says everyone should pick 0.
+- 'Real people stop after one or two steps: guesses cluster near 33 and 22.'
+- The winning move is one step deeper than the crowd, not all the way to 0.
+---
+
+## The game
+
+Everyone picks a whole number from 0 to 100. The winner is whoever is closest to **2/3 of the average** of all picks.
+
+John Maynard Keynes used a newspaper beauty contest in 1936 to describe stock markets: you win not by picking what you like, but what you think others will pick. Rosemarie Nagel ran this number version as a lab experiment in 1995.
+
+## Levels of thinking
+
+- **Level 0** picks at random, averaging 50.
+- **Level 1** expects level 0 and picks 2/3 × 50 ≈ 33.
+- **Level 2** expects level 1 and picks 2/3 × 33 ≈ 22.
+- Repeat forever and you reach **0**, the only Nash equilibrium.
+
+![Level 0 at 50, level 1 at 33, level 2 at 22, equilibrium at 0](/diagrams/game-theory/beauty-levels.png)
+
+In Nagel's experiment the first-round average was about 37, and nobody picked 0. Picking 0 in round 1 loses.
+
+<Game
+  id="contest"
+  game={"beauty-contest"}
+  prompt={"Four rounds against 40 bots. Finish in the top 3 in any round."}
+  config={{"rounds": 4, "fraction": 0.6667, "crowd": 40}}
+  explanation={"Round 1 winners usually pick around 20 to 25. In later rounds the crowd anchors on the last target, so go a bit below it."}
+/>
+
+## The lesson
+
+Game theory's answer (0) is right only if everyone is fully rational and everyone knows that everyone is. When that fails, the best play is to model the people you are actually playing against. In repeated rounds the crowd learns, and guesses fall toward 0, just as Nagel's data showed.

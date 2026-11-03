@@ -1,0 +1,40 @@
+---
+id: economics/08-central-banks/02-chair-oil
+title: 'Run the central bank: oil shock'
+estMinutes: 8
+xp: 100
+fun: 5
+missionIntro: A supply shock pushes inflation up and growth down at the same time. Choose your pain.
+keyIdeas:
+- Supply shocks raise inflation and lower output together.
+- Fighting the inflation deepens the slowdown.
+- Letting it run risks unanchoring expectations.
+---
+
+## The hard case
+
+A **supply shock** is a sudden change in production costs, such as an oil price spike. It raises inflation **and** slows the economy at the same time. This mix is called **stagflation**.
+
+No rate setting fixes both. Raise rates and the slowdown gets worse. Hold rates down and inflation feeds into expectations and stays high. The 1970s oil shocks went badly partly because central banks let expectations drift up.
+
+<Game
+  id="oil"
+  game={"central-bank"}
+  prompt={"Oil prices spike in quarter 3 and again in quarter 4. Keep the average miss score at 4 or below."}
+  config={{"quarters": 12, "maxAvgLoss": 4, "shocks": [{"quarter": 3, "demand": 0, "supply": 3, "news": "Oil price spike: transport and power costs jump."}, {"quarter": 4, "demand": -0.5, "supply": 2, "news": "Second round: firms pass on higher costs."}]}}
+  explanation={"A firm but not extreme rise in rates stops inflation expectations from running away, at the price of a short rise in unemployment."}
+/>
+
+## Takeaway
+
+Central banks often "look through" a one-off supply shock if expectations stay anchored, and act firmly if inflation starts feeding into wages and expected prices. Credibility built in calm years is what makes that possible.
+
+That is the end of the economics course. The game theory course is next door if you want more strategy.
+
+<MCQ
+  id="stag"
+  prompt={"An oil shock raises inflation and unemployment. Raising the policy rate will:"}
+  options={["Lower both", "Lower inflation but raise unemployment more", "Raise inflation", "Have no effect"]}
+  answer={1}
+  explanation={"It trades one problem for the other."}
+/>

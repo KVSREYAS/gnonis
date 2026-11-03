@@ -1,0 +1,36 @@
+---
+id: economics/04-firms-and-markets/01-stand-week
+title: 'Lemonade stand: the full week'
+estMinutes: 8
+xp: 100
+fun: 5
+missionIntro: Seven days, changing weather, real costs. Beat ₹3,000 of profit.
+keyIdeas:
+- Set price near the profit-maximising level, then match cups to expected demand.
+- 'A heatwave is a demand shift: more cups, same best price.'
+- Unsold cups are a pure loss.
+---
+
+## The full stand
+
+Same rules as module 1, now for a week:
+
+- Each cup costs ₹5 to make, sold or not.
+- Nobody pays ₹40 or more.
+- Customers by weather: rainy 30, cloudy 60, sunny 100, heatwave 150, before price puts some off.
+
+The forecast is exact. At a price p, the share who buy is (1 − p/40). Use that to choose how many cups to make.
+
+<Game
+  id="week"
+  game={"lemonade"}
+  prompt={"Make at least ₹3,000 profit in 7 days."}
+  config={{"days": 7, "costPerCup": 5, "maxPrice": 40, "target": 3000, "seed": 23}}
+  explanation={"The best price is about ₹22 every day, whatever the weather. Weather changes how many cups to make: about 44% of the day's customers at that price."}
+/>
+
+## Why the best price did not change
+
+With a fixed cost per cup and demand that scales up and down with the weather, the profit-maximising price is the same every day. Weather moves the demand curve outward, so you sell more cups at the same price.
+
+That is MR = MC in a small form: the price where one more rupee of price stops paying off depends on the shape of demand and the cost per cup, not on the crowd size.

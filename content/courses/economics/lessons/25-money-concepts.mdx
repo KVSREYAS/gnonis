@@ -1,0 +1,54 @@
+---
+id: economics/07-money-and-inflation/00-money-concepts
+title: 'Concepts: inflation, interest and real value'
+estMinutes: 7
+xp: 60
+fun: 2
+missionIntro: The numbers behind every savings decision.
+keyIdeas:
+- Inflation is the rise in the general price level, measured by a price index such as CPI.
+- Nominal values are in the rupees of the time. Real values adjust for inflation.
+- Real interest rate ≈ nominal rate − inflation.
+- Compounding means earning returns on past returns.
+---
+
+## Inflation and price indexes
+
+**Inflation** is the rate at which the general level of prices rises, usually per year. If inflation is 5%, a basket that cost ₹1,000 last year costs ₹1,050 now.
+
+It is measured with a **price index**: the cost of a fixed basket of goods relative to a base year. India's main measure is the **Consumer Price Index (CPI)**, published monthly by the National Statistics Office. The RBI's target is 4% CPI inflation, with a band of 2% to 6%.
+
+## Nominal and real
+
+- **Nominal**: measured in the rupees of the time. Your salary slip is nominal.
+- **Real**: adjusted for inflation, measured in rupees of a fixed year, so it shows what the money can buy.
+
+If your salary rises 8% and inflation is 6%, your real salary rose about 2%.
+
+The same goes for interest. The **real interest rate** ≈ nominal rate − inflation. A 7% fixed deposit with 6% inflation earns about 1% in real terms, before tax.
+
+<Predict
+  id="real-rate"
+  prompt={"Your savings account pays 3.5% and inflation is 5%. Real return, in %?"}
+  answer={-1.5}
+  tolerance={{"mode": "absolute", "value": 0.1}}
+  explanation={"3.5 − 5 = −1.5%. Your money buys less each year."}
+  unit={"%"}
+/>
+
+## Compound interest
+
+**Simple interest** pays only on the original amount. **Compound interest** pays on the original plus all interest already earned, so growth speeds up over time.
+
+After n years at rate r, ₹1 becomes (1 + r)ⁿ.
+
+The **rule of 72**: money doubles in about 72 ÷ r years. At 8% that is 9 years, at 12% about 6 years. Over long periods small differences in r make huge differences, and so does starting early.
+
+<Predict
+  id="rule72"
+  prompt={"About how many years does money take to double at 6% a year?"}
+  answer={12}
+  tolerance={{"mode": "absolute", "value": 0.5}}
+  explanation={"72 ÷ 6 = 12."}
+  unit={"years"}
+/>

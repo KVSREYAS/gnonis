@@ -1,0 +1,39 @@
+---
+id: economics/03-elasticity/02-price-hunt
+title: Find the revenue peak
+estMinutes: 6
+xp: 100
+fun: 4
+missionIntro: A straight-line demand curve is elastic at the top and inelastic at the bottom. Find where revenue peaks.
+keyIdeas:
+- On a straight-line demand curve elasticity changes along the line.
+- Revenue peaks where elasticity equals 1, the midpoint of the line.
+- Profit peaks at a higher price than revenue when costs are positive.
+---
+
+## Elasticity changes along a line
+
+On a straight-line demand curve the slope is constant, but elasticity is not. At high prices and low quantities, a ₹1 change is a small % of price and a big % of quantity, so demand is elastic. Near the bottom it is the reverse.
+
+Revenue rises as you cut price in the elastic part and falls in the inelastic part. It peaks exactly in the middle, where elasticity = 1.
+
+<Game
+  id="rev-peak"
+  game={"monopoly"}
+  prompt={"You sell an app. Each extra download costs you nothing. Find the price that brings in the most money."}
+  config={{"a": 400, "b": 2, "c": 0, "tolerance": 0.04}}
+  explanation={"With zero cost, profit equals revenue. On demand P = 400 − 2Q revenue peaks at P = 200, the midpoint, where elasticity is exactly 1."}
+/>
+
+## Why it matters
+
+A seller in the inelastic part of demand is leaving money on the table: raising the price brings in more revenue and sells fewer units, so costs fall too. That is why a firm with pricing power never chooses a price in the inelastic part of its demand curve. You will use this in the monopoly lesson.
+
+<Predict
+  id="midpoint"
+  prompt={"Demand is P = 120 − 3Q. At what price is revenue largest?"}
+  answer={60}
+  tolerance={{"mode": "absolute", "value": 0.5}}
+  explanation={"Revenue peaks at the midpoint of the line: half of 120."}
+  unit={"₹"}
+/>

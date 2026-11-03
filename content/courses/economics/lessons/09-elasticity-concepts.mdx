@@ -1,0 +1,71 @@
+---
+id: economics/03-elasticity/00-elasticity-concepts
+title: 'Concepts: price elasticity of demand'
+estMinutes: 6
+xp: 60
+fun: 2
+missionIntro: A precise measure of how sensitive buyers are to price.
+keyIdeas:
+- Price elasticity of demand = % change in quantity demanded / % change in price (as a positive number).
+- 'Above 1 is elastic: buyers react strongly. Below 1 is inelastic.'
+- Goods with close substitutes, luxuries and long time horizons are more elastic.
+- If demand is inelastic, raising the price raises revenue.
+---
+
+## The definition
+
+**Price elasticity of demand** measures how much the quantity demanded changes when the price changes:
+
+elasticity = (% change in quantity) ÷ (% change in price)
+
+It is negative because price and quantity move in opposite directions, so we usually drop the sign.
+
+- **Elastic** (above 1): a 10% price rise cuts quantity by more than 10%.
+- **Inelastic** (below 1): a 10% rise cuts quantity by less than 10%.
+- **Unit elastic** (exactly 1): the two percentages match.
+
+![Steep demand is inelastic, flat demand is elastic](/diagrams/economics/elasticity.png)
+
+## Midpoint method
+
+Percent changes depend on the starting point: ₹10 to ₹12 is +20%, but ₹12 to ₹10 is −17%. The **midpoint method** divides by the average of the two values so the answer is the same either way:
+
+% change in Q = (Q₁ − Q₀) ÷ ((Q₀ + Q₁)/2)
+
+Example: price ₹10 → ₹12, quantity 100 → 80.
+% ΔQ = −20 ÷ 90 = −22.2%. % ΔP = 2 ÷ 11 = 18.2%. Elasticity = 22.2 ÷ 18.2 ≈ 1.22, so elastic.
+
+<Predict
+  id="mid-calc"
+  prompt={"Price goes from ₹50 to ₹70, quantity from 300 to 260. Elasticity by the midpoint method? (two decimals)"}
+  answer={0.43}
+  tolerance={{"mode": "absolute", "value": 0.02}}
+  explanation={"%ΔQ = −40/280 = −14.3%. %ΔP = 20/60 = 33.3%. 14.3/33.3 ≈ 0.43, inelastic."}
+/>
+
+## What makes demand elastic
+
+Demand is more elastic when:
+
+1. **Close substitutes exist.** One brand of biscuits is elastic; food as a whole is not.
+2. **It is a large share of your budget.** A 10% rise in rent hurts; a 10% rise in salt goes unnoticed.
+3. **It is a want, not a need.** Holidays are more elastic than insulin.
+4. **Buyers have time.** Over years people can buy a fuel-efficient car; tomorrow they cannot.
+
+## Elasticity and revenue
+
+Revenue = price × quantity. When the price rises, the first term goes up and the second goes down. Which wins?
+
+- **Inelastic demand**: quantity falls less than price rises, so revenue **rises**.
+- **Elastic demand**: quantity falls more, so revenue **falls**.
+- **Unit elastic**: revenue stays the same.
+
+This is why governments tax cigarettes and fuel. Demand is inelastic, so the tax raises a lot of money without cutting sales much.
+
+<MCQ
+  id="rev-check"
+  prompt={"A metro raises fares 20% and ridership falls 5%. Fare revenue:"}
+  options={["Falls", "Rises", "Stays the same", "Cannot tell"]}
+  answer={1}
+  explanation={"5% < 20%, so demand is inelastic and revenue rises."}
+/>

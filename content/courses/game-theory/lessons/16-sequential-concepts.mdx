@@ -1,0 +1,49 @@
+---
+id: game-theory/05-sequential-games/00-sequential-concepts
+title: 'Concepts: trees, backward induction and credible threats'
+estMinutes: 7
+xp: 60
+fun: 2
+missionIntro: How to solve a game with turns, and why some threats are empty.
+keyIdeas:
+- In a sequential game, later players see earlier moves.
+- 'Backward induction: solve the last decision first, then step back.'
+- A subgame perfect equilibrium has a best move at every decision point, even ones not reached.
+- A threat that would hurt the player making it is not credible.
+---
+
+## Backward induction
+
+In a **sequential game** players move one after another, and each sees what was done before.
+
+To solve one, use **backward induction**:
+
+1. Go to every last decision in the tree. Pick the move that gives the mover the highest payoff.
+2. Replace that decision with the payoffs it leads to.
+3. Step back one level and repeat, until you reach the first move.
+
+The result is called a **subgame perfect equilibrium**: every player makes a best move at every point where they might have to move.
+
+## Credible and empty threats
+
+![Entry game: New enters, Old shares, payoffs (2, 2)](/diagrams/game-theory/entry-tree.png)
+
+An old firm says: "If you enter, I start a price war." Would it? If New has entered, a price war gives Old 1 and sharing gives Old 2. Old would share. So the threat is **not credible**, and New should enter.
+
+A **credible threat** is one the player would really carry out when the time comes. To make a threat credible, firms commit in advance: build extra capacity, sign contracts, or burn bridges.
+
+## First-mover advantage and commitment
+
+Moving first can help when it lets you commit. If you can take an action the other player sees and cannot ignore, you shape their best reply.
+
+But moving first can also hurt, when the second mover learns from your move. In rock-paper-scissors played in turns, going first loses every time.
+
+Backward induction tells you which case you are in.
+
+<MCQ
+  id="threat"
+  prompt={"A landlord threatens to evict you if you are a day late, but eviction would cost him three months of lost rent. Is the threat credible?"}
+  options={["Yes, he said it", "No, carrying it out would hurt him more than ignoring a day's delay", "Yes, if he is angry", "Only on weekends"]}
+  answer={1}
+  explanation={"Once you are a day late, evicting is worse for him than waiting."}
+/>

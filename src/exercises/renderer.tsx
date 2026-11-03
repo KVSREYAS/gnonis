@@ -8,6 +8,7 @@ import { Renderer as CodeBlanksRenderer } from "./code-blanks/renderer";
 import { Renderer as DebugRenderer } from "./debug/renderer";
 import { Renderer as DragSortRenderer } from "./drag-sort/renderer";
 import { Renderer as EnvelopeRenderer } from "./envelope/renderer";
+import { Renderer as GameRenderer } from "./game/renderer";
 import { Renderer as FillRenderer } from "./fill/renderer";
 import { Renderer as McqRenderer } from "./mcq/renderer";
 import { Renderer as OrderingRenderer } from "./ordering/renderer";
@@ -39,6 +40,7 @@ const RENDERERS: { [T in ExerciseType]: ComponentType<WidgetProps<Extract<Exerci
   parsons: ParsonsRenderer,
   "code-blanks": CodeBlanksRenderer,
   "slider-diagram": SliderDiagramRenderer,
+  game: GameRenderer,
 };
 
 export function ExerciseRenderer(props: WidgetProps<Exercise>) {

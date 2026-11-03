@@ -153,3 +153,15 @@ The server compiles your function and the tests as one program. Run uses the sam
   hints={["The tests already define main and CHECK. You only write add.","Use long long. 2e9 + 2e9 does not fit in a 32-bit int."]}
   explanation="The tests and your function compile as one translation unit. CHECK stops at the first miss and prints that line. The last check needs a 64-bit sum."
 />
+
+## Mini-game
+
+`Game` runs a playable mini-game from `src/lib/games`. The `game` prop picks it and `config` sets it up. It grades when the game ends.
+
+<Game
+  id="monty-sample"
+  game={"monty-hall"}
+  prompt={"Play three rounds, then run the simulator."}
+  config={{"doors": 3, "minPlays": 3}}
+  explanation={"Switching wins 2 times in 3."}
+/>

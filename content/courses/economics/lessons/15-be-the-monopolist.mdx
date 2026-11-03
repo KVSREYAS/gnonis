@@ -1,0 +1,41 @@
+---
+id: economics/04-firms-and-markets/02-be-the-monopolist
+title: Be the monopolist
+estMinutes: 6
+xp: 100
+fun: 5
+missionIntro: You are the only seller in town. Find the profit-maximising price, then see what it costs everyone else.
+keyIdeas:
+- Monopoly price with linear demand P = a − bQ and cost c is (a + c)/2.
+- Buyers lose surplus, and some value is lost entirely.
+- Competition would price at c.
+---
+
+## Your market
+
+You hold the only licence to run ferries across a river. Demand is P = 100 − Q (Q is trips a day), and each trip costs ₹20 in fuel and wages.
+
+The game shows units sold, your profit, **buyers' surplus** (how much more buyers would have paid than they did, added up) and **deadweight loss**. Find the price with the highest profit.
+
+<Game
+  id="ferry"
+  game={"monopoly"}
+  prompt={"Find the profit-maximising ferry fare."}
+  config={{"a": 100, "b": 1, "c": 20, "tolerance": 0.03}}
+  explanation={"MR = 100 − 2Q. Setting MR = MC = 20 gives Q = 40 and price ₹60. A competitive market would price at ₹20 and run 80 trips."}
+/>
+
+## The cost of market power
+
+At ₹60 you earn ₹1,600 a day. Buyers' surplus is ₹800, and ₹800 of possible gains is lost (the deadweight loss triangle). Under competition at ₹20, buyers' surplus would be ₹3,200 and nothing would be lost.
+
+This is why governments use **competition law**: to stop mergers that create monopolies, and to regulate natural monopolies like power grids.
+
+<Predict
+  id="mono-q"
+  prompt={"Demand P = 200 − 2Q, marginal cost ₹40. Monopoly price?"}
+  answer={120}
+  tolerance={{"mode": "absolute", "value": 0.5}}
+  explanation={"(a + c)/2 = (200 + 40)/2 = 120."}
+  unit={"₹"}
+/>

@@ -1,0 +1,30 @@
+---
+id: game-theory/07-auctions/01-second-price
+title: Second-price auction
+estMinutes: 6
+xp: 100
+fun: 5
+missionIntro: Ten rounds of sealed bids. You pay the runner-up's bid. Find out why honesty pays.
+keyIdeas:
+- Bid exactly your value.
+- Overbidding can make you win at a loss.
+- Underbidding only loses deals you wanted.
+---
+
+## How to play
+
+Each round you see your value for the item. Three bots also have private values, and in this format they bid them. Submit a sealed bid. If you win, you pay the second-highest bid and your profit is your value minus that price. End with at least ₹15 profit over 10 rounds.
+
+Try overbidding once just to see it go wrong.
+
+<Game
+  id="vickrey"
+  game={"auction"}
+  prompt={"Second-price, 10 rounds, 4 bidders. Make at least ₹15 profit."}
+  config={{"format": "second", "rounds": 10, "bidders": 4, "target": 15}}
+  explanation={"Bidding exactly your value never loses money and wins whenever winning is profitable."}
+/>
+
+## What happened
+
+Every time you bid your value you either won at a price below your value, or lost to someone who valued it more. Overbidding only mattered when it made you win at a price above your value. That is the dominant-strategy argument, played out.
