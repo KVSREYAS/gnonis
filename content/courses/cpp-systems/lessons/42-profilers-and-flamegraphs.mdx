@@ -3,18 +3,13 @@ id: cpp-systems/11-perf/02-profilers-and-flamegraphs
 title: "Profilers and Flame Graphs"
 estMinutes: 8
 xp: 100
-missionIntro: "Don't guess where time goes. perf record samples the stack about 1,000 times a second, and a flame graph shows you the fat."
+fun: 3
+missionIntro: "Don't guess where time goes. perf record samples the stack about 1,000 times a second, and a flame graph shows which functions take the most time."
 keyIdeas:
   - "`perf stat` gives counters (cycles, instructions, IPC, cache-misses, branch-misses). `perf record -g` plus `perf report` samples call stacks."
   - "Flame graphs: width is time on CPU, and the y-axis is stack depth. Look for wide plateaus."
   - "IPC well below 1 usually means memory stalls. Near 3–4 means you're compute-bound."
 ---
-
-## Mission briefing
-
-The Pier has CCTV. Watch the tape before accusing anyone.
-
-**Mission:** read a profile.
 
 ## Read the counters
 

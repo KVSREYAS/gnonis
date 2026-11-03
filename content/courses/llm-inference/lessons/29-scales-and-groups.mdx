@@ -1,8 +1,9 @@
 ---
 id: llm-inference/07-quantization/02-scales-and-groups
-title: "Scales and Groups: Packing the Crates"
+title: "Scales and Groups"
 estMinutes: 4
 xp: 90
+fun: 5
 missionIntro: Quantization maps floats to a small integer grid with a scale.
   Pick the scale per tensor, per channel or per group.
 keyIdeas:
@@ -13,12 +14,6 @@ keyIdeas:
   - "Group size g with an fp16 scale adds 16/g bits per weight: int4 with g =
     128 costs 4.125 bits."
 ---
-
-## Mission briefing
-
-The smuggling crates hold 256 slots (int8) or 16 slots (int4). Your cargo comes in every size imaginable.
-
-**Mission:** choose a ruler (the scale) so nothing important gets crushed.
 
 ## The scale
 

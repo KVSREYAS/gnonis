@@ -3,18 +3,13 @@ id: cpp-systems/oop/03-static-operators-and-friends
 title: "Static Members, Encapsulation, Operators and Friends"
 estMinutes: 8
 xp: 90
-missionIntro: "Static members belong to the class, not to any one object. Operator overloading lets your types use + and ==, and friends get a key to the private room."
+fun: 4
+missionIntro: "Static members belong to the class, not to any one object. Operator overloading lets your types use + and ==, and a friend function can read private members."
 keyIdeas:
   - "A static data member is shared by every object of the class. Access it as `Car::count`."
   - "Encapsulation: keep data private and expose getters and setters that enforce the rules."
   - "Overload operators like `+`, `==` and `<<` so your types read naturally. A friend function can see private members."
 ---
-
-## Mission briefing
-
-The garage keeps one shared logbook for every car on the lot, and the cars want to be added together like numbers. Weird garage.
-
-**Mission:** make it happen.
 
 ## Static members
 

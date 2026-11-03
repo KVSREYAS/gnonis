@@ -3,18 +3,13 @@ id: cpp-systems/10-simd/01-auto-vectorization
 title: "Auto-Vectorisation"
 estMinutes: 8
 xp: 100
+fun: 3
 missionIntro: "Write simple, aliasing-free loops over contiguous data and the compiler emits SIMD for you. Then check that it did."
 keyIdeas:
   - "SSE2 is baseline on x86-64 (128-bit, 4 floats). AVX2 is 256-bit (8 floats) and needs -mavx2 or -march."
   - "Vectorisation blockers: possible aliasing, non-contiguous access, loop-carried dependencies, function calls, and FP reductions without -ffast-math or -fassociative-math."
   - "Check with -fopt-info-vec (GCC), -Rpass=loop-vectorize (Clang) or Compiler Explorer."
 ---
-
-## Mission briefing
-
-SIMD Speedway: one instruction, many lanes. The compiler will happily drive, as long as the road is straight.
-
-**Mission:** build straight roads.
 
 ## Lanes
 

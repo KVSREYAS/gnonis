@@ -3,8 +3,9 @@ id: llm-inference/03-kv-cache/01-why-cache
 title: Why cache keys and values?
 estMinutes: 3
 xp: 60
+fun: 3
 missionIntro: Decoding re-reads the past at every step. Recomputing it each time
-  would be absurdly wasteful.
+  would repeat the same work.
 keyIdeas:
   - A token's key and value never change once computed, because the causal mask
     keeps the past fixed.
@@ -13,12 +14,6 @@ keyIdeas:
   - Queries are not cached, because only the newest token's query is ever used
     again.
 ---
-
-## Mission briefing
-
-Re-reading the whole story to write one more word isn't diligence. It's a bug.
-
-**Mission:** Stop re-telling the whole Grove Street history before every sentence. Stash the past and move on.
 
 ## The waste
 

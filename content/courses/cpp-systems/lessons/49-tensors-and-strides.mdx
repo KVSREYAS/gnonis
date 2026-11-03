@@ -3,18 +3,13 @@ id: cpp-systems/13-capstone/01-tensors-and-strides
 title: "Tensors, Shapes and Strides"
 estMinutes: 9
 xp: 110
+fun: 5
 missionIntro: "A tensor is a flat buffer plus a shape and strides. Transpose and slice become metadata changes with no copying."
 keyIdeas:
   - "Row-major strides: stride[last] = 1 and stride[i] = stride[i+1] × shape[i+1]."
   - "offset(i, j, k) = i·s0 + j·s1 + k·s2. A transpose swaps strides and copies nothing."
   - "Non-contiguous views are fine to read, but kernels usually want contiguous inputs, so call .contiguous() first."
 ---
-
-## Mission briefing
-
-The Capstone Heist: run a tiny transformer layer in pure C++. First, the vault's floor plan, which is shapes and strides.
-
-**Mission:** address any element of any tensor.
 
 ## Strides
 

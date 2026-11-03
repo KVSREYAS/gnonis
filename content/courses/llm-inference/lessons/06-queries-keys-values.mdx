@@ -3,18 +3,13 @@ id: llm-inference/02-attention/01-queries-keys-values
 title: Queries, keys and values
 estMinutes: 4
 xp: 60
+fun: 3
 missionIntro: Scaled dot-product attention in three projections and one softmax.
 keyIdeas:
   - Each token's hidden state is projected into a query, a key and a value.
   - Scores are dot products of the query with every key, scaled by 1/sqrt(d_k).
   - The output is the softmax-weighted average of the values.
 ---
-
-## Mission briefing
-
-Each token walks in with a question (query). Every earlier token wears a name tag (key) and carries a briefcase (value).
-
-**Mission:** Every token in this bar is asking around. Find out who answers, and what they hand over.
 
 ## Three projections
 
@@ -25,8 +20,8 @@ multiplied by three learned matrices:
 - **Key** $k = xW_K$: what this token offers to be found by.
 - **Value** $v = xW_V$: what this token hands over if chosen.
 
-Think of a search engine. Your query is matched against document keys, and you read back a blend
-of the matching documents' contents.
+The query is compared with every key. The better a key matches, the more of its value goes into
+the output.
 
 ## Scores, softmax, mix
 

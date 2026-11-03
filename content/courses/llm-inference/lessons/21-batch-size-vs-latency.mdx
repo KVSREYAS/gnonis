@@ -1,10 +1,11 @@
 ---
 id: llm-inference/05-batching/02-batch-size-vs-latency
-title: The Batch-Size Bargain
+title: Batch Size vs Latency
 estMinutes: 4
 xp: 90
+fun: 5
 missionIntro: Bigger batches buy throughput almost for free, until the KV cache
-  and the compute roof send the bill.
+  or the compute limit slows each step.
 keyIdeas:
   - A decode step reads the weights once for the whole batch, plus every
     sequence's KV cache.
@@ -14,13 +15,7 @@ keyIdeas:
     reads grow.
 ---
 
-## Mission briefing
-
-The bus company wants more riders per trip. Every extra passenger costs almost nothing... until their luggage (the KV cache) fills the aisle.
-
-**Mission:** price the batch-size bargain before Big Smoke does it for you.
-
-## Same weights, more riders
+## Same weights, more sequences
 
 In a memory-bound decode step the GPU streams all the weights from HBM once, whatever the batch size. Each sequence in the batch reuses that same read. So going from batch 1 to batch 16 costs a little extra KV reading and almost nothing else.
 
@@ -35,7 +30,7 @@ Total bytes per step = weights + Σ (context × KV bytes per token).
   explanation={"The 16 GB weight read dominates and is shared, so each step costs about the same. You get 16 tokens per step instead of 1."}
 />
 
-## The luggage bill
+## The KV cache cost
 
 Long contexts change the maths. At batch 64 with 2k tokens each, the KV cache is bigger than the weights, so step time roughly doubles. Push further and you either run out of memory or cross the roofline ridge into compute-bound territory.
 

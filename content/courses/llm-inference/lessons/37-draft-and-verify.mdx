@@ -1,8 +1,9 @@
 ---
 id: llm-inference/09-speculative-decoding/01-draft-and-verify
-title: "Speculative Decoding: The Getaway Driver Guesses Ahead"
+title: "Speculative Decoding: Draft and Verify"
 estMinutes: 3
 xp: 100
+fun: 3
 missionIntro: A cheap draft model proposes several tokens; the big model
   verifies them all in one pass, with the output distribution unchanged.
 keyIdeas:
@@ -12,12 +13,6 @@ keyIdeas:
   - With per-token acceptance rate alpha and gamma drafted tokens, expected
     tokens per target pass = (1 - alpha^(gamma+1)) / (1 - alpha).
 ---
-
-## Mission briefing
-
-Big Smoke takes forever to decide every turn. So a kid on a BMX rides ahead and shouts four turns at
-once. Smoke checks them all in one glance, keeps the right ones, and corrects the first wrong one. Same
-route, fewer pauses.
 
 ## Guess, then check
 
@@ -64,7 +59,7 @@ Speculation spends spare compute to save memory-bound steps.
   explanation={"Speculation spends spare compute. At high batch there is no spare compute left, so the extra verification work can slow you down."}
 />
 
-## Street wisdom
+## Variants
 
 Variants worth knowing: Medusa (extra decoding heads), EAGLE (feature-level drafting) and prompt-lookup
 or n-gram drafting.

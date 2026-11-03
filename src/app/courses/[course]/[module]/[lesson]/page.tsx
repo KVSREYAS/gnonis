@@ -48,6 +48,7 @@ export default async function LessonPage({ params }: PageProps<"/courses/[course
           title: lesson.title,
           kind: lesson.kind,
           xp: lesson.xp,
+          fun: lesson.fun,
           keyIdeas: lesson.keyIdeas,
           district: mod.district,
           moduleIndex: mod.index,

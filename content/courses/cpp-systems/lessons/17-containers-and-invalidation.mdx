@@ -3,18 +3,13 @@ id: cpp-systems/05-stl/01-containers-and-invalidation
 title: "Containers, Growth and Invalidation"
 estMinutes: 8
 xp: 90
+fun: 3
 missionIntro: "Pick containers by access pattern, reserve when you know the size, and never hold an iterator across a reallocation."
 keyIdeas:
   - "std::vector is the default: contiguous, cache-friendly, amortised O(1) push_back (libstdc++ doubles capacity)."
   - "Reallocation invalidates all iterators, pointers and references into the vector. reserve() avoids it."
   - "Node-based containers (std::map, std::list, std::unordered_map nodes) keep element addresses stable but chase pointers."
 ---
-
-## Mission briefing
-
-STL Strip sells containers. The salesman always pushes the vector, and he's usually right.
-
-**Mission:** learn when his warranty is void.
 
 ## Growth
 

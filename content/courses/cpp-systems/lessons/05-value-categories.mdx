@@ -3,18 +3,13 @@ id: cpp-systems/02-move/01-value-categories
 title: "Value Categories and std::move"
 estMinutes: 7
 xp: 90
+fun: 3
 missionIntro: "lvalues have names, prvalues are fresh temporaries, xvalues are about to expire. std::move is only a cast."
 keyIdeas:
   - "Every expression has a value category: lvalue, prvalue or xvalue (glvalue = lvalue + xvalue, rvalue = prvalue + xvalue)."
   - "std::move(x) is static_cast<T&&>(x). It moves nothing by itself; the overload it selects does."
   - "A named rvalue reference is itself an lvalue inside the function."
 ---
-
-## Mission briefing
-
-At the Move Motel, guests either have a name on the register (lvalues) or are just passing through (rvalues). The receptionist decides who can be robbed of their luggage.
-
-**Mission:** learn which guests are fair game.
 
 ## Overloads pick the category
 

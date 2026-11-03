@@ -207,7 +207,7 @@ describe("loader", () => {
     expect(llm.modules[0].lessons[0].slug).toBe("00-concepts");
     const token = llm.modules[0].lessons[1];
     expect(token.slug).toBe("01-what-is-a-token");
-    expect(token.blocks.filter((b) => b.kind === "card").some((b) => b.kind === "card" && b.title === "Mission briefing")).toBe(true);
+    expect(token.blocks.filter((b) => b.kind === "card").some((b) => b.kind === "card" && b.title === "Text in, numbers out")).toBe(true);
     const diagrams = llm.modules
       .flatMap((m) => m.lessons)
       .flatMap((l) => l.blocks)

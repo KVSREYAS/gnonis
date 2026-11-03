@@ -3,6 +3,7 @@ id: llm-inference/03-kv-cache/02-sizing-the-cache
 title: Sizing the KV cache
 estMinutes: 3
 xp: 80
+fun: 3
 missionIntro: One formula tells you how many bytes every token costs. Learn it by heart.
 keyIdeas:
   - KV bytes per token = 2 x layers x kv_heads x head_dim x bytes per element.
@@ -11,12 +12,6 @@ keyIdeas:
   - Multiply by context length and by concurrent sequences, and it quickly
     rivals the weights.
 ---
-
-## Mission briefing
-
-128 KiB per token sounds tiny. Then a hundred users show up with 8k-token chats.
-
-**Mission:** The docks charge by the byte. Weigh one token's cargo exactly, or it goes in the water.
 
 ## The formula
 

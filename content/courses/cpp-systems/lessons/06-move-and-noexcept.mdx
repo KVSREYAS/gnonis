@@ -3,18 +3,13 @@ id: cpp-systems/02-move/02-move-and-noexcept
 title: "Moves, noexcept and vector Growth"
 estMinutes: 8
 xp: 100
+fun: 5
 missionIntro: "std::vector only moves elements during reallocation if the move constructor is noexcept. Otherwise it copies."
 keyIdeas:
   - "On reallocation std::vector uses std::move_if_noexcept to keep its strong exception guarantee."
   - "A move constructor that isn't noexcept (and a copyable type) means every growth copies every element."
   - "Mark move operations noexcept (Core Guidelines C.66), and `= default` gets it right automatically."
 ---
-
-## Mission briefing
-
-The motel is expanding. Every guest has to change rooms. Move their luggage (cheap) or photocopy every item (expensive)? The manager only trusts movers who swear they'll never drop anything: `noexcept`.
-
-**Mission:** count the photocopies.
 
 ## Count the copies
 

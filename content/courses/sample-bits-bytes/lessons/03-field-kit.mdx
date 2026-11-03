@@ -1,19 +1,16 @@
 ---
 id: sample-bits-bytes/01-number-formats/03-field-kit
-title: Field kit
+title: Exercise types
 estMinutes: 10
 xp: 40
-missionIntro: A field kit of small missions, including a C++ program you compile on the server.
+fun: 5
+missionIntro: A set of short exercises of every type, including a C++ program you compile on the server.
 keyIdeas:
   - Guess first, then let the chart show the real bar.
   - A back-of-the-envelope sum is just the facts, multiplied once.
-  - Reorder, tap the bad line, or fill the blank. Same respect either way.
+  - Reorder, tap the bad line, or fill the blank. Each counts the same.
   - Run tries a sample or your own input. Submit is what counts.
 ---
-
-## Mission briefing
-
-The kit in the trunk is new. Each tool does one job. Try them in order, and the bay stays open.
 
 ## Guess the footprint
 
@@ -32,7 +29,7 @@ A 7 billion parameter model in bf16 is 2 bytes a weight. That is 14 GB of weight
   explanation="7e9 parameters times 2 bytes is 14 GB. The gold bar is bf16."
 />
 
-## Cache on a napkin
+## Cache size estimate
 
 One token of KV cache is layers, times kv heads, times head dim, times bytes, times 2 for K and V.
 

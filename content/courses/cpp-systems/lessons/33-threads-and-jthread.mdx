@@ -3,18 +3,13 @@ id: cpp-systems/09-concurrency/01-threads-and-jthread
 title: "Threads, jthread and Stop Tokens"
 estMinutes: 8
 xp: 100
+fun: 5
 missionIntro: "std::jthread joins itself and carries a stop token, which makes it RAII for threads. Plain std::thread calls std::terminate if you forget to join."
 keyIdeas:
   - "Destroying a joinable std::thread calls std::terminate."
   - "std::jthread (C++20) joins in its destructor and passes a std::stop_token for cooperative cancellation."
   - "Share data by mutex (std::scoped_lock for several at once) or hand off ownership. Never race."
 ---
-
-## Mission briefing
-
-Concurrency Casino: many players, one table. The house has one rule: settle up before you leave.
-
-**Mission:** never walk out without joining.
 
 ## Spot the terminate
 

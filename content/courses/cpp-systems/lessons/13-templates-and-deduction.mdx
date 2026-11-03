@@ -3,18 +3,13 @@ id: cpp-systems/04-templates/01-templates-and-deduction
 title: "Templates and Type Deduction"
 estMinutes: 7
 xp: 90
+fun: 4
 missionIntro: "Function templates deduce T from the arguments. Know the three deduction cases and CTAD."
 keyIdeas:
   - "For `T` by value, deduction drops references and top-level const. For `T&` it keeps const. For `T&&` it's forwarding."
   - "auto uses the same rules as template deduction (except for braced initialisers)."
   - "Class template argument deduction (C++17) deduces class templates from constructors: `std::vector v{1, 2, 3};`."
 ---
-
-## Mission briefing
-
-Template Town builds anything to order, but the foreman guesses your measurements from what you hand him.
-
-**Mission:** know exactly what he'll guess.
 
 ## Deduction cases
 

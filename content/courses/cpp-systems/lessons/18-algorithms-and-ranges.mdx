@@ -3,18 +3,13 @@ id: cpp-systems/05-stl/02-algorithms-and-ranges
 title: "Algorithms and Ranges"
 estMinutes: 8
 xp: 90
+fun: 4
 missionIntro: "Raw loops hide intent. Algorithms and C++20 ranges say what you mean, and the compiler still inlines everything."
 keyIdeas:
   - "Prefer algorithms to raw loops: std::sort, partition, nth_element, accumulate, transform (Sean Parent: \"no raw loops\")."
   - "nth_element is O(n) on average and finds the k-th element. partial_sort gives sorted top-k."
   - "C++20 ranges compose lazily: `v | views::filter(f) | views::transform(g)` allocates nothing."
 ---
-
-## Mission briefing
-
-The STL Strip has 100+ algorithms on the shelf. Most programmers use three.
-
-**Mission:** shoplift a few more.
 
 ## Pipelines
 

@@ -1,15 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Check, Clock, FastForward, Monitor, Play, Skull } from "lucide-react";
+import { ArrowLeft, Check, Clock, FastForward, Monitor, Play, ClipboardCheck } from "lucide-react";
 import { Scene } from "@/components/art";
+import { FunBadge } from "@/components/fun-badge";
 import { useProgress } from "@/components/providers";
 import { buttonVariants } from "@/components/ui/button";
 import type { ModuleSummary } from "@/lib/content/types";
 import { skippedExerciseCount } from "@/lib/progress/logic";
 import { cn } from "@/lib/utils";
 
-/** Full-screen "loading screen" card for a district, with its tip line and mission list. */
+/** Full-screen intro card for a module, with its tip line and lesson list. */
 export function ModuleIntro({ courseSlug, courseTitle, mod }: { courseSlug: string; courseTitle: string; mod: ModuleSummary }) {
   const { state } = useProgress();
   const next = mod.lessons.find((l) => !state.lessons[l.key]) ?? mod.lessons[0];
@@ -22,16 +23,16 @@ export function ModuleIntro({ courseSlug, courseTitle, mod }: { courseSlug: stri
         <div className="decor absolute inset-0 -z-10 bg-gradient-to-t from-ink via-ink/60 to-transparent" />
         <div className="mx-auto w-full max-w-4xl px-4 pt-6 pb-28 sm:px-6 sm:pb-10">
           <Link href={`/courses/${courseSlug}`} className="tap mb-4 inline-flex items-center gap-1.5 rounded-lg bg-ink/90 px-3 text-base font-bold text-foreground">
-            <ArrowLeft className="size-5" /> {courseTitle} map
+            <ArrowLeft className="size-5" /> {courseTitle}
           </Link>
           <div className="rounded-xl bg-ink/92 p-5 sm:p-7">
             <p className="text-sm font-bold tracking-widest text-gold-ink uppercase">
-              District {String(mod.index).padStart(2, "0")} · {mod.district}
+              Module {String(mod.index).padStart(2, "0")}
             </p>
             <h1 className="mt-1 font-display text-5xl leading-none tracking-wide text-foreground sm:text-6xl">{mod.title.toUpperCase()}</h1>
             <p className="mt-3 max-w-[62ch] text-lg text-foreground">{mod.summary}</p>
 
-            <ol className="mt-5 grid gap-2" aria-label="Missions in this district">
+            <ol className="mt-5 grid gap-2" aria-label="Lessons in this module">
               {mod.lessons.map((l, i) => {
                 const complete = !!state.lessons[l.key];
                 const boss = l.kind === "boss";
@@ -51,7 +52,7 @@ export function ModuleIntro({ courseSlug, courseTitle, mod }: { courseSlug: stri
                           complete ? "bg-gold text-ink" : boss ? "bg-panel-2 text-danger" : "bg-panel-2 text-muted-foreground",
                         )}
                       >
-                        {complete ? <Check className="size-4" strokeWidth={3} /> : boss ? <Skull className="size-5" /> : i + 1}
+                        {complete ? <Check className="size-4" strokeWidth={3} /> : boss ? <ClipboardCheck className="size-5" /> : i + 1}
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-base font-bold text-foreground">{l.title}</span>
@@ -59,10 +60,11 @@ export function ModuleIntro({ courseSlug, courseTitle, mod }: { courseSlug: stri
                           <span className="inline-flex items-center gap-1">
                             <Clock className="size-3.5" aria-hidden /> {l.minutes} min
                           </span>
-                          <span className="text-money-ink">${l.xp}</span>
+                          <span className="text-money-ink">{l.xp} XP</span>
+                          <FunBadge fun={l.fun} />
                           {l.desktopOnlyIds.length > 0 && (
                             <span className="inline-flex items-center gap-1 text-gold-ink">
-                              <Monitor className="size-3.5" aria-hidden /> Desktop mission
+                              <Monitor className="size-3.5" aria-hidden /> Desktop exercise
                             </span>
                           )}
                           {skipped > 0 && (
@@ -95,7 +97,7 @@ export function ModuleIntro({ courseSlug, courseTitle, mod }: { courseSlug: stri
             data-testid="start-mission"
           >
             <Play className="size-5 fill-current" />
-            {done === 0 ? "Start mission" : done === mod.lessons.length ? "Replay district" : "Continue"}
+            {done === 0 ? "Start" : done === mod.lessons.length ? "Replay module" : "Continue"}
           </Link>
         </div>
       </div>

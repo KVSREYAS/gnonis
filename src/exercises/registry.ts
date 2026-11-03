@@ -39,7 +39,7 @@ export const EXERCISE_LIST = [
   defineExercise({ type: "stepper", tag: "Stepper", label: "Step-through", schema: stepperSchema }),
   defineExercise({ type: "code", tag: "Code", label: "Code puzzle", schema: codeSchema }),
   defineExercise({ type: "debug", tag: "Debug", label: "Debug this", schema: debugSchema }),
-  defineExercise({ type: "boss", tag: "Boss", label: "Boss fight", schema: bossSchema }),
+  defineExercise({ type: "boss", tag: "Boss", label: "Module test", schema: bossSchema }),
   defineExercise({ type: "predict-reveal", tag: "PredictReveal", label: "Predict and reveal", schema: predictRevealSchema }),
   defineExercise({ type: "envelope", tag: "Envelope", label: "Back of the envelope", schema: envelopeSchema }),
   defineExercise({ type: "trace", tag: "Trace", label: "Trace the code", schema: traceSchema }),

@@ -3,6 +3,7 @@ id: llm-inference/03-kv-cache/03-the-memory-budget
 title: The memory budget
 estMinutes: 4
 xp: 90
+fun: 5
 missionIntro: Weights are a fixed cost. The KV cache decides how many users you
   can serve at once.
 keyIdeas:
@@ -13,12 +14,6 @@ keyIdeas:
   - Smaller KV dtypes (fp8), GQA, shorter contexts or bigger GPUs all raise
     concurrency.
 ---
-
-## Mission briefing
-
-Weights pay rent once. The KV cache is the roommate who keeps inviting friends.
-
-**Mission:** You've got one 80 GB garage. Park the weights, then fit as many customers' caches as you can.
 
 ## Weights first, cache second
 

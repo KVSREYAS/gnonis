@@ -3,18 +3,13 @@ id: cpp-systems/02-move/03-perfect-forwarding
 title: "Perfect Forwarding"
 estMinutes: 8
 xp: 100
+fun: 4
 missionIntro: "Forwarding references plus std::forward pass arguments through with their value category intact. That's how emplace_back works."
 keyIdeas:
   - "`T&&` with T deduced is a forwarding reference: it binds anything (reference collapsing makes T = U& for lvalues)."
   - "std::forward<T>(x) restores the original category: lvalues stay lvalues, rvalues become rvalues again."
   - "emplace_back and make_unique forward constructor arguments to construct in place."
 ---
-
-## Mission briefing
-
-You're the middleman. Packages arrive, some marked FRAGILE (lvalues, don't touch) and some marked TAKE IT (rvalues). Your job is to pass each one on with its label intact.
-
-**Mission:** don't peel off the labels.
 
 ## Reference collapsing
 

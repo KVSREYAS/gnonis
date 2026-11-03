@@ -16,7 +16,7 @@ lessons:
 districts:
   - id: 01-number-formats
     title: Number formats
-    district: Byte Bay
+    district: Number formats
     summary: How many bytes is a number? Enough to size any model in your head.
     tip: "TIP: Parameters x bytes per parameter = weight memory."
     art: pier

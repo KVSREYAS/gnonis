@@ -3,18 +3,13 @@ id: cpp-systems/05-stl/03-views-span-and-string-view
 title: "span, string_view and Non-Owning Views"
 estMinutes: 7
 xp: 90
+fun: 4
 missionIntro: "Pass contiguous data as std::span and text as std::string_view: one signature for arrays, vectors and buffers, with no copies."
 keyIdeas:
   - "std::span<T> is a pointer plus a size (16 bytes with dynamic extent). It views any contiguous range."
   - "std::string_view is the same idea for characters, 16 bytes on x86-64."
   - "Both are cheap to pass by value and must never outlive the data they view."
 ---
-
-## Mission briefing
-
-Stop photocopying the evidence every time someone wants to look at it. Hand them a window instead.
-
-**Mission:** write functions that accept any contiguous floats without templates or copies.
 
 ## Sizes
 

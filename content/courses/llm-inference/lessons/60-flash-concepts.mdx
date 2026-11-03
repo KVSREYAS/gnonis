@@ -3,6 +3,7 @@ id: llm-inference/08-flash-attention/00-concepts
 title: "Concepts: FlashAttention"
 estMinutes: 8
 xp: 40
+fun: 1
 missionIntro: "Why naive attention is slow on GPUs, and how computing it in tiles with an online softmax avoids most memory traffic."
 keyIdeas:
   - "Naive attention writes the full T x T score matrix to HBM and reads it back."

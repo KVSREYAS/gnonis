@@ -1,8 +1,9 @@
 ---
 id: llm-inference/08-flash-attention/02-online-softmax
-title: "Online Softmax: Counting Cash on the Run"
+title: "Online Softmax"
 estMinutes: 3
 xp: 100
+fun: 4
 missionIntro: Softmax needs the max and the sum over a whole row. Online softmax
   keeps running values and rescales as new tiles arrive.
 keyIdeas:
@@ -11,12 +12,6 @@ keyIdeas:
   - "Subtracting the max avoids overflow: exp(1000) is inf in fp32, but exp(0)
     is fine."
 ---
-
-## Mission briefing
-
-You're counting stolen cash as the bags come in, but the exchange rate (the max) keeps changing.
-
-**Mission:** keep a running total you can fix up without recounting old bags.
 
 ## Running max, running sum
 

@@ -1,8 +1,9 @@
 ---
 id: llm-inference/05-batching/03-chunked-prefill
-title: "Chunked Prefill: Don't Block the Intersection"
+title: "Chunked Prefill"
 estMinutes: 4
 xp: 90
+fun: 3
 missionIntro: One giant prompt can freeze every running chat. Chop prefill into
   chunks and share each step's token budget.
 keyIdeas:
@@ -13,12 +14,6 @@ keyIdeas:
   - Each decode costs one token of budget, and whatever is left goes to a
     prefill chunk.
 ---
-
-## Mission briefing
-
-Some clown parked an 8,000-token prompt across the intersection, and 96 cars behind him are honking.
-
-**Mission:** cut the truck into pieces small enough that traffic keeps flowing.
 
 ## The prefill stall
 

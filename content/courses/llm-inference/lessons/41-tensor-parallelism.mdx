@@ -1,8 +1,9 @@
 ---
 id: llm-inference/10-parallelism/01-tensor-parallelism
-title: "Tensor Parallelism: Splitting the Score"
+title: "Tensor Parallelism"
 estMinutes: 4
 xp: 100
+fun: 5
 missionIntro: Split every weight matrix across GPUs. Each layer then needs an
   all-reduce, so keep it on NVLink.
 keyIdeas:
@@ -13,12 +14,6 @@ keyIdeas:
   - A ring all-reduce sends 2(N−1)/N × the tensor size per GPU, so TP lives
     inside an NVLink node.
 ---
-
-## Mission briefing
-
-The job is too big for one crew. Split the safe-cracking: each guy drills a quarter of the door, then everybody shouts their progress at once (the all-reduce).
-
-**Mission:** count how much shouting that takes.
 
 ## Column, then row
 
@@ -47,7 +42,7 @@ Megatron-LM shards the first MLP weight by columns (each GPU computes part of th
   explanation="TP also divides the bytes read per decode step, so batch-1 latency drops too (minus the communication)."
 />
 
-## The shouting bill
+## Communication cost
 
 Each all-reduce moves about twice the activation size per GPU. That's fast on NVLink and painful across nodes.
 

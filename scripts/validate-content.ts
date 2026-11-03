@@ -94,6 +94,12 @@ for (const c of courses)
       }
 
 const idIssues: ContentIssue[] = [];
+// Every lesson carries a fun rating (1-5) so the course page can show and filter it.
+for (const c of courses)
+  for (const m of c.modules)
+    for (const l of m.lessons)
+      if (l.fun == null) idIssues.push({ file: `${c.slug}/${m.slug}/${l.slug}`, message: "missing `fun` (1-5) in frontmatter" });
+
 const retired = readIdFile("content/retired-ids.yaml", getRetiredIds, idIssues, EMPTY_RETIRED);
 const renames = readIdFile("content/renames.yaml", getRenameMap, idIssues, EMPTY_RENAMES);
 const currentIds = idsFromCourses(courses);

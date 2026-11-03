@@ -26,7 +26,7 @@ export function CourseCard({ course }: { course: CourseSummary }) {
         data-testid={`course-${course.slug}`}
       >
         <p className="text-sm font-bold tracking-widest text-gold-ink uppercase">
-          {course.level} · {course.modules.length} district{course.modules.length > 1 ? "s" : ""} · {ready} open
+          {course.level} · {course.modules.length} module{course.modules.length > 1 ? "s" : ""} · {ready} open
         </p>
         <h3 className="mt-1 font-display text-3xl tracking-wide text-foreground">{course.title.toUpperCase()}</h3>
         <p className="mt-1 text-base font-bold text-foreground">{course.tagline}</p>
@@ -39,7 +39,7 @@ export function CourseCard({ course }: { course: CourseSummary }) {
             </p>
           )}
           <p className="mt-1 text-sm text-muted-foreground">
-            {done}/{lessons.length} missions complete
+            {done}/{lessons.length} lessons complete
           </p>
         </div>
         <span className="mt-4 inline-flex items-center gap-1.5 font-display text-lg tracking-wide text-gold-ink">

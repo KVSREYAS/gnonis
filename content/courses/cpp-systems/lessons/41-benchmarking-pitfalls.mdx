@@ -1,22 +1,17 @@
 ---
 id: cpp-systems/11-perf/01-benchmarking-pitfalls
-title: "Benchmarking Without Lying"
+title: "Benchmarking Pitfalls"
 estMinutes: 8
 xp: 100
-missionIntro: "The optimiser deletes work whose results are unused, and noisy machines lie. Benchmark like a scientist."
+fun: 3
+missionIntro: "The optimiser deletes work whose results are unused, and noisy machines give unstable numbers. Repeat runs and report the spread."
 keyIdeas:
   - "Dead-code elimination: if the result isn't used, the loop may vanish. Use benchmark::DoNotOptimize, or consume the result."
   - "Warm up, repeat, and report the median or minimum with spread. Pin the CPU frequency or at least note it."
   - "Microbenchmarks lie about caches: a 4 KB working set lives in L1, while production data might not."
 ---
 
-## Mission briefing
-
-Perf Pier hosts the drag races. Half the racers are cheating, and they don't even know it.
-
-**Mission:** catch them.
-
-## Catch the cheat
+## Spot the broken benchmark
 
 
 

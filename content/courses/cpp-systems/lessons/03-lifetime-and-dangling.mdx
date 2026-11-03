@@ -3,18 +3,13 @@ id: cpp-systems/01-lifetime/03-lifetime-and-dangling
 title: "Lifetimes and Dangling References"
 estMinutes: 7
 xp: 90
-missionIntro: "string_view, references and iterators don't own anything. Outlive the owner and you're holding a ghost."
+fun: 3
+missionIntro: "string_view, references and iterators don't own anything. If the owner is destroyed first, the view refers to freed memory."
 keyIdeas:
   - "Non-owning types (T&, T*, string_view, span, iterators) must not outlive what they point to."
   - "Binding a temporary to const T& (or T&&) extends its lifetime only for that direct binding."
   - "Returning a reference or view to a local or a temporary dangles: it compiles, then it's undefined behaviour."
 ---
-
-## Mission briefing
-
-Somebody gave CJ directions to a house that was demolished yesterday. He drives there anyway. That's a dangling reference: the address is valid-looking, the building is gone.
-
-**Mission:** learn which objects you're allowed to point at.
 
 ## Views don't own
 

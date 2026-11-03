@@ -22,14 +22,14 @@ test("guest progress is saved in localStorage and survives a reload", async ({ p
   await action.click();
   await action.click();
   await expect(page.getByTestId("mission-passed")).toBeVisible({ timeout: 5_000 });
-  await expect(page.getByTestId("hud-xp")).toHaveText("$00000050");
+  await expect(page.getByTestId("hud-xp")).toHaveText("50 XP");
 
   const saved = await page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? "null"), PROGRESS_KEY);
   expect(saved?.xp).toBe(50);
 
   await page.goto("/");
   await page.reload();
-  await expect(page.getByTestId("hud-xp")).toHaveText("$00000050");
+  await expect(page.getByTestId("hud-xp")).toHaveText("50 XP");
 
   await page.getByTestId("menu-button").click();
   await expect(page.getByText("Progress is stored on this device only.")).toBeVisible();

@@ -77,7 +77,7 @@ lessons:
 districts:
   - id: 01-tokens-forward-pass
     title: Tokens and the forward pass
-    district: Token Flats
+    district: Tokens and the forward pass
     summary: Text becomes token ids, ids flow through a stack of transformer blocks,
       and out comes a probability for every word piece in the vocabulary. Then
       we pick one, and do it all again.
@@ -93,10 +93,10 @@ districts:
       - boss-the-forward-pass
   - id: 02-attention
     title: Attention
-    district: Attention Heights
-    summary: Every token asks a question (query), every earlier token offers a label
-      (key) and a payload (value). Softmax decides who gets heard. Masks, heads
-      and the quadratic bill that comes with it.
+    district: Attention
+    summary: Each token computes a query, and every earlier token computes a key
+      and a value. Softmax over query-key scores weights the values. Then masks,
+      heads, and the cost that grows with the square of the length.
     tip: "TIP: Scores are scaled by 1/sqrt(d_k) so softmax does not saturate."
     art: tower
     status: ready
@@ -109,7 +109,7 @@ districts:
       - boss-attention
   - id: 03-kv-cache
     title: The KV cache
-    district: Cache Docks
+    district: The KV cache
     summary: Decoding one token at a time would redo the same work over and over.
       Caching keys and values fixes that, and quietly becomes the biggest
       consumer of GPU memory in a serving system.
@@ -125,7 +125,7 @@ districts:
       - boss-cache-docks
   - id: 04-gpu-memory-roofline
     title: GPU memory and the roofline
-    district: Roofline Ridge
+    district: GPU memory and the roofline
     summary: A GPU can do far more math than it can feed with data. Arithmetic
       intensity and the roofline model tell you which wall you are hitting, and
       why batch-1 decoding is a bandwidth race.
@@ -141,7 +141,7 @@ districts:
       - boss-roofline-ridge
   - id: 05-batching
     title: Batching
-    district: Batch Boulevard
+    district: Batching
     summary: "Static, dynamic and continuous batching: how servers keep the GPU busy
       by decoding many requests at once without making anyone wait for the
       slowest."
@@ -156,7 +156,7 @@ districts:
       - boss-batch-boulevard
   - id: 06-paged-attention
     title: Paged attention
-    district: Paged Pier
+    district: Paged attention
     summary: "Treat the KV cache like virtual memory: fixed-size blocks, a block
       table per sequence, near-zero fragmentation and cheap prefix sharing."
     tip: "TIP: Fragmentation, not capacity, used to waste most KV memory."
@@ -170,7 +170,7 @@ districts:
       - boss-paged-pier
   - id: 07-quantization
     title: Quantization
-    district: Quant Quarter
+    district: Quantization
     summary: "int8, fp8 and int4 weights and KV caches: what precision you lose,
       what bandwidth you win, and methods like GPTQ, AWQ and SmoothQuant."
     tip: "TIP: Halving bytes per weight roughly doubles batch-1 decode speed."
@@ -185,7 +185,7 @@ districts:
       - boss-quant-quarter
   - id: 08-flash-attention
     title: FlashAttention
-    district: Flash Gardens
+    district: FlashAttention
     summary: "Tile attention so the n-by-n score matrix never touches HBM: online
       softmax, SRAM tiling, and why an IO-aware kernel beats a FLOP-optimal
       one."
@@ -201,7 +201,7 @@ districts:
       - boss-flash-gardens
   - id: 09-speculative-decoding
     title: Speculative decoding
-    district: Draft Row
+    district: Speculative decoding
     summary: Let a small draft model guess several tokens, verify them in one
       big-model pass, and keep the output distribution exactly the same.
     tip: "TIP: Speculation trades spare compute for fewer memory-bound steps."
@@ -215,7 +215,7 @@ districts:
       - boss-draft-row
   - id: 10-parallelism
     title: Parallelism
-    district: Shard City
+    district: Parallelism
     summary: "Tensor, pipeline, data and expert parallelism: splitting a model that
       does not fit, and the interconnect bills each strategy runs up."
     tip: "TIP: Tensor parallelism needs an all-reduce in every layer."
@@ -229,7 +229,7 @@ districts:
       - boss-shard-city
   - id: 11-serving-systems
     title: Serving systems
-    district: Server Strip
+    district: Serving systems
     summary: "vLLM, SGLang, TensorRT-LLM and friends: schedulers, prefix caching,
       chunked prefill, and the latency/throughput SLOs they balance."
     tip: "TIP: Measure TTFT and inter-token latency, not just tokens per second."
@@ -243,11 +243,11 @@ districts:
       - boss-server-strip
   - id: 12-capstone
     title: "Capstone: build a tiny server"
-    district: Capstone Peak
+    district: "Capstone: build a tiny server"
     summary: "Put it together: a minimal inference server with a KV cache,
       continuous batching and a benchmark harness, then profile it against the
       roofline."
-    tip: "TIP: Profile first. Guessing bottlenecks is how weekends disappear."
+    tip: "TIP: Profile first. Then fix the biggest cost."
     art: tower
     status: ready
     lessons:

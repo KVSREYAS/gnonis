@@ -3,18 +3,13 @@ id: cpp-systems/04-templates/02-concepts-and-constraints
 title: "Concepts and Constraints"
 estMinutes: 8
 xp: 100
+fun: 2
 missionIntro: "C++20 concepts name requirements on template parameters. You get readable errors and overloading on capabilities."
 keyIdeas:
   - "A concept is a named compile-time predicate: `template<class T> concept Number = std::integral<T> || std::floating_point<T>;`."
   - "requires-expressions check that expressions are valid: `requires(T t) { t.size(); }`."
   - "Constrained overloads are picked by the most specialised constraint that's satisfied."
 ---
-
-## Mission briefing
-
-Template Town's old foreman accepted anything, then exploded 400 lines deep in an error message. The new one checks your ID at the door.
-
-**Mission:** write the bouncer's checklist.
 
 ## Writing constraints
 

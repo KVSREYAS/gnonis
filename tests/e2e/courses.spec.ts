@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test("the courses index lists every pack and opens its map", async ({ page }) => {
   await page.goto("/courses");
-  await expect(page.getByRole("heading", { name: "MISSION PACKS" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "COURSES", exact: true })).toBeVisible();
   const inference = page.getByTestId("course-llm-inference");
   const sample = page.getByTestId("course-sample-bits-bytes");
   await expect(inference).toHaveAttribute("href", "/courses/llm-inference");

@@ -16,8 +16,8 @@ export function nextAfter(course: CourseData, moduleSlug: string, lessonSlug: st
   const li = mod.lessons.findIndex((l) => l.slug === lessonSlug);
   const nextLesson = mod.lessons[li + 1];
   if (nextLesson)
-    return { href: lessonHref(course.slug, mod.slug, nextLesson.slug), label: nextLesson.kind === "boss" ? "Face the boss" : "Next mission" };
+    return { href: lessonHref(course.slug, mod.slug, nextLesson.slug), label: nextLesson.kind === "boss" ? "Start the module test" : "Next lesson" };
   const nextModule = course.modules.slice(mi + 1).find((m) => m.status === "ready");
-  if (nextModule) return { href: moduleHref(course.slug, nextModule.slug), label: `On to ${nextModule.district}` };
-  return { href: courseHref(course.slug), label: "Back to the map" };
+  if (nextModule) return { href: moduleHref(course.slug, nextModule.slug), label: `Next module: ${nextModule.title}` };
+  return { href: courseHref(course.slug), label: "Back to the course" };
 }

@@ -1,8 +1,9 @@
 ---
 id: llm-inference/06-paged-attention/02-block-tables-and-copy-on-write
-title: "Copy-on-Write: Sharing the Getaway Car"
+title: "Block Tables and Copy-on-Write"
 estMinutes: 3
 xp: 90
+fun: 3
 missionIntro: Parallel samples and beams share prompt blocks via reference
   counts, and only copy a block when they write into it.
 keyIdeas:
@@ -13,12 +14,6 @@ keyIdeas:
   - vLLM measured 6.1–9.8% memory savings for parallel sampling and 37.6–55.2%
     for beam search (OPT-13B, Alpaca).
 ---
-
-## Mission briefing
-
-Four crew members want to rob the same bank, and each insists on their own copy of the floor plan. Ridiculous.
-
-**Mission:** let them share one copy, and photocopy a page only when someone scribbles on it.
 
 ## Reference counts
 

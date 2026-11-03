@@ -3,18 +3,13 @@ id: cpp-systems/13-capstone/02-tiled-matmul
 title: "Fast Matmul: Loop Order and Tiling"
 estMinutes: 10
 xp: 120
-missionIntro: "Matrix multiply is ~all of inference compute. The naive i-j-k loop leaves 10x or more on the table, and loop order plus tiling claws much of it back."
+fun: 5
+missionIntro: "Matrix multiply is ~all of inference compute. The naive i-j-k loop leaves 10x or more on the table, and loop order plus tiling recovers much of it."
 keyIdeas:
   - "C = A·B with i-j-k order strides down B's columns (cache-hostile). i-k-j order streams rows of B and C contiguously, which vectorises well."
   - "Tiling keeps blocks of A, B and C in cache and reuses each loaded element many times."
   - "FLOPs = 2·M·N·K. Arithmetic intensity determines whether you're memory- or compute-bound."
 ---
-
-## Mission briefing
-
-Matrix Mint prints the money: 90%+ of an LLM's FLOPs are matmuls.
-
-**Mission:** print faster.
 
 ## FLOPs
 

@@ -3,7 +3,8 @@ id: llm-inference/12-capstone/02-build-the-scheduler
 title: Build the Scheduler
 estMinutes: 3
 xp: 120
-missionIntro: "Write the brain: each step, decode everyone running, then admit
+fun: 4
+missionIntro: "Write the scheduler: each step, decode everyone running, then admit
   waiting requests while budget and blocks last."
 keyIdeas:
   - "Each step: every running sequence decodes one token, using 1 token of
@@ -13,12 +14,6 @@ keyIdeas:
   - Without preemption, FIFO admission can stall behind one huge prompt
     (head-of-line blocking).
 ---
-
-## Mission briefing
-
-The bouncer at the club door is your scheduler. Too strict and the club is empty, too loose and the fire marshal shuts you down.
-
-**Mission:** write the bouncer.
 
 ## Decodes first
 

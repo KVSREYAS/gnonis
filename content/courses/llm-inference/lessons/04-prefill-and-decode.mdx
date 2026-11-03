@@ -3,6 +3,7 @@ id: llm-inference/01-tokens-forward-pass/04-prefill-and-decode
 title: Prefill and decode
 estMinutes: 4
 xp: 70
+fun: 3
 missionIntro: Generation has two very different phases. Knowing which one you
   are in explains almost every latency number.
 keyIdeas:
@@ -13,12 +14,6 @@ keyIdeas:
   - Prefill is usually compute-bound, while small-batch decode is
     memory-bandwidth-bound.
 ---
-
-## Mission briefing
-
-Prefill is the planning meeting: the whole prompt at once. Decode is the chase: one token per step, forever.
-
-**Mission:** Plan the heist in one go, then drive the getaway one turn at a time without crashing.
 
 ## Two phases
 

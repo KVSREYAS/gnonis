@@ -3,6 +3,7 @@ id: llm-inference/04-gpu-memory-roofline/04-decode-speed-limit
 title: The decode speed limit
 estMinutes: 3
 xp: 90
+fun: 5
 missionIntro: At batch 1, tokens per second is just bandwidth divided by model
   size. Everything else is overhead.
 keyIdeas:
@@ -13,12 +14,6 @@ keyIdeas:
   - Fewer bytes per weight (quantization) raise the ceiling almost
     proportionally.
 ---
-
-## Mission briefing
-
-At batch 1, your 1,000-TFLOP GPU is a Ferrari stuck behind a garbage truck called HBM.
-
-**Mission:** One user, one car, batch 1. Work out the speed limit, then cheat it legally.
 
 ## Back-of-envelope decode
 

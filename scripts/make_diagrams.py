@@ -41,10 +41,10 @@ a.text(5.6,5.5,"residual\nstream",rotation=90,ha="center",va="center",color=P,fo
 save(f,"02-the-forward-pass")
 
 # 03-logits-to-tokens
-f,a=fig("Temperature reshapes the odds"); logits=np.array([4,3.2,2.5,1.5,1,0.3]); w=["Grove","Street","home","CJ","taco","banana"]
+f,a=fig("Temperature reshapes the odds"); logits=np.array([4,3.2,2.5,1.5,1,0.3]); w=["the","a","this","one","my","banana"]
 for k,(T,c) in enumerate([(0.5,G),(1.0,GOLD),(2.0,R)]):
     p=np.exp(logits/T); p/=p.sum(); a.bar(np.arange(6)+k*0.27-0.27,p,0.27,color=c,label=f"T={T}")
-a.set_xticks(range(6),w); a.set_ylabel("probability"); a.legend(facecolor=BG); a.text(3.5,0.6,"T=2.0: the model after\na night at the Pig Pen",color=R)
+a.set_xticks(range(6),w); a.set_ylabel("probability"); a.legend(facecolor=BG); a.text(3.5,0.6,"T=2.0: flatter distribution,\nunlikely tokens gain probability",color=R)
 save(f,"03-logits-to-tokens")
 
 # 04-prefill-and-decode
@@ -74,7 +74,7 @@ a.set_xlabel("key position (attended to)"); a.set_ylabel("query position"); a.se
 save(f,"02-causal-masking")
 
 # 03-heads-mha-gqa
-f,a=fig("MHA vs GQA vs MQA: who shares the getaway car",12,4.5); blank(a,(0,12),(0,4))
+f,a=fig("MHA vs GQA vs MQA: which query heads share KV heads",12,4.5); blank(a,(0,12),(0,4))
 for gi,(name,nkv) in enumerate([("MHA (8 KV heads)",8),("GQA (2 KV heads)",2),("MQA (1 KV head)",1)]):
     x0=gi*4+0.2; a.text(x0+1.8,3.7,name,ha="center",fontweight="bold",color=[P,G,GOLD][gi])
     for q in range(8):
@@ -114,7 +114,7 @@ a.axvline(80,color=R,lw=2,ls="--"); a.text(80.5,2.35,"80 GB",color=R); a.set_yti
 a.legend(["HBM limit","weights 16 GB","KV cache"],facecolor=BG,loc="lower right"); save(f,"03-the-memory-budget")
 
 # 01-memory-hierarchy
-f,a=fig("H100 memory hierarchy: pocket → garage",9,5.5); blank(a,(0,10),(0,5))
+f,a=fig("H100 memory hierarchy: fastest to slowest",9,5.5); blank(a,(0,10),(0,5))
 lv=[("Registers  (256 KB / SM)",G),("Shared mem / L1  (up to 228 KB / SM)",GOLD),("L2 cache  (50 MB)",P),("HBM3  (80 GB @ ~3.35 TB/s)",B)]
 for i,(t,c) in enumerate(lv): w=3+i*2; box(a,5-w/2,4-i*1.1,w,0.9,t,c,fc=c+"22")
 a.text(0.1,0.2,"top = fastest, smallest     bottom = slowest, biggest",color=GR); save(f,"01-memory-hierarchy")
@@ -187,10 +187,10 @@ save(f,"01-fewer-bytes-faster-tokens")
 # NEW 01-draft-and-verify
 f,a=fig("Speculative decoding: draft 4, verify in one pass",11,4.5); blank(a,(0,11.2),(0,4.5))
 a.text(0.2,3.8,"draft model guesses:",fontweight="bold"); a.text(0.2,1.7,"target verifies (1 pass):",fontweight="bold")
-dr=["the","grove","street","forever"]; ok=[1,1,1,0]
+dr=["the","cat","sat","down"]; ok=[1,1,1,0]
 for i,(t,o) in enumerate(zip(dr,ok)):
     box(a,2.8+i*1.6,3.4,1.4,0.7,t,GOLD); c=G if o else R; box(a,2.8+i*1.6,1.3,1.4,0.7,("✓ " if o else "✗ ")+t,c,fc=c+"22")
-box(a,2.8+4*1.6,1.3,1.6,0.7,"resample:\n'family'",B,fc=B+"22",fs=9); a.text(5.5,0.4,"3 accepted + 1 corrected = 4 tokens for one big-model pass; output distribution unchanged",ha="center")
+box(a,2.8+4*1.6,1.3,1.6,0.7,"resample:\n'on'",B,fc=B+"22",fs=9); a.text(5.5,0.4,"3 accepted + 1 corrected = 4 tokens for one big-model pass; output distribution unchanged",ha="center")
 save(f,"01-draft-and-verify")
 
 # NEW 01-ttft-tpot-and-prefix-caching
@@ -283,7 +283,7 @@ a.set_ylabel("concurrent 8k-token sequences"); a.text(2.4,5,"*ignoring scale ove
 # 01-the-hbm-bottleneck
 f,ax=plt.subplots(1,2,figsize=(12,5))
 for k,a in enumerate(ax):
-    blank(a,(0,6),(0,6)); a.set_title(["NAIVE: N×N crates ride to HBM","FLASH: tiles stay on-chip"][k],loc="left",color=[R,G][k],fontweight="bold")
+    blank(a,(0,6),(0,6)); a.set_title(["NAIVE: N×N matrices go to HBM","FLASH: tiles stay on-chip"][k],loc="left",color=[R,G][k],fontweight="bold")
     box(a,0.2,0.3,5.6,1.2,"HBM (80 GB, ~3.35 TB/s)",B,fc=B+"22"); box(a,0.2,4.2,5.6,1.2,"SRAM (≤228 KB/SM, on-chip)",GOLD,fc=GOLD+"22")
     if k==0:
         for i,t in enumerate(["S = QKᵀ","mask","P = softmax","O = PV"]):
@@ -316,8 +316,8 @@ a.axhline(1,color=GR,ls=":"); a.text(10,1.1,"no speculation",ha="right",color=GR
 
 # 03-medusa-eagle-and-lookup
 f,a=fig("Medusa-style candidate tree (verified in one pass)",11,5.4); blank(a,(0,11),(-0.3,5.2))
-box(a,0.3,2.2,1.6,0.7,"'Grove'",INK,fs=10)
-firsts=["Street","St.","st"]; kids=[["forever","4 life"],["family","home"],["now","ok"]]
+box(a,0.3,2.2,1.6,0.7,"'The'",INK,fs=10)
+firsts=["cat","dog","bird"]; kids=[["sat","ran"],["barked","slept"],["sang","flew"]]
 for i,t in enumerate(firsts):
     y=4.0-i*1.7; box(a,3.2,y,1.8,0.7,t,G if i==0 else GOLD,fs=10); a.plot([1.9,3.2],[2.55,y+0.35],color=GR)
     for j,k in enumerate(kids[i]):

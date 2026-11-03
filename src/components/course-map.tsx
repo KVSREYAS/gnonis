@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { Check, FastForward, Lock, Monitor, Play, Skull } from "lucide-react";
+import { Check, FastForward, Lock, Monitor, Play, ClipboardCheck } from "lucide-react";
 import { courseLessons } from "@/components/course-card";
 import { CourseDownload } from "@/components/offline/course-download";
 import { useDevice, useProgress } from "@/components/providers";
 import { RespectBar } from "@/components/respect-bar";
+import { FunBadge } from "@/components/fun-badge";
+import { useState } from "react";
 import { buttonVariants } from "@/components/ui/button";
 import { exerciseKey, type CourseSummary, type LessonSummary, type ModuleSummary } from "@/lib/content/types";
 import type { ProgressState } from "@/lib/progress/logic";
@@ -29,6 +31,7 @@ function Blip({
   pending,
   updated,
   skipped,
+  dim,
 }: {
   course: string;
   mod: string;
@@ -38,16 +41,17 @@ function Blip({
   pending: boolean;
   updated: boolean;
   skipped: number;
+  dim?: boolean;
 }) {
   const boss = lesson.kind === "boss";
   const state = done ? "complete" : isNext ? "next up" : "not started";
   return (
     <Link
       href={`/courses/${course}/${mod}/${lesson.slug}`}
-      className="tap group relative grid place-items-center rounded-full"
-      aria-label={`${lesson.title}, ${state}${boss ? ", boss fight" : ""}${pending ? ", desktop mission pending" : ""}${skipped ? `, ${skipped} skipped` : ""}${updated ? ", exercise updated" : ""}`}
+      className={cn("tap group relative grid place-items-center rounded-full", dim && "opacity-30")}
+      aria-label={`${lesson.title}, ${state}${lesson.fun ? `, fun ${lesson.fun} of 5` : ""}${boss ? ", module test" : ""}${pending ? ", desktop exercise pending" : ""}${skipped ? `, ${skipped} skipped` : ""}${updated ? ", exercise updated" : ""}`}
       data-skipped={skipped > 0 ? "true" : "false"}
-      title={lesson.title}
+      title={lesson.fun ? `${lesson.title} · Fun ${lesson.fun}/5` : lesson.title}
       data-testid={isNext ? "next-blip" : undefined}
     >
       <span
@@ -58,7 +62,7 @@ function Blip({
           boss && !done && "border-danger text-danger",
         )}
       >
-        {boss ? <Skull className="size-5" aria-hidden /> : done ? <Check className="size-3.5" strokeWidth={3} aria-hidden /> : isNext ? <span className="size-2 rounded-full bg-gold" /> : null}
+        {boss ? <ClipboardCheck className="size-5" aria-hidden /> : done ? <Check className="size-3.5" strokeWidth={3} aria-hidden /> : isNext ? <span className="size-2 rounded-full bg-gold" /> : null}
       </span>
       {pending && (
         <span className="absolute -top-0.5 -right-0.5 grid size-4 place-items-center rounded-full bg-panel-2 text-gold-ink" aria-hidden>
@@ -79,7 +83,7 @@ function Blip({
   );
 }
 
-function District({ course, mod, nextKey }: { course: string; mod: ModuleSummary; nextKey?: string }) {
+function District({ course, mod, nextKey, minFun = 0 }: { course: string; mod: ModuleSummary; nextKey?: string; minFun?: number }) {
   const { state } = useProgress();
   const device = useDevice();
   const stub = mod.status === "stub";
@@ -106,14 +110,14 @@ function District({ course, mod, nextKey }: { course: string; mod: ModuleSummary
               <Lock className="size-3.5" aria-hidden /> Coming soon
             </span>
           ) : cleared ? (
-            <span className="rounded bg-money px-2 py-0.5 text-sm font-bold text-ink">CLEARED</span>
+            <span className="rounded bg-money px-2 py-0.5 text-sm font-bold text-ink">COMPLETE</span>
           ) : (
             <span className="text-sm text-muted-foreground tabular-nums">
               {done}/{mod.lessons.length}
             </span>
           )}
         </div>
-        <p className="mt-2 text-sm font-bold tracking-widest text-muted-foreground uppercase">{mod.district}</p>
+        <p className="mt-2 text-sm font-bold tracking-widest text-muted-foreground uppercase">Module {String(mod.index).padStart(2, "0")}</p>
         {stub ? (
           <h3 className="font-display text-2xl leading-tight tracking-wide text-foreground">{mod.title}</h3>
         ) : (
@@ -139,13 +143,14 @@ function District({ course, mod, nextKey }: { course: string; mod: ModuleSummary
                     pending={(state.lessons[l.key]?.pendingDesktop.length ?? 0) > 0}
                     updated={lessonUpdated(state, l)}
                     skipped={skippedExerciseCount(state, l.key, l.exerciseIds)}
+                    dim={minFun > 0 && (l.fun ?? 0) < minFun}
                   />
                 </span>
               ))}
             </div>
             {desktopOnly > 0 && device === "phone" && (
               <p className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
-                <Monitor className="size-3.5 text-gold-ink" aria-hidden /> {desktopOnly} desktop mission{desktopOnly > 1 ? "s" : ""} here
+                <Monitor className="size-3.5 text-gold-ink" aria-hidden /> {desktopOnly} desktop exercise{desktopOnly > 1 ? "s" : ""} here
               </p>
             )}
           </div>
@@ -162,13 +167,17 @@ export function CourseMap({ course }: { course: CourseSummary }) {
   const nextMod = course.modules.find((m) => m.lessons.some((l) => l.key === nextKey));
   const nextLesson = nextMod?.lessons.find((l) => l.key === nextKey);
   const lvl = levelForXp(state.xp);
+  const [minFun, setMinFun] = useState(0);
+  const funLessons = course.modules.flatMap((m) => m.lessons.map((l) => ({ ...l, mod: m.slug })))
+    .filter((l) => (l.fun ?? 0) >= Math.max(minFun, 1))
+    .sort((a, b) => (b.fun ?? 0) - (a.fun ?? 0));
 
   return (
     <div className="flex flex-1 flex-col pb-28 sm:pb-10">
       <header className="sunset">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-6 sm:flex-row sm:items-end sm:justify-between sm:px-6 sm:py-8">
           <div className="rounded-lg bg-ink/90 px-4 py-3">
-            <p className="text-sm font-bold tracking-widest text-gold-ink uppercase">Map · {course.modules.length} districts</p>
+            <p className="text-sm font-bold tracking-widest text-gold-ink uppercase">{course.modules.length} modules</p>
             <h1 className="font-display text-4xl leading-none tracking-wide text-foreground sm:text-5xl">{course.title.toUpperCase()}</h1>
             <p className="mt-1 text-base text-foreground">{course.tagline}</p>
           </div>
@@ -188,26 +197,54 @@ export function CourseMap({ course }: { course: CourseSummary }) {
       </header>
 
       <div className="relative mx-auto w-full max-w-6xl px-4 pt-6 sm:px-6">
-        <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground" aria-label="Map legend">
+        <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground" aria-label="Legend">
           <span className="inline-flex items-center gap-1.5">
-            <span className="blip-next size-3 rounded-full border-2 border-gold" /> Next mission
+            <span className="blip-next size-3 rounded-full border-2 border-gold" /> Next lesson
           </span>
           <span className="inline-flex items-center gap-1.5">
             <span className="size-3 rounded-full bg-gold" /> Complete
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <Skull className="size-4 text-danger" /> Boss
+            <ClipboardCheck className="size-4 text-danger" /> Module test
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <Monitor className="size-4 text-gold-ink" /> Desktop mission pending
+            <Monitor className="size-4 text-gold-ink" /> Desktop exercise pending
           </span>
           <span className="inline-flex items-center gap-1.5">
             <FastForward className="size-4 text-gold-ink" /> Skipped exercise
           </span>
         </div>
-        <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Districts">
+        <div className="mb-4 flex flex-wrap items-center gap-2 text-sm" role="radiogroup" aria-label="Filter by fun" data-testid="fun-filter">
+          <span className="text-muted-foreground">Fun filter:</span>
+          {[0, 3, 4, 5].map((v) => (
+            <button
+              key={v}
+              type="button"
+              role="radio"
+              aria-checked={minFun === v}
+              onClick={() => setMinFun(v)}
+              className={cn("tap rounded-lg border px-3", minFun === v ? "border-gold bg-gold text-ink" : "border-border text-foreground")}
+            >
+              {v === 0 ? "All" : `${v}+`}
+            </button>
+          ))}
+        </div>
+        {minFun > 0 && (
+          <ol className="mb-6 grid gap-2 sm:grid-cols-2" aria-label="Lessons sorted by fun" data-testid="fun-list">
+            {funLessons.map((l) => (
+              <li key={l.key}>
+                <Link href={`/courses/${course.slug}/${l.mod}/${l.slug}`} className="flex min-h-11 items-center justify-between gap-3 rounded-lg border border-border bg-panel px-3 py-2 hover:border-gold">
+                  <span className="truncate font-bold">{l.title}</span>
+                  <FunBadge fun={l.fun} className="shrink-0" />
+                </Link>
+              </li>
+            ))}
+            {funLessons.length === 0 && <li className="text-muted-foreground">No lessons at this level.</li>}
+          </ol>
+        )}
+        <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Modules">
           {course.modules.map((m) => (
-            <District key={m.slug} course={course.slug} mod={m} nextKey={nextKey} />
+            <District key={m.slug} course={course.slug} mod={m} nextKey={nextKey} minFun={minFun} />
           ))}
         </ol>
       </div>
@@ -216,7 +253,7 @@ export function CourseMap({ course }: { course: CourseSummary }) {
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-ink/95 backdrop-blur sm:static sm:mx-auto sm:mt-8 sm:w-full sm:max-w-6xl sm:border-0 sm:bg-transparent sm:px-6">
           <div className="mx-auto flex max-w-6xl items-center gap-3 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-0">
             <div className="hidden min-w-0 flex-1 sm:block">
-              <p className="text-sm text-muted-foreground">Next up in {nextMod.district}</p>
+              <p className="text-sm text-muted-foreground">Next up in {nextMod.title}</p>
               <p className="truncate text-lg font-bold">{nextLesson.title}</p>
             </div>
             <Link
@@ -228,7 +265,7 @@ export function CourseMap({ course }: { course: CourseSummary }) {
               className={buttonVariants({ size: "lg", className: "h-14 flex-1 font-display text-xl tracking-wider sm:flex-none sm:px-8" })}
               data-testid="map-primary"
             >
-              <Play className="size-5 fill-current" /> {Object.keys(state.lessons).length ? "Resume" : "Start"}: {nextLesson.kind === "boss" ? "Boss" : nextLesson.title}
+              <Play className="size-5 fill-current" /> {Object.keys(state.lessons).length ? "Resume" : "Start"}: {nextLesson.kind === "boss" ? "Module test" : nextLesson.title}
             </Link>
           </div>
         </div>

@@ -48,11 +48,11 @@ export function GoogleIcon({ className }: { className?: string }) {
   );
 }
 
-/** The GTA-style "BUSTED" banner for a failed sign-in or sign-up. */
+/** The error banner for a failed sign-in or sign-up. */
 function Busted({ message }: { message: string }) {
   return (
     <div role="alert" className="mt-4 rounded-lg border border-danger/70 bg-danger/10 px-4 py-3" data-testid="auth-error">
-      <p className="font-display text-2xl leading-none tracking-widest text-danger">BUSTED</p>
+      <p className="font-display text-2xl leading-none tracking-widest text-danger">SIGN-IN FAILED</p>
       <p className="mt-1.5 text-base text-foreground">{message}</p>
     </div>
   );

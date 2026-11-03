@@ -3,6 +3,7 @@ id: llm-inference/08-flash-attention/03-tiling-in-sram
 title: Tiling in SRAM, and FlashAttention 2 and 3
 estMinutes: 3
 xp: 100
+fun: 3
 missionIntro: Load Q, K and V tiles into on-chip SRAM, do the whole attention
   for that tile, and never write N×N to HBM.
 keyIdeas:
@@ -12,12 +13,6 @@ keyIdeas:
   - FlashAttention-2 roughly doubles FA1, and FA3 hits 740 TFLOP/s fp16 (75% of
     H100) and about 1.2 PFLOP/s in fp8.
 ---
-
-## Mission briefing
-
-The glovebox (SRAM) is tiny but right next to you. The garage (HBM) is huge and miles away.
-
-**Mission:** plan the job so each tool comes out of the garage once, and the big crate never goes back.
 
 ## Tiles
 

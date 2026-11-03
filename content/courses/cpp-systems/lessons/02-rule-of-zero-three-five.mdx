@@ -3,18 +3,13 @@ id: cpp-systems/01-lifetime/02-rule-of-zero-three-five
 title: "The Rule of 0/3/5"
 estMinutes: 8
 xp: 90
+fun: 4
 missionIntro: "Own resources in exactly one place. Everyone else gets zero special members."
 keyIdeas:
   - "Rule of zero: classes that hold only RAII members declare no special members (Core Guidelines C.20)."
   - "Rule of five: if you define or delete one of destructor, copy ctor/assign, move ctor/assign, consider all five (C.21)."
   - "Declaring a destructor or copy operation suppresses the implicit move operations, so moves silently become copies."
 ---
-
-## Mission briefing
-
-A raw pointer member is a gun with no safety. Copy the class and two objects own the same memory. Destroy both and you get a double free.
-
-**Mission:** decide who owns the gun, then write the paperwork.
 
 ## Zero is the goal
 

@@ -1,8 +1,9 @@
 ---
 id: llm-inference/06-paged-attention/01-kv-as-virtual-memory
-title: "PagedAttention: Parking the KV Cache in Blocks"
+title: "PagedAttention: Storing the KV Cache in Blocks"
 estMinutes: 3
 xp: 90
+fun: 3
 missionIntro: Reserve memory in small fixed blocks instead of one giant slab per
   request, and fragmentation nearly disappears.
 keyIdeas:
@@ -13,11 +14,6 @@ keyIdeas:
   - PagedAttention stores KV in fixed blocks (default 16 tokens) mapped by a
     per-sequence block table, so waste is under one block per sequence.
 ---
-
-## Mission briefing
-
-Welcome to Paged Pier. The old dock master gave every boat a 4,096-token berth "just in case". Most boats
-are dinghies. The pier is full, the water is empty, and the boss is furious. Chop the pier into 16-token slots.
 
 ## The fragmentation tax
 
@@ -66,8 +62,8 @@ Physical blocks can sit anywhere, and two sequences can point at the same block 
   explanation={"Exactly like an OS page table. Physical blocks need not be contiguous, and two sequences can point at the same block to share a prefix (copy-on-write)."}
 />
 
-## Street wisdom
+## Background
 
-Your OS solved this in the 1960s. LLM servers rediscovered it in 2023 and got a SOSP paper. Respect.
+Operating systems have used paged virtual memory since the 1960s. vLLM applied the same idea to the KV cache in 2023 (SOSP paper).
 
 Sources: [Kwon et al., SOSP 2023](https://arxiv.org/abs/2309.06180), [vLLM blog](https://blog.vllm.ai/2023/06/20/vllm.html)

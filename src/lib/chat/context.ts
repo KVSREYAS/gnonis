@@ -69,7 +69,7 @@ export function exerciseBrief(exercise: Exercise): string {
       return bullets([
         exercise.title,
         exercise.briefing,
-        `Timed boss fight with ${exercise.parts.length} parts, shown one at a time. Part answers are not included here.`,
+        `Timed module test with ${exercise.parts.length} parts, shown one at a time. Part answers are not included here.`,
       ]);
     case "predict-reveal":
       return bullets([

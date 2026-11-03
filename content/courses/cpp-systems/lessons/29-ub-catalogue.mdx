@@ -3,18 +3,13 @@ id: cpp-systems/08-ub/01-ub-catalogue
 title: "The UB Catalogue"
 estMinutes: 8
 xp: 100
+fun: 3
 missionIntro: "Undefined behaviour isn't \"probably crashes\". The optimiser assumes it never happens and rewrites your code on that basis."
 keyIdeas:
   - "Common UB: signed overflow, out-of-bounds access, use after free, null dereference, reading uninitialised values, data races, misaligned or type-punned access."
   - "Compilers assume UB can't occur. `x + 1 > x` for signed int folds to true, and checks after a dereference can be deleted."
   - "UB anywhere in an execution makes the whole execution meaningless, even \"before\" the UB (time travel)."
 ---
-
-## Mission briefing
-
-The UB Underground has one rule: there are no rules. The compiler is a getaway driver who assumes you'll never do anything stupid, and plans the route accordingly.
-
-**Mission:** learn the stupid things.
 
 ## Spot it
 

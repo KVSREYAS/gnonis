@@ -3,18 +3,13 @@ id: cpp-systems/08-ub/02-aliasing-and-bit-cast
 title: "Strict Aliasing and std::bit_cast"
 estMinutes: 8
 xp: 100
+fun: 5
 missionIntro: "Reading a float through an int* is UB. Use std::bit_cast or memcpy, which compile to the same single instruction."
 keyIdeas:
   - "Strict aliasing: you may only access an object through its own type, a char/std::byte type, or a few allowed variants."
   - "Type punning via reinterpret_cast or unions (in C++) is UB, and optimisers rely on that to reorder loads."
   - "std::bit_cast<To>(from) (C++20) is the sanctioned, constexpr way, and memcpy works too. Both compile to a plain move."
 ---
-
-## Mission briefing
-
-You want to read the serial number stamped inside a float. Breaking in with a crowbar (reinterpret_cast) gets you arrested. The locksmith (bit_cast) does it legally, just as fast.
-
-**Mission:** go legit.
 
 ## Float bits
 

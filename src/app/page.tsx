@@ -6,7 +6,7 @@ import { summarizeCourse } from "@/lib/content/types";
 const TIPS = [
   "Decode at batch size 1 is a race against memory bandwidth, not FLOPs.",
   "The KV cache, not the weights, usually decides how many users fit on a GPU.",
-  "Every lesson card is about two minutes. Every district ends with a boss.",
+  "Every lesson card is about two minutes. Every module ends with a test.",
 ];
 
 export default function Home() {
@@ -23,7 +23,7 @@ export default function Home() {
               LEARN HOW MODELS <span className="text-gold-ink">ACTUALLY RUN</span>
             </h1>
             <p className="mt-4 max-w-[60ch] text-lg text-foreground">
-              Short cards, instant feedback, real numbers. Go from tokens and attention to KV caches and rooflines, one mission at a time.
+              Short cards, instant feedback, real numbers. Go from tokens and attention to KV caches and rooflines, one lesson at a time.
             </p>
           </div>
         </div>
@@ -31,7 +31,7 @@ export default function Home() {
 
       <section className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-12" aria-labelledby="packs">
         <h2 id="packs" className="font-display text-3xl tracking-wide text-foreground">
-          CHOOSE A MISSION PACK
+          CHOOSE A COURSE
         </h2>
         <div className="mt-5 grid gap-4 md:grid-cols-2">
           {courses.map((c) => (

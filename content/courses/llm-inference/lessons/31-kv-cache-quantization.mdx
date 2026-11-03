@@ -3,6 +3,7 @@ id: llm-inference/07-quantization/04-kv-cache-quantization
 title: Quantizing the KV Cache
 estMinutes: 3
 xp: 90
+fun: 4
 missionIntro: Weights are a fixed cost. The KV cache grows with users, so
   shrinking it buys concurrency directly.
 keyIdeas:
@@ -13,12 +14,6 @@ keyIdeas:
   - KIVI quantizes keys per-channel and values per-token, because key outliers
     sit in fixed channels.
 ---
-
-## Mission briefing
-
-The warehouse is the KV cache, and it's bursting with customers' bags.
-
-**Mission:** vacuum-pack every bag so twice as many customers fit inside.
 
 ## Why the cache
 

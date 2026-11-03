@@ -3,18 +3,13 @@ id: cpp-systems/06-layout/01-sizeof-padding-alignment
 title: "sizeof, Padding and Alignment"
 estMinutes: 7
 xp: 90
+fun: 3
 missionIntro: "Every type has an alignment. The compiler pads structs to keep members aligned, and member order changes the size."
 keyIdeas:
   - "Each member sits at an offset that's a multiple of its alignment, and the struct size rounds up to the largest alignment."
   - "Ordering members from largest to smallest alignment minimises padding."
   - "alignas raises alignment, for example alignas(64) to give an object its own cache line."
 ---
-
-## Mission briefing
-
-The Layout Lofts landlord charges by the square metre, padding included.
-
-**Mission:** rearrange the furniture and pay less rent.
 
 ## Measure it
 

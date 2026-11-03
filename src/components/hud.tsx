@@ -10,12 +10,12 @@ import { levelForXp, wantedStars } from "@/lib/progress/logic";
 import { cn } from "@/lib/utils";
 
 export function formatMoney(xp: number) {
-  return `$${String(Math.max(0, Math.floor(xp))).padStart(8, "0")}`;
+  return `${Math.max(0, Math.floor(xp))} XP`;
 }
 
 export function WantedStars({ count, className, compact }: { count: number; className?: string; compact?: boolean }) {
   return (
-    <span className={cn("inline-flex items-center gap-0.5", className)} role="img" aria-label={`Streak: ${count} of 6 wanted stars`}>
+    <span className={cn("inline-flex items-center gap-0.5", className)} role="img" aria-label={`Streak: ${count} of 6 stars`}>
       {Array.from({ length: 6 }, (_, i) => (
         <Star
           key={i}

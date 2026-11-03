@@ -80,8 +80,8 @@ export function MissionPassed(p: MissionPassedProps) {
       >
         <div className="decor sunset absolute inset-x-0 top-1/2 h-40 -translate-y-1/2 opacity-25" />
         <div className="relative text-center">
-          <p className="mission-title font-display text-6xl leading-none text-gold drop-shadow-[0_3px_0_#000] sm:text-8xl">MISSION PASSED</p>
-          <p className="mt-4 font-display text-2xl tracking-widest text-foreground sm:text-3xl">RESPECT +</p>
+          <p className="mission-title font-display text-6xl leading-none text-gold drop-shadow-[0_3px_0_#000] sm:text-8xl">LESSON COMPLETE</p>
+          <p className="mt-4 font-display text-2xl tracking-widest text-foreground sm:text-3xl">XP EARNED</p>
           <p className="mt-2 font-display text-5xl text-money-ink tabular-nums">+{formatMoney(shown)}</p>
           <p className="mt-6 text-sm text-muted-foreground">Tap or press any key to skip</p>
         </div>
@@ -98,7 +98,7 @@ export function MissionPassed(p: MissionPassedProps) {
         data-testid="mission-passed"
       >
         <p id="mission-title" className="font-display text-4xl leading-none text-gold-ink sm:text-5xl">
-          MISSION PASSED
+          LESSON COMPLETE
         </p>
         <p className="mt-1 text-base text-muted-foreground">{p.title}</p>
         <p className="mt-3 font-display text-3xl text-money-ink tabular-nums" data-testid="mission-xp">
@@ -119,14 +119,14 @@ export function MissionPassed(p: MissionPassedProps) {
 
         {(p.skipped ?? 0) > 0 && (
           <p className="mt-4 rounded-lg border border-gold/60 bg-ink p-3 text-base text-foreground" data-testid="mission-skipped">
-            {p.skipped} exercise{(p.skipped ?? 0) === 1 ? "" : "s"} skipped. They count as half a solve toward respect until you come back and solve them.
+            {p.skipped} exercise{(p.skipped ?? 0) === 1 ? "" : "s"} skipped. They count as half a solve toward progress until you come back and solve them.
           </p>
         )}
 
         {p.pendingDesktop > 0 && (
           <p className="mt-4 flex items-start gap-2 rounded-lg border border-border bg-ink p-3 text-base">
             <Monitor className="mt-0.5 size-5 shrink-0 text-gold-ink" aria-hidden />
-            {p.pendingDesktop} desktop mission{p.pendingDesktop > 1 ? "s" : ""} waiting. Replay this lesson on a computer for the bonus.
+            {p.pendingDesktop} desktop exercise{p.pendingDesktop > 1 ? "s" : ""} waiting. Replay this lesson on a computer to finish them.
           </p>
         )}
 
@@ -135,7 +135,7 @@ export function MissionPassed(p: MissionPassedProps) {
             {p.nextLabel} <ArrowRight className="size-5" />
           </Link>
           <Link href={p.mapHref} className={buttonVariants({ variant: "outline", size: "lg", className: "h-14" })}>
-            <MapIcon className="size-5" /> Map
+            <MapIcon className="size-5" /> Course
           </Link>
         </div>
       </div>

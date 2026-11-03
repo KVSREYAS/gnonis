@@ -1,10 +1,11 @@
 ---
 id: llm-inference/10-parallelism/02-pipeline-parallelism
-title: "Pipeline Parallelism: The Assembly Line"
+title: "Pipeline Parallelism"
 estMinutes: 3
 xp: 90
-missionIntro: Give each GPU a slice of the layers and pass activations down the
-  line. Watch out for bubbles.
+fun: 3
+missionIntro: Give each GPU a slice of the layers and pass activations from one GPU
+  to the next. Idle time (bubbles) is the main cost.
 keyIdeas:
   - Pipeline parallelism (PP) assigns contiguous layer ranges to stages and
     sends activations point to point.
@@ -13,12 +14,6 @@ keyIdeas:
   - PP communication is light, so it scales across nodes well. Combine TP inside
     nodes with PP across them.
 ---
-
-## Mission briefing
-
-The chop shop on the edge of Shard City runs an assembly line: one guy strips, one paints, one swaps plates.
-
-**Mission:** keep everyone busy, because a guy waiting for a car is money down the drain.
 
 ## Stages
 
