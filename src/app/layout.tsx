@@ -13,8 +13,17 @@ const body = Atkinson_Hyperlegible({ variable: "--font-body", weight: ["400", "7
 const code = JetBrains_Mono({ variable: "--font-code", subsets: ["latin"], display: "swap" });
 
 export const metadata: Metadata = {
+  applicationName: "Gnosis",
   title: { default: "Gnosis", template: "%s · Gnosis" },
   description: "Learn LLM inference by doing: tokens, attention, KV caches, rooflines and the systems that serve models.",
+  appleWebApp: { capable: true, title: "Gnosis", statusBarStyle: "black-translucent" },
+  icons: {
+    icon: [
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 export const viewport: Viewport = {

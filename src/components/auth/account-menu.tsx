@@ -6,6 +6,8 @@ import { useState } from "react";
 import { Cloud, CloudOff, Loader2, LogOut, RefreshCw, UserRound } from "lucide-react";
 import { useAuth, useProgress } from "@/components/providers";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { offlinePolicy } from "@/lib/offline/policy";
+import { useOnline } from "@/lib/offline/use-online";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import type { SyncStatus } from "@/lib/progress/supabase-store";
 import { cn } from "@/lib/utils";
@@ -28,6 +30,7 @@ function initials(name: string) {
 export function AccountMenu() {
   const { configured, ready, user, signOut } = useAuth();
   const { syncStatus, flush } = useProgress();
+  const online = useOnline();
   const pathname = usePathname();
   const [busy, setBusy] = useState(false);
 
@@ -35,6 +38,7 @@ export function AccountMenu() {
   if (!ready) return <span className="size-11" aria-hidden />;
 
   if (!user) {
+    if (!offlinePolicy(online).signIn) return null;
     const next = pathname && pathname !== "/login" ? `?next=${encodeURIComponent(pathname)}` : "";
     return (
       <Link
@@ -89,7 +93,7 @@ export function AccountMenu() {
             {status.label}
           </p>
           <div className="py-3">
-            <Button variant="outline" className="w-full" onClick={leave} disabled={busy}>
+            <Button variant="outline" className="w-full" onClick={leave} disabled={busy || !online}>
               {busy ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <LogOut className="size-4" aria-hidden />}
               Sign out
             </Button>

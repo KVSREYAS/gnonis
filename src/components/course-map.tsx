@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Check, FastForward, Lock, Monitor, Play, Skull } from "lucide-react";
 import { courseLessons } from "@/components/course-card";
+import { CourseDownload } from "@/components/offline/course-download";
 import { useDevice, useProgress } from "@/components/providers";
 import { RespectBar } from "@/components/respect-bar";
 import { buttonVariants } from "@/components/ui/button";
@@ -181,6 +182,7 @@ export function CourseMap({ course }: { course: CourseSummary }) {
             <p className="mt-1 text-sm text-muted-foreground">
               Level {lvl.level} · {lvl.rank}
             </p>
+            <CourseDownload course={course} detailed />
           </div>
         </div>
       </header>

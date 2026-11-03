@@ -93,6 +93,16 @@ test("a wrong password gets a BUSTED message, then the right one signs in", asyn
   expect(supabase.signins.map((b) => b.password)).toEqual(["wrong-password", "right-password"]);
 });
 
+test("sign-in hides while the browser is offline", async ({ page, context }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("signin-link")).toBeVisible();
+  await context.setOffline(true);
+  await expect(page.getByTestId("offline-indicator")).toBeVisible();
+  await expect(page.getByTestId("signin-link")).toHaveCount(0);
+  await context.setOffline(false);
+  await expect(page.getByTestId("signin-link")).toBeVisible();
+});
+
 test("the password can be shown and hidden", async ({ page }) => {
   await mockSupabase(page);
   await page.goto("/login");

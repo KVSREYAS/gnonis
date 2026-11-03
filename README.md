@@ -19,6 +19,7 @@ Atkinson Hyperlegible at 18px, 1.6 line height, 68ch measure, with reader mode, 
 - **Skip** and **I already know this** sit on every exercise. Both mark it skipped, which is not the same as solved.
   You can continue, the next lesson still unlocks, and you can try the exercise later. Respect counts a skip as half a solve.
 - **Python runs in the browser** via Pyodide in a Web Worker, loaded only when you reach a code exercise.
+- **Offline**: each course has **Download for offline**. That saves the course on the device. The app is installable, and progress made offline syncs when you are back. See [Offline](#offline).
 
 ## Run it locally
 
@@ -383,6 +384,20 @@ The machine this was written for is Windows 11 with an RTX 3060 Ti. The runner d
 Prices below are the public `iad1` rates from the [Sandbox pricing](https://vercel.com/docs/sandbox/pricing) page (October 2026). Active CPU is $0.128/hour and is billed only while the CPU runs. Provisioned memory is $0.0212/GB-hour for the whole sandbox lifetime, in 1-minute minimum increments, and 1 vCPU includes 2 GB. Creations are $0.60 per million. Snapshot storage is $0.08/GB-month.
 
 A compile that finishes in a few seconds still pays the one-minute memory minimum: about $0.0007 of memory plus a fraction of a cent of CPU, so **about $0.001 per run**. Forty runs, the default daily cap, are about **$0.04 per user per day**. Hobby includes 5 active CPU-hours, 420 GB-hours, 5,000 creations, and 10 concurrent sandboxes a month. Creations run out first if every click starts a sandbox (5,000 runs). Past the Hobby quota, sandbox creation pauses until the next cycle. Pro bills these rates against the plan credit.
+
+## Offline
+
+Lessons, concept pages, exercises, bosses, and their pictures are part of the built pages. **Download for offline** on a course (the map, and each course card) saves that course in this browser with a service worker and Cache Storage. The button shows progress, then **Downloaded** and the size, and **Remove download** deletes that course. The shared app shell stays, so the home screen can still open.
+
+On iPhone, Safari will not offer an install banner. Open the Share sheet and tap **Add to Home Screen**. Launch Gnosis from that icon. It opens with no signal as long as you downloaded the course on that device first (and the phone has opened the site once while online, so the worker could install). iOS can still delete website data you have not used for a while; the Home Screen icon is what keeps it.
+
+While the browser reports no connection, the header shows **Offline**. These need the network and are hidden or disabled: the tutor chat, web search, highlight-to-ask, Go deeper in ChatGPT (and Claude and Grok), the cloud C++ compiler, and sign-in. The calculator stays. Multiple choice, fill-in, and the other graded exercises still check on the device. **Run on my PC** still tries `127.0.0.1` and is used only when that runner answers. Python's first run downloads Pyodide from a CDN, so a code exercise that has never loaded Python on this device cannot run offline.
+
+Progress is already stored on the device first. Completions and skips made offline stay there. When you are signed in and back online, the app pulls the cloud save, merges, and uploads. A lesson or solve on either side is kept. A reset (higher epoch) still replaces the older save. Guests stay local-only, same as before.
+
+A download is a snapshot of the pages at that moment. Using the app online always loads the current deploy. After a deploy, download the course again before the next trip if you want the new lessons in the snapshot.
+
+The dev server (`npm run dev`) does not register the service worker. Use `npm run build && npm start`, or the deployed site, to try a download.
 
 ## Deploying to Vercel
 

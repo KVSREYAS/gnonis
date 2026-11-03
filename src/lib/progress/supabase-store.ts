@@ -61,7 +61,9 @@ export const userCacheKey = (userId: string) => `gnosis:progress:user:${userId}:
  * Local-first progress for signed-in users. Every save lands in localStorage synchronously, then a
  * debounced sync pulls the cloud copy, merges (see `mergeProgress`), and pushes the result. Failed
  * syncs keep the local copy marked dirty and retry with backoff, when the browser comes back
- * online, and when the tab becomes visible again, so progress is never dropped.
+ * online, when the browser reports it is offline, and when the tab becomes visible again,
+ * so progress is never dropped. A later sync merges with the cloud copy, so a newer
+ * save on another device is kept.
  */
 export class SupabaseProgressStore implements ProgressStore {
   private readonly remote: ProgressRemote;
@@ -156,6 +158,9 @@ export class SupabaseProgressStore implements ProgressStore {
 
   private attachWindowListeners() {
     const onOnline = () => this.schedule(0);
+    const onOffline = () => {
+      if (this.readCache().dirty) this.setStatus("offline");
+    };
     const onVisible = () => {
       if (document.visibilityState === "visible") this.schedule(0);
       else if (this.readCache().dirty) void this.flush();
@@ -170,10 +175,12 @@ export class SupabaseProgressStore implements ProgressStore {
       this.emit(state);
     };
     window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
     window.addEventListener("storage", onStorage);
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
       window.removeEventListener("storage", onStorage);
       document.removeEventListener("visibilitychange", onVisible);
     };
