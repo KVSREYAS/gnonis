@@ -42,6 +42,7 @@ lessons:
 - chair-calm
 - chair-oil
 - test-macro
+- econ-sources
 districts:
 - id: 01-scarcity-and-choice
   title: Scarcity, choice and opportunity cost
@@ -146,3 +147,4 @@ districts:
   - chair-calm
   - chair-oil
   - test-macro
+  - econ-sources

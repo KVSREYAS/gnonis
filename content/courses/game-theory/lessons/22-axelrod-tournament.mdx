@@ -19,7 +19,7 @@ You pick one strategy to enter. It plays every other entry (and a copy of itself
   id="clean"
   game={"pd-tournament"}
   prompt={"Pick a strategy that finishes in the top 2."}
-  config={{"field": ["always-defect", "always-cooperate", "grim-trigger", "random", "alternator", "suspicious-tit-for-tat"], "rounds": 50, "noise": 0, "choices": ["always-defect", "always-cooperate", "tit-for-tat", "grim-trigger"], "topN": 2}}
+  config={{"field": ["always-defect", "always-cooperate", "grim-trigger", "random", "alternator", "suspicious-tit-for-tat", "tit-for-two-tats"], "rounds": 50, "noise": 0, "choices": ["always-defect", "always-cooperate", "tit-for-tat", "grim-trigger"], "topN": 2}}
   explanation={"Tit for tat or grim trigger finish at the top: they cooperate with the nice players and stop the nasty ones exploiting them. Always cooperate gets exploited, always defect gets stonewalled."}
 />
 
@@ -39,4 +39,4 @@ Strategies that forgive some defections, or that return to cooperating after mut
 
 ## Takeaway
 
-Axelrod's summary of what does well: be **nice** (never defect first), **retaliate** (do not let defection pay), **forgive** (go back to cooperating), and be **clear** (easy for others to read). In a noisy world, extra forgiveness matters more.
+Axelrod's summary of what does well: be **nice** (never defect first), **retaliate** (do not let defection pay), **forgive** (go back to cooperating), and be **clear** (easy for others to read). In a noisy world, extra forgiveness matters more: Nowak and Sigmund (1993) showed that Pavlov and generous tit for tat beat plain tit for tat when mistakes happen.
