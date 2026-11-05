@@ -1,4 +1,4 @@
-import { mergeExerciseRecord, type LessonRecord, type ProgressState, type ExerciseRecord } from "./logic";
+import { mergeExerciseRecord, preferResume, type LessonRecord, type ProgressState, type ExerciseRecord } from "./logic";
 
 export type RenameMap = {
   courses: Record<string, string>;
@@ -54,5 +54,10 @@ export function applyRenames(state: ProgressState, map: RenameMap): ProgressStat
     const next = renameExerciseId(key, map);
     exercises[next] = exercises[next] ? mergeExercises(exercises[next], rec) : rec;
   }
-  return { ...state, lessons, exercises };
+  const places: ProgressState["places"] = {};
+  for (const [key, rec] of Object.entries(state.places ?? {})) {
+    const next = renameLessonId(key, map);
+    places[next] = places[next] ? preferResume(places[next], rec) : rec;
+  }
+  return { ...state, lessons, exercises, places };
 }

@@ -22,6 +22,13 @@ test("a downloaded course plays offline and keeps skips and completions", async 
 
   const action = page.getByTestId("primary-action");
   await action.click();
+  await expect(page.getByTestId("lesson-exercise")).toBeVisible();
+  const calcToggle = page.getByTestId("exercise-calc-toggle");
+  if ((await calcToggle.getAttribute("aria-expanded")) !== "true") await calcToggle.click();
+  await page.getByTestId("exercise-calc-input").fill("2*16");
+  await page.getByTestId("exercise-calc-run").click();
+  await expect(page.getByTestId("exercise-calc-result")).toContainText("32");
+  await expect(page.getByTestId("offline-indicator")).toBeVisible();
   await page.getByTestId("bf16-size-option-1").click();
   await action.click();
   await expect(page.getByTestId("feedback")).toHaveAttribute("data-correct", "true");

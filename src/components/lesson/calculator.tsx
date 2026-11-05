@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { byteHint, CalcError, evaluateExpression, formatCalcValue } from "@/lib/calc/parse";
+import { cn } from "@/lib/utils";
 
 const HISTORY_KEY = "gnosis:calc:v1";
 const UNITS = ["KB", "MB", "GB", "TB"] as const;
@@ -22,7 +23,19 @@ function loadHistory(): Entry[] {
   }
 }
 
-export function Calculator({ active, focusToken = 0 }: { active: boolean; focusToken?: number }) {
+export function Calculator({
+  active,
+  focusToken = 0,
+  testId = "calc",
+  compact = false,
+}: {
+  active: boolean;
+  focusToken?: number;
+  /** Prefix for the input, run, and result test ids. The side panel keeps `calc`. */
+  testId?: string;
+  /** Shorter layout for the calculator that sits beside an exercise. */
+  compact?: boolean;
+}) {
   const [expr, setExpr] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [current, setCurrent] = useState<string | null>(null);
@@ -70,10 +83,10 @@ export function Calculator({ active, focusToken = 0 }: { active: boolean; focusT
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
+    <div className={cn("flex min-h-0 flex-col gap-3", compact ? "" : "flex-1")}>
       <p className="text-sm text-muted-foreground">
         Powers, parentheses, sqrt, log, ln. Units: KB MB GB TB and KiB MiB GiB TiB.{" "}
-        <span className="whitespace-nowrap">Ctrl/Cmd+Shift+K</span> focuses this box.
+        <span className="whitespace-nowrap">Ctrl/Cmd+Shift+K</span> focuses the calculator.
       </p>
       <form
         className="flex gap-2"
@@ -103,13 +116,13 @@ export function Calculator({ active, focusToken = 0 }: { active: boolean; focusT
           enterKeyHint="go"
           placeholder="2*7e9*2/1e9"
           aria-label="Calculator expression"
-          data-testid="calc-input"
+          data-testid={`${testId}-input`}
           className="h-12 min-w-0 flex-1 rounded-lg border border-input bg-ink px-3 font-mono text-base text-foreground outline-none focus-visible:border-gold"
         />
         <button
           type="submit"
           className="tap rounded-lg bg-gold px-4 font-bold text-ink"
-          data-testid="calc-run"
+          data-testid={`${testId}-run`}
         >
           =
         </button>
@@ -129,12 +142,12 @@ export function Calculator({ active, focusToken = 0 }: { active: boolean; focusT
           </button>
         ))}
       </div>
-      <div className="min-h-14 rounded-lg border border-border bg-ink px-3 py-2" aria-live="polite" data-testid="calc-result">
+      <div className="min-h-14 rounded-lg border border-border bg-ink px-3 py-2" aria-live="polite" data-testid={`${testId}-result`}>
         {error ? (
           <p className="text-base text-danger">{error}</p>
         ) : current ? (
           <>
-            <p className="font-mono text-2xl text-money-ink">{current}</p>
+            <p className={cn("font-mono text-money-ink", compact ? "text-xl break-all" : "text-2xl")}>{current}</p>
             {hint && <p className="text-sm text-muted-foreground">{hint}</p>}
           </>
         ) : (
@@ -142,7 +155,7 @@ export function Calculator({ active, focusToken = 0 }: { active: boolean; focusT
         )}
       </div>
       {history.length > 0 && (
-        <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+        <ul className={cn("min-h-0 space-y-1 overflow-y-auto", compact ? "max-h-28" : "flex-1")}>
           {[...history].reverse().map((entry, index) => (
             <li key={`${entry.expr}-${index}`}>
               <button

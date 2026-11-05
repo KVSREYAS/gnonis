@@ -46,6 +46,7 @@ export function DivePanel({
   onLatestQuestion,
   calcFocus,
   offline = false,
+  calculatorBeside = false,
 }: {
   device: Device;
   tab: "chat" | "calc";
@@ -67,6 +68,8 @@ export function DivePanel({
   calcFocus: number;
   /** Chat, web search, and the outside-model links need a network. The calculator does not. */
   offline?: boolean;
+  /** The exercise already shows a calculator, so this panel does not open a second one. */
+  calculatorBeside?: boolean;
 }) {
   const [chatMounted, setChatMounted] = useState(tab === "chat");
   const [model, setModel] = useState(() => readModel(defaultModel));
@@ -204,7 +207,15 @@ export function DivePanel({
             />
           </div>
         )}
-        {(offline || tab === "calc") && <Calculator active focusToken={calcFocus} />}
+        {offline || tab === "calc" ? (
+          calculatorBeside ? (
+            <p className="text-base text-muted-foreground" data-testid="calc-beside-note">
+              The calculator is next to this exercise.
+            </p>
+          ) : (
+            <Calculator active focusToken={calcFocus} />
+          )
+        ) : null}
       </div>
     </aside>
   );
