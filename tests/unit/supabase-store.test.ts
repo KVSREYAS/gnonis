@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { completeLesson, emptyProgress, recordExercise, resetProgress, skipExercise, type ProgressState } from "@/lib/progress/logic";
+import { completeLesson, emptyProgress, notePlace, recordExercise, resetProgress, skipExercise, type ProgressState } from "@/lib/progress/logic";
 import { PROGRESS_KEY } from "@/lib/progress/store";
 import { SupabaseProgressStore, userCacheKey, type ProgressRemote, type SyncStatus } from "@/lib/progress/supabase-store";
 
@@ -69,6 +69,17 @@ describe("SupabaseProgressStore", () => {
     const { store, storage } = makeStore(remote);
     expect((await store.load()).xp).toBe(50);
     expect(JSON.parse(storage.getItem(userCacheKey(USER))!).state.xp).toBe(50);
+  });
+
+  it("claims a guest resume point into the account", async () => {
+    const remote = new FakeRemote();
+    const storage = memoryStorage();
+    storage.setItem(PROGRESS_KEY, JSON.stringify(notePlace(emptyProgress(), "c/m/a", 2, new Date("2026-10-22T10:00:00.000Z"))));
+    const { store } = makeStore(remote, storage);
+    const loaded = await store.load();
+    expect(loaded.places["c/m/a"]?.step).toBe(2);
+    expect(remote.row?.places["c/m/a"]?.step).toBe(2);
+    expect(storage.getItem(PROGRESS_KEY)).toBeNull();
   });
 
   it("merges guest progress into the account on first sign-in and clears the guest save", async () => {

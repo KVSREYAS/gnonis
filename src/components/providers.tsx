@@ -9,6 +9,7 @@ import {
   emptyProgress,
   liveStreak,
   noteExerciseHash as noteExerciseHashPure,
+  notePlace as notePlacePure,
   recordExercise as recordExercisePure,
   skipExercise as skipExercisePure,
   unskipExercise as unskipExercisePure,
@@ -172,6 +173,8 @@ type ProgressCtx = {
   skipExercise: (key: string, reason: SkipReason, contentHash?: string) => void;
   unskipExercise: (key: string) => void;
   noteExerciseHash: (key: string, contentHash: string) => void;
+  /** Saves the step the learner is on so the lesson reopens there. */
+  notePlace: (lessonKey: string, step: number) => void;
   completeLesson: (input: Omit<CompletionInput, "now">) => CompletionResult;
   reset: () => void;
   /** Pushes pending changes to the account, e.g. before signing out. */
@@ -260,6 +263,14 @@ function ProgressProvider({ children, renames }: { children: React.ReactNode; re
     [commit],
   );
 
+  const notePlace = useCallback(
+    (lessonKey: string, step: number) => {
+      const next = notePlacePure(stateRef.current, lessonKey, step, new Date());
+      if (next !== stateRef.current) commit(next);
+    },
+    [commit],
+  );
+
   const completeLesson = useCallback(
     (input: Omit<CompletionInput, "now">) => {
       const result = completeLessonPure(stateRef.current, { ...input, now: new Date() });
@@ -284,8 +295,8 @@ function ProgressProvider({ children, renames }: { children: React.ReactNode; re
   const status: SyncStatus = cloud ? syncStatus : "idle";
 
   const value = useMemo(
-    () => ({ state, loaded, streakDays, cloud, syncStatus: status, recordExercise, skipExercise, unskipExercise, noteExerciseHash, completeLesson, reset, flush }),
-    [state, loaded, streakDays, cloud, status, recordExercise, skipExercise, unskipExercise, noteExerciseHash, completeLesson, reset, flush],
+    () => ({ state, loaded, streakDays, cloud, syncStatus: status, recordExercise, skipExercise, unskipExercise, noteExerciseHash, notePlace, completeLesson, reset, flush }),
+    [state, loaded, streakDays, cloud, status, recordExercise, skipExercise, unskipExercise, noteExerciseHash, notePlace, completeLesson, reset, flush],
   );
   return <ProgressContext.Provider value={value}>{children}</ProgressContext.Provider>;
 }
