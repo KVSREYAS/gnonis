@@ -8,6 +8,7 @@ import { ArrowLeft, CheckCircle2, MessagesSquare, Monitor, Smartphone, X, XCircl
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AskSelection, readLessonSelection } from "@/components/lesson/ask-selection";
+import { ExerciseCalculator } from "@/components/lesson/exercise-calculator";
 import { useAuth, useDevice, useProgress } from "@/components/providers";
 import { offlinePolicy } from "@/lib/offline/policy";
 import { useOnline } from "@/lib/offline/use-online";
@@ -24,7 +25,7 @@ import { FunBadge } from "@/components/fun-badge";
 import type { Exercise } from "@/lib/content/schema";
 import { exerciseKey, supports } from "@/lib/content/types";
 import type { Grade } from "@/lib/grading";
-import type { SkipReason } from "@/lib/progress/logic";
+import { resumeStep, type SkipReason } from "@/lib/progress/logic";
 import { cn } from "@/lib/utils";
 
 const DivePanel = dynamic(() => import("@/components/lesson/dive-panel").then((mod) => mod.DivePanel), { ssr: false });
@@ -97,18 +98,25 @@ export function LessonPlayer({
   const network = offlinePolicy(online);
   const { configured, user } = useAuth();
   const pathname = usePathname();
-  const { state, recordExercise, skipExercise, unskipExercise, noteExerciseHash, completeLesson } = useProgress();
+  const { state, loaded, recordExercise, skipExercise, unskipExercise, noteExerciseHash, notePlace, completeLesson } = useProgress();
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelTab, setPanelTab] = useState<"chat" | "calc">("chat");
   const [calcFocus, setCalcFocus] = useState(0);
+  const [inlineCalcFocus, setInlineCalcFocus] = useState(0);
+  /** Set once the learner moves. Until then the saved place, if any, is the step on screen. */
+  const [chosen, setChosen] = useState<number | null>(null);
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [draft, setDraft] = useState("");
   const [latestQuestion, setLatestQuestion] = useState("");
-  const [index, setIndex] = useState(0);
   const [status, setStatus] = useState<Record<string, Status>>({});
   const [widgetAction, setWidgetAction] = useState<PrimaryAction | null>(null);
   const [mission, setMission] = useState<null | { xpGained: number; firstCompletion: boolean; pending: number; skipped: number; preview?: boolean }>(null);
   const topRef = useRef<HTMLDivElement>(null);
+
+  const ready = lesson.preview || loaded;
+  const restored = !lesson.preview && loaded ? resumeStep(state, lesson.key, steps.length) : 0;
+  const index = Math.min(chosen ?? restored, Math.max(steps.length - 1, 0));
+  const showResume = ready && !lesson.preview && chosen === null && restored > 0;
 
   const step = steps[index];
   const exerciseIds = useMemo(() => steps.flatMap((s) => (s.kind === "exercise" ? [s.id] : [])), [steps]);
@@ -122,9 +130,10 @@ export function LessonPlayer({
   const updated = step.kind === "exercise" && !!savedHash && !!lesson.hashes[step.id] && savedHash !== lesson.hashes[step.id];
 
   useEffect(() => {
+    if (!ready) return;
     topRef.current?.scrollIntoView({ block: "start" });
     topRef.current?.focus({ preventScroll: true });
-  }, [index]);
+  }, [index, ready]);
 
   const finish = useCallback(
     (latest: Record<string, Status>) => {
@@ -145,12 +154,22 @@ export function LessonPlayer({
     [completeLesson, exerciseIds, lesson.key, lesson.preview, lesson.xp, state],
   );
 
+  const goTo = useCallback(
+    (stepIndex: number) => {
+      const last = Math.max(steps.length - 1, 0);
+      const clamped = Math.max(0, Math.min(last, stepIndex));
+      setChosen(clamped);
+      if (!lesson.preview) notePlace(lesson.key, clamped);
+    },
+    [lesson.key, lesson.preview, notePlace, steps.length],
+  );
+
   const next = useCallback(
     (latest = status) => {
-      if (index < steps.length - 1) setIndex(index + 1);
+      if (index < steps.length - 1) goTo(index + 1);
       else finish(latest);
     },
-    [finish, index, status, steps.length],
+    [finish, goTo, index, status, steps.length],
   );
 
   const onGrade = useCallback(
@@ -163,10 +182,10 @@ export function LessonPlayer({
   );
 
   useEffect(() => {
-    if (lesson.preview || step.kind !== "exercise") return;
+    if (!ready || lesson.preview || step.kind !== "exercise") return;
     const hash = lesson.hashes[step.id];
     if (hash) noteExerciseHash(exerciseKey(lesson.key, step.id), hash);
-  }, [lesson.hashes, lesson.key, lesson.preview, noteExerciseHash, step]);
+  }, [lesson.hashes, lesson.key, lesson.preview, noteExerciseHash, ready, step]);
 
   const retry = () => {
     if (step.kind !== "exercise") return;
@@ -276,10 +295,14 @@ export function LessonPlayer({
 
   const shownTab = network.chat ? panelTab : "calc";
 
+  const openInlineCalc = useCallback(() => {
+    setInlineCalcFocus((n) => n + 1);
+    document.querySelector("[data-testid='exercise-calc']")?.scrollIntoView({ block: "nearest" });
+  }, []);
+
   useEffect(() => {
-    if (!chatEnabled) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (chatEnabled && event.key === "Escape") {
         rememberDive(false);
         return;
       }
@@ -288,12 +311,17 @@ export function LessonPlayer({
       const key = event.key.toLowerCase();
       if (key === "k" && event.shiftKey) {
         event.preventDefault();
+        if (step.kind === "exercise") {
+          openInlineCalc();
+          return;
+        }
+        if (!chatEnabled) return;
         setPanelTab("calc");
         rememberDive(true);
         setCalcFocus((n) => n + 1);
         return;
       }
-      if (!network.highlightAsk || device === "phone" || key !== "l" || event.shiftKey) return;
+      if (!chatEnabled || !network.highlightAsk || device === "phone" || key !== "l" || event.shiftKey) return;
       const target = event.target;
       if (target instanceof HTMLElement && target.closest("input, textarea, select, [contenteditable='true']")) return;
       event.preventDefault();
@@ -304,7 +332,7 @@ export function LessonPlayer({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [addQuote, chatEnabled, device, network.highlightAsk, rememberDive]);
+  }, [addQuote, chatEnabled, device, network.highlightAsk, openInlineCalc, rememberDive, step.kind]);
 
   const chatgptFor = useCallback(
     (text: string) =>
@@ -322,9 +350,14 @@ export function LessonPlayer({
   return (
     <LessonIdProvider id={lesson.key}>
     <div
-      className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-3 sm:px-6"
+      className={cn(
+        "mx-auto flex w-full flex-1 flex-col px-3 sm:px-6",
+        ready && step.kind === "exercise" ? "max-w-6xl" : "max-w-4xl",
+      )}
       data-lesson-player
       data-chat-enabled={chatEnabled ? "true" : "false"}
+      data-resume={ready ? "ready" : "pending"}
+      data-step-index={ready ? index : undefined}
     >
       {lesson.preview && (
         <p className="mt-3 rounded-lg border border-gold bg-ink px-3 py-2 text-center text-sm font-bold tracking-widest text-gold-ink uppercase" data-testid="preview-banner">
@@ -356,6 +389,10 @@ export function LessonPlayer({
               aria-label={network.chat ? "Dive deeper" : "Calculator"}
               data-testid="dive-toggle"
               onClick={() => {
+                if (!network.chat && step.kind === "exercise") {
+                  openInlineCalc();
+                  return;
+                }
                 setPanelTab(network.chat ? "chat" : "calc");
                 rememberDive(!panelOpen);
               }}
@@ -364,21 +401,23 @@ export function LessonPlayer({
               <span className="max-sm:sr-only">{network.chat ? "Dive deeper" : "Calc"}</span>
             </Button>
           )}
-          <span className="hidden text-sm text-muted-foreground sm:inline" aria-hidden>
-            {progress + 1}/{steps.length}
-          </span>
+          {ready ? (
+            <span className="hidden text-sm text-muted-foreground sm:inline" aria-hidden>
+              {progress + 1}/{steps.length}
+            </span>
+          ) : null}
           {skippedIds.size > 0 && (
             <span className="text-sm font-bold text-gold-ink" data-testid="lesson-skipped-count">
               {skippedIds.size} skipped
             </span>
           )}
-          <Radar value={progress + 1} total={steps.length} />
+          <Radar value={ready ? progress + 1 : 0} total={steps.length} />
         </div>
       </div>
       <div className="mb-4 flex gap-1" aria-hidden>
         {steps.map((s, i) => {
           const stepSkipped = s.kind === "exercise" && skippedIds.has(s.id);
-          const mark = i === index ? "current" : i > index ? "ahead" : stepSkipped ? "skipped" : "done";
+          const mark = !ready ? "ahead" : i === index ? "current" : i > index ? "ahead" : stepSkipped ? "skipped" : "done";
           return (
             <span
               key={i}
@@ -397,86 +436,104 @@ export function LessonPlayer({
         })}
       </div>
 
-      <section className="flex-1 pb-40" aria-live="polite" data-lesson-content>
-        {step.kind === "card" ? (
-          <article className="mx-auto max-w-[68ch] rounded-xl border border-border bg-panel p-5 sm:p-8" data-testid="lesson-card">
-            <h2 className="mb-4 font-display text-3xl leading-tight tracking-wide text-foreground">{step.title}</h2>
-            <div className="reading">{step.content}</div>
-          </article>
+      <section className="flex-1 pb-40" aria-live="polite" aria-busy={!ready} data-lesson-content data-testid="lesson-step">
+        {!ready ? (
+          <div className="min-h-40 rounded-xl border border-border bg-panel" data-testid="lesson-restoring" />
         ) : (
-          <article className="rounded-xl border border-border bg-panel p-4 sm:p-7" data-testid="lesson-exercise" data-exercise-type={step.exercise.type}>
-            <div className="mb-4 flex flex-wrap items-center gap-2">
-              <span className="font-display text-lg tracking-widest text-gold-ink">{exerciseLabel(step.exercise.type).toUpperCase()}</span>
-              <DeviceBadges ex={step.exercise} />
-              {updated && (
-                <Badge className="bg-gold text-ink" data-testid="exercise-updated">
-                  Updated
-                </Badge>
-              )}
-            </div>
-            {blocked ? (
-              <div className="rounded-lg border-2 border-dashed border-gold/60 bg-ink p-5" data-testid="desktop-mission">
-                <DesktopBadge className="mb-3" />
-                <p className="text-lg font-bold text-foreground">This one needs a keyboard.</p>
-                <p className="mt-1 text-base text-muted-foreground">
-                  Code exercises need a desktop. Skip it for now. It will be marked on the course page, and you can solve it later on a computer.
-                </p>
-              </div>
+          <>
+            {showResume ? (
+              <p className="mb-3 text-sm font-bold text-gold-ink" data-testid="lesson-resumed">
+                Picking up where you left off.
+              </p>
+            ) : null}
+            {step.kind === "card" ? (
+              <article className="mx-auto max-w-[68ch] rounded-xl border border-border bg-panel p-5 sm:p-8" data-testid="lesson-card">
+                <h2 className="mb-4 font-display text-3xl leading-tight tracking-wide text-foreground">{step.title}</h2>
+                <div className="reading">{step.content}</div>
+              </article>
             ) : (
-              <ExerciseRenderer
-                key={`${step.id}-${st?.attempt ?? 0}`}
-                id={step.id}
-                exercise={step.exercise}
-                device={device}
-                setAction={setWidgetAction}
-                onGrade={onGrade}
-                locked={!!st?.grade || skipped}
-              />
-            )}
-            {skipped && (
-              <div className="mt-4 rounded-lg border-2 border-gold/70 bg-ink p-4" data-testid="exercise-skipped" data-reason={skipReason === "know" ? "know" : "skip"}>
-                <p className="font-display text-xl tracking-wide text-gold-ink">{skipReason === "know" ? "ALREADY KNOWN" : "SKIPPED"}</p>
-                <p className="mt-1 text-base text-foreground">
-                  {skipReason === "know"
-                    ? "Marked as something you already know. It is not a solve. Try it whenever you want the real check."
-                    : "Skipped for now. It is not a solve, and the next lesson still unlocks when you finish this one."}
-                </p>
-                <Button type="button" variant="outline" className="mt-3 min-h-11" onClick={unskip} data-testid="unskip-exercise">
-                  Try it
-                </Button>
-              </div>
-            )}
-            {!blocked && !skipped && !st?.grade?.correct && !lesson.preview && (
-              <div className="mt-4 flex flex-wrap gap-2" data-testid="skip-actions">
-                <Button type="button" variant="outline" className="min-h-11" onClick={() => doSkip("skip")} data-testid="skip-exercise">
-                  Skip
-                </Button>
-                <Button type="button" variant="ghost" className="min-h-11" onClick={() => doSkip("know")} data-testid="know-exercise">
-                  I already know this
-                </Button>
-              </div>
-            )}
-            {st?.grade && !skipped && (
-              <div
-                role="status"
-                data-testid="feedback"
-                data-correct={st.grade.correct}
-                className={cn("mt-5 flex gap-3 rounded-lg border-2 bg-ink p-4", st.grade.correct ? "border-money" : "border-danger")}
-              >
-                {st.grade.correct ? (
-                  <CheckCircle2 className="mt-0.5 size-6 shrink-0 text-money-ink" aria-hidden />
-                ) : (
-                  <XCircle className="mt-0.5 size-6 shrink-0 text-danger" aria-hidden />
-                )}
-                <div>
-                  <p className={cn("font-display text-xl tracking-wide", st.grade.correct ? "text-money-ink" : "text-danger")}>
-                    {st.grade.correct ? "NICE WORK" : "NOT QUITE"}
-                  </p>
-                  <p className="mt-1 text-base whitespace-pre-line text-foreground">{st.grade.message}</p>
+              <article className="rounded-xl border border-border bg-panel p-4 sm:p-7" data-testid="lesson-exercise" data-exercise-type={step.exercise.type}>
+                <div className="mb-4 flex flex-wrap items-center gap-2">
+                  <span className="font-display text-lg tracking-widest text-gold-ink">{exerciseLabel(step.exercise.type).toUpperCase()}</span>
+                  <DeviceBadges ex={step.exercise} />
+                  {updated ? (
+                    <Badge className="bg-gold text-ink" data-testid="exercise-updated">
+                      Updated
+                    </Badge>
+                  ) : null}
                 </div>
-              </div>
+                <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_18.5rem]" data-exercise-layout>
+                  <div className="order-2 min-w-0 lg:order-1">
+                    {blocked ? (
+                      <div className="rounded-lg border-2 border-dashed border-gold/60 bg-ink p-5" data-testid="desktop-mission">
+                        <DesktopBadge className="mb-3" />
+                        <p className="text-lg font-bold text-foreground">This one needs a keyboard.</p>
+                        <p className="mt-1 text-base text-muted-foreground">
+                          Code exercises need a desktop. Skip it for now. It will be marked on the course page, and you can solve it later on a computer.
+                        </p>
+                      </div>
+                    ) : (
+                      <ExerciseRenderer
+                        key={`${step.id}-${st?.attempt ?? 0}`}
+                        id={step.id}
+                        exercise={step.exercise}
+                        device={device}
+                        setAction={setWidgetAction}
+                        onGrade={onGrade}
+                        locked={!!st?.grade || skipped}
+                      />
+                    )}
+                    {skipped ? (
+                      <div className="mt-4 rounded-lg border-2 border-gold/70 bg-ink p-4" data-testid="exercise-skipped" data-reason={skipReason === "know" ? "know" : "skip"}>
+                        <p className="font-display text-xl tracking-wide text-gold-ink">{skipReason === "know" ? "ALREADY KNOWN" : "SKIPPED"}</p>
+                        <p className="mt-1 text-base text-foreground">
+                          {skipReason === "know"
+                            ? "Marked as something you already know. It is not a solve. Try it whenever you want the real check."
+                            : "Skipped for now. It is not a solve, and the next lesson still unlocks when you finish this one."}
+                        </p>
+                        <Button type="button" variant="outline" className="mt-3 min-h-11" onClick={unskip} data-testid="unskip-exercise">
+                          Try it
+                        </Button>
+                      </div>
+                    ) : null}
+                    {!blocked && !skipped && !st?.grade?.correct && !lesson.preview ? (
+                      <div className="mt-4 flex flex-wrap gap-2" data-testid="skip-actions">
+                        <Button type="button" variant="outline" className="min-h-11" onClick={() => doSkip("skip")} data-testid="skip-exercise">
+                          Skip
+                        </Button>
+                        <Button type="button" variant="ghost" className="min-h-11" onClick={() => doSkip("know")} data-testid="know-exercise">
+                          I already know this
+                        </Button>
+                      </div>
+                    ) : null}
+                    {st?.grade && !skipped ? (
+                      <div
+                        role="status"
+                        data-testid="feedback"
+                        data-correct={st.grade.correct}
+                        className={cn("mt-5 flex gap-3 rounded-lg border-2 bg-ink p-4", st.grade.correct ? "border-money" : "border-danger")}
+                      >
+                        {st.grade.correct ? (
+                          <CheckCircle2 className="mt-0.5 size-6 shrink-0 text-money-ink" aria-hidden />
+                        ) : (
+                          <XCircle className="mt-0.5 size-6 shrink-0 text-danger" aria-hidden />
+                        )}
+                        <div>
+                          <p className={cn("font-display text-xl tracking-wide", st.grade.correct ? "text-money-ink" : "text-danger")}>
+                            {st.grade.correct ? "NICE WORK" : "NOT QUITE"}
+                          </p>
+                          <p className="mt-1 text-base whitespace-pre-line text-foreground">{st.grade.message}</p>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="order-1 lg:order-2">
+                    <ExerciseCalculator focusToken={inlineCalcFocus} />
+                  </div>
+                </div>
+              </article>
             )}
-          </article>
+          </>
         )}
       </section>
 
@@ -484,12 +541,17 @@ export function LessonPlayer({
         className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-ink/95 backdrop-blur"
         data-testid="action-bar"
       >
-        <div className="mx-auto flex max-w-4xl items-center gap-2 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6">
+        <div
+          className={cn(
+            "mx-auto flex items-center gap-2 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6",
+            ready && step.kind === "exercise" ? "max-w-6xl" : "max-w-4xl",
+          )}
+        >
           <Button
             variant="ghost"
             size="icon-lg"
-            onClick={() => setIndex((i) => Math.max(0, i - 1))}
-            disabled={index === 0}
+            onClick={() => goTo(index - 1)}
+            disabled={!ready || index === 0}
             aria-label="Previous step"
             className="shrink-0"
           >
@@ -504,7 +566,7 @@ export function LessonPlayer({
             size="lg"
             className="h-14 flex-1 font-display text-xl tracking-wider"
             onClick={() => primary?.onPress()}
-            disabled={!primary || primary.disabled}
+            disabled={!ready || !primary || primary.disabled}
             aria-busy={primary?.busy}
             data-testid="primary-action"
           >
@@ -545,6 +607,7 @@ export function LessonPlayer({
           onLatestQuestion={rememberQuestion}
           calcFocus={calcFocus}
           offline={!network.chat}
+          calculatorBeside={step.kind === "exercise"}
         />
       )}
 

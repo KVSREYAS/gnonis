@@ -12,6 +12,15 @@ export type LessonRecord = {
 /** "skip" is Skip. "know" is I already know this. Both are skipped, and neither is a solve. */
 export type SkipReason = "skip" | "know";
 
+/**
+ * Where the learner left a lesson. `step` is the zero-based player step.
+ * `null` means they finished the lesson and the position was cleared.
+ */
+export type ResumePlace = {
+  step: number | null;
+  updatedAt: string;
+};
+
 export type ExerciseRecord = {
   attempts: number;
   correct: boolean;
@@ -34,6 +43,11 @@ export type ProgressState = {
   xp: number;
   lessons: Record<string, LessonRecord>;
   exercises: Record<string, ExerciseRecord>;
+  /**
+   * Resume position per lesson id. Guests keep it in the local save. Signed-in users
+   * sync it with the rest of the save. A finished lesson stores `step: null`.
+   */
+  places: Record<string, ResumePlace>;
   streak: { current: number; best: number; lastDay: string | null };
   updatedAt: string | null;
   /** Bumped by every reset. When saves are merged, a higher epoch wins outright, so a reset sticks across devices. */
@@ -45,6 +59,7 @@ export const emptyProgress = (): ProgressState => ({
   xp: 0,
   lessons: {},
   exercises: {},
+  places: {},
   streak: { current: 0, best: 0, lastDay: null },
   updatedAt: null,
   epoch: 0,
@@ -163,6 +178,41 @@ export function isExerciseSkipped(record: ExerciseRecord | undefined): boolean {
   return !!record && record.skipped === true && record.correct !== true;
 }
 
+/** Later write wins. The same instant prefers a cleared position, then the higher step. */
+export function preferResume(a: ResumePlace, b: ResumePlace): ResumePlace {
+  if (a.updatedAt !== b.updatedAt) return a.updatedAt > b.updatedAt ? a : b;
+  if (a.step === b.step) return a;
+  if (a.step === null) return a;
+  if (b.step === null) return b;
+  return a.step > b.step ? a : b;
+}
+
+/** Remembers the step the learner is on. The same step is a no-op so opening a lesson does not rewrite the save. */
+export function notePlace(state: ProgressState, lessonKey: string, step: number, now: Date): ProgressState {
+  if (!lessonKey || !Number.isInteger(step) || step < 0) return state;
+  const prev = state.places[lessonKey];
+  if (prev?.step === step) return state;
+  const updatedAt = now.toISOString();
+  return {
+    ...state,
+    places: { ...state.places, [lessonKey]: { step, updatedAt } },
+    updatedAt,
+  };
+}
+
+/** Step to open, or 0 when there is nothing to resume or the saved step no longer exists. */
+export function resumeStep(state: ProgressState, lessonKey: string, stepCount: number): number {
+  const step = state.places[lessonKey]?.step;
+  if (typeof step !== "number" || !Number.isInteger(step) || step < 0 || step >= stepCount) return 0;
+  return step;
+}
+
+function clearResumePlace(places: Record<string, ResumePlace>, lessonKey: string, now: Date): Record<string, ResumePlace> {
+  const prev = places[lessonKey];
+  if (!prev || prev.step === null) return places;
+  return { ...places, [lessonKey]: { step: null, updatedAt: now.toISOString() } };
+}
+
 /** Later skip or un-skip wins. With no timestamps, a skip on either side is kept and "know" beats "skip". */
 export function mergeSkip(a: ExerciseRecord, b: ExerciseRecord): Pick<ExerciseRecord, "skipped" | "skipReason" | "skippedAt"> {
   const leftAt = typeof a.skippedAt === "string" ? a.skippedAt : "";
@@ -247,6 +297,7 @@ export function completeLesson(state: ProgressState, input: CompletionInput): Co
           pendingDesktop: pending,
         },
       },
+      places: clearResumePlace(state.places, input.lessonKey, input.now),
       streak: touchStreak(state.streak, dayKey(input.now)),
       updatedAt: input.now.toISOString(),
     },
@@ -342,6 +393,25 @@ function cleanExercise(value: unknown): ExerciseRecord | null {
   return next;
 }
 
+function cleanPlace(value: unknown): ResumePlace | null {
+  if (!value || typeof value !== "object") return null;
+  const rec = value as Partial<ResumePlace>;
+  if (typeof rec.updatedAt !== "string" || rec.updatedAt.length === 0) return null;
+  if (rec.step === null) return { step: null, updatedAt: rec.updatedAt };
+  if (typeof rec.step === "number" && Number.isInteger(rec.step) && rec.step >= 0) return { step: rec.step, updatedAt: rec.updatedAt };
+  return null;
+}
+
+function cleanPlaces(raw: unknown): Record<string, ResumePlace> {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Record<string, ResumePlace> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const rec = cleanPlace(value);
+    if (rec) out[key] = rec;
+  }
+  return out;
+}
+
 function cleanExercises(raw: unknown): Record<string, ExerciseRecord> {
   if (!raw || typeof raw !== "object") return {};
   const out: Record<string, ExerciseRecord> = {};
@@ -363,6 +433,7 @@ export function migrate(raw: unknown, renames: RenameMap = EMPTY_RENAMES): Progr
       xp: typeof r.xp === "number" && r.xp >= 0 ? r.xp : 0,
       lessons: r.lessons && typeof r.lessons === "object" ? r.lessons : {},
       exercises: cleanExercises(r.exercises),
+      places: cleanPlaces(r.places),
       streak: r.streak && typeof r.streak === "object" ? { ...base.streak, ...r.streak } : base.streak,
       updatedAt: typeof r.updatedAt === "string" ? r.updatedAt : null,
       epoch: typeof r.epoch === "number" && r.epoch >= 0 ? r.epoch : 0,

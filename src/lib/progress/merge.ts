@@ -1,4 +1,4 @@
-import { mergeExerciseRecord, PROGRESS_VERSION, type ExerciseRecord, type LessonRecord, type ProgressState } from "./logic";
+import { mergeExerciseRecord, preferResume, PROGRESS_VERSION, type ExerciseRecord, type LessonRecord, type ProgressState, type ResumePlace } from "./logic";
 
 /*
  * Merge rule for two saves of the same learner (e.g. phone and PC, or guest progress joining an account):
@@ -12,6 +12,8 @@ import { mergeExerciseRecord, PROGRESS_VERSION, type ExerciseRecord, type Lesson
  * - XP: the sum of the merged lessons' `xpEarned` (XP is only ever paid through lessons), never lower than
  *   either side's XP. So separate progress adds up, and the same progress is never counted twice.
  * - Streak: the side that played most recently, best is the max of both.
+ * - Resume places: per lesson, the later `updatedAt` wins. The same timestamp prefers a cleared
+ *   position (the lesson was finished) and otherwise the higher step.
  *
  * The result is the same whichever order the saves are merged in, and merging a save with itself changes nothing.
  */
@@ -33,6 +35,7 @@ export function mergeProgress(a: ProgressState, b: ProgressState): ProgressState
     xp: Math.max(a.xp, b.xp, lessonXp),
     lessons,
     exercises,
+    places: mergePlaces(a.places, b.places),
     streak: mergeStreak(a.streak, b.streak),
     updatedAt: maxString(a.updatedAt, b.updatedAt),
     epoch: a.epoch,
@@ -41,7 +44,9 @@ export function mergeProgress(a: ProgressState, b: ProgressState): ProgressState
 
 /** True when the save holds no progress at all, so there is nothing worth merging or uploading. */
 export function isEmptyProgress(s: ProgressState): boolean {
-  return s.xp === 0 && Object.keys(s.lessons).length === 0 && Object.keys(s.exercises).length === 0 && !s.streak.lastDay;
+  const places = s.places ?? {};
+  const resume = Object.values(places).some((place) => typeof place?.step === "number");
+  return s.xp === 0 && Object.keys(s.lessons).length === 0 && Object.keys(s.exercises).length === 0 && !s.streak.lastDay && !resume;
 }
 
 /** Structural equality that ignores key order (Postgres jsonb does not keep it). */
@@ -66,6 +71,20 @@ function mergeLesson(a: LessonRecord | undefined, b: LessonRecord | undefined): 
 function mergeExercise(a: ExerciseRecord | undefined, b: ExerciseRecord | undefined): ExerciseRecord {
   if (!a || !b) return { ...(a ?? b)! };
   return mergeExerciseRecord(a, b);
+}
+
+function mergePlaces(a: ProgressState["places"] | undefined, b: ProgressState["places"] | undefined): ProgressState["places"] {
+  const left = a ?? {};
+  const right = b ?? {};
+  const out: Record<string, ResumePlace> = {};
+  for (const key of union(left, right)) {
+    const x = left[key];
+    const y = right[key];
+    const winner = !x || !y ? (x ?? y) : preferResume(x, y);
+    if (!winner) continue;
+    out[key] = { step: winner.step, updatedAt: winner.updatedAt };
+  }
+  return out;
 }
 
 function mergeStreak(a: ProgressState["streak"], b: ProgressState["streak"]): ProgressState["streak"] {

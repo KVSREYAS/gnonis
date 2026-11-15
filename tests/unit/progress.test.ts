@@ -9,8 +9,11 @@ import {
   migrate,
   nextLessonKey,
   noteExerciseHash,
+  notePlace,
   recordExercise,
+  resetProgress,
   respect,
+  resumeStep,
   skipExercise,
   skippedExerciseCount,
   unskipExercise,
@@ -216,6 +219,75 @@ describe("levels, respect and next lesson", () => {
     expect(retried.exercises["c/m/a#b"].skipped).toBe(false);
     expect(skippedExerciseCount(retried, "c/m/a", ["a", "b"])).toBe(1);
     expect(skipExercise(solved, "c/m/a#a", "skip", now)).toBe(solved);
+  });
+});
+
+describe("resume place", () => {
+  const when = at("2026-10-22T12:00:00.000Z");
+  const lessonKey = "c/m/l";
+
+  it("remembers a step and ignores a repeat of the same step", () => {
+    const saved = notePlace(emptyProgress(), lessonKey, 2, when);
+    expect(saved.places[lessonKey]).toEqual({ step: 2, updatedAt: when.toISOString() });
+    expect(notePlace(saved, lessonKey, 2, at("2026-10-22T13:00:00.000Z"))).toBe(saved);
+    expect(resumeStep(saved, lessonKey, 5)).toBe(2);
+  });
+
+  it("starts at the beginning when the saved step is cleared, missing, or past the end", () => {
+    expect(resumeStep(emptyProgress(), lessonKey, 4)).toBe(0);
+    const cleared = { ...emptyProgress(), places: { [lessonKey]: { step: null, updatedAt: when.toISOString() } } };
+    expect(resumeStep(cleared, lessonKey, 4)).toBe(0);
+    const stale = notePlace(emptyProgress(), lessonKey, 9, when);
+    expect(resumeStep(stale, lessonKey, 4)).toBe(0);
+    expect(notePlace(emptyProgress(), lessonKey, -1, when)).toEqual(emptyProgress());
+    expect(notePlace(emptyProgress(), lessonKey, 1.5, when)).toEqual(emptyProgress());
+  });
+
+  it("clears the resume point when the lesson is finished or progress is reset", () => {
+    let saved = notePlace(emptyProgress(), lessonKey, 1, when);
+    const done = completeLesson(saved, {
+      lessonKey,
+      baseXp: 30,
+      exerciseKeys: [],
+      pendingDesktop: [],
+      now: at("2026-10-22T12:05:00.000Z"),
+    });
+    expect(done.state.places[lessonKey]).toEqual({ step: null, updatedAt: "2026-10-22T12:05:00.000Z" });
+    expect(resumeStep(done.state, lessonKey, 4)).toBe(0);
+
+    saved = notePlace(done.state, lessonKey, 2, at("2026-10-23T09:00:00.000Z"));
+    const wiped = resetProgress(saved, at("2026-10-23T10:00:00.000Z"));
+    expect(wiped.places).toEqual({});
+    expect(wiped.epoch).toBe(1);
+  });
+
+  it("keeps a place through migrate and drops a malformed one", () => {
+    const next = migrate({
+      places: {
+        "c/m/l": { step: 3, updatedAt: "2026-10-22T12:00:00.000Z", extra: true },
+        bad: { step: -2, updatedAt: "2026-10-22T12:00:00.000Z" },
+        late: { step: "1", updatedAt: "2026-10-22T12:00:00.000Z" },
+      },
+    });
+    expect(next.places).toEqual({ "c/m/l": { step: 3, updatedAt: "2026-10-22T12:00:00.000Z" } });
+    expect(migrate({ xp: 1 }).places).toEqual({});
+  });
+
+  it("rewrites a resume key when the lesson id changes", () => {
+    const next = migrate(
+      { places: { "old/m/l": { step: 2, updatedAt: "2026-10-22T12:00:00.000Z" } } },
+      { courses: { old: "new" }, lessons: {}, exercises: {} },
+    );
+    expect(next.places["new/m/l"]?.step).toBe(2);
+    expect(next.places["old/m/l"]).toBeUndefined();
+  });
+
+  it("round-trips a place through local storage", async () => {
+    const mem = new Map<string, string>();
+    const backend = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k) };
+    const store = new LocalProgressStore(backend, "k");
+    await store.save(notePlace(emptyProgress(), lessonKey, 4, when));
+    expect((await store.load()).places[lessonKey]?.step).toBe(4);
   });
 });
 

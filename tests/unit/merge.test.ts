@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { completeLesson, emptyProgress, migrate, recordExercise, resetProgress, skipExercise, unskipExercise, type ProgressState } from "@/lib/progress/logic";
+import { completeLesson, emptyProgress, migrate, notePlace, recordExercise, resetProgress, skipExercise, unskipExercise, type ProgressState } from "@/lib/progress/logic";
 import { isEmptyProgress, mergeProgress, sameProgress } from "@/lib/progress/merge";
 
 const at = (iso: string) => new Date(iso);
@@ -97,6 +97,26 @@ describe("mergeProgress", () => {
     expect(mergeProgress(b, same).streak).toEqual({ current: 4, best: 5, lastDay: "2026-10-22" });
   });
 
+  it("keeps the later resume point, and a finish clears an older one", () => {
+    const early = notePlace(emptyProgress(), "c/m/l", 1, at("2026-10-22T10:00:00.000Z"));
+    const later = notePlace(emptyProgress(), "c/m/l", 3, at("2026-10-22T11:00:00.000Z"));
+    expect(mergeProgress(early, later).places["c/m/l"]?.step).toBe(3);
+    expect(mergeProgress(later, early).places["c/m/l"]?.step).toBe(3);
+
+    const finished = completeLesson(later, { ...lesson("c/m/l", 30), now: at("2026-10-22T12:00:00.000Z") }).state;
+    expect(mergeProgress(later, finished).places["c/m/l"]?.step).toBeNull();
+    expect(mergeProgress(finished, later).places["c/m/l"]?.step).toBeNull();
+
+    const sameTime = new Date("2026-10-22T10:00:00.000Z");
+    const low = notePlace(emptyProgress(), "c/m/l", 1, sameTime);
+    const high = notePlace(emptyProgress(), "c/m/l", 4, sameTime);
+    expect(mergeProgress(low, high).places["c/m/l"]?.step).toBe(4);
+    expect(mergeProgress(high, low).places["c/m/l"]?.step).toBe(4);
+    const cleared = { ...emptyProgress(), places: { "c/m/l": { step: null as number | null, updatedAt: sameTime.toISOString() } } };
+    expect(mergeProgress(high, cleared).places["c/m/l"]?.step).toBeNull();
+    expect(mergeProgress(cleared, high).places["c/m/l"]?.step).toBeNull();
+  });
+
   it("lets a reset (higher epoch) win outright", () => {
     const { pc } = fixtures();
     const wiped = resetProgress(pc, at("2026-10-23T08:00:00"));
@@ -134,6 +154,8 @@ describe("merge helpers", () => {
   it("detects an empty save", () => {
     expect(isEmptyProgress(emptyProgress())).toBe(true);
     expect(isEmptyProgress(recordExercise(emptyProgress(), "e", false))).toBe(false);
+    expect(isEmptyProgress(notePlace(emptyProgress(), "c/m/l", 1, at("2026-10-22T10:00:00.000Z")))).toBe(false);
+    expect(isEmptyProgress({ ...emptyProgress(), places: { "c/m/l": { step: null, updatedAt: "2026-10-22T10:00:00.000Z" } } })).toBe(true);
   });
 
   it("compares saves regardless of key order", () => {

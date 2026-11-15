@@ -419,3 +419,8 @@
 html[data-dive-panel="open"][data-dive-layout="drawer"] [data-lesson-player][data-chat-enabled="true"] [data-testid="action-bar"] {
   padding-right: min(100vw, 26rem);
 }
+
+/* The drawer covers the right edge, so the exercise calculator stacks under the question instead of sitting in that edge. */
+html[data-dive-panel="open"][data-dive-layout="drawer"] [data-lesson-player][data-chat-enabled="true"] [data-exercise-layout] {
+  grid-template-columns: minmax(0, 1fr);
+}
