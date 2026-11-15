@@ -50,7 +50,7 @@ const cppCompletions = [
   snippetCompletion("std::cin >> ${name};", { label: "cin", detail: "read", type: "function" }),
 ];
 
-const highlight = HighlightStyle.define([
+const darkHighlight = HighlightStyle.define([
   { tag: tags.keyword, color: "var(--gold-ink)" },
   { tag: tags.comment, color: "var(--text-muted)", fontStyle: "italic" },
   { tag: tags.string, color: "var(--money-ink)" },
@@ -61,10 +61,25 @@ const highlight = HighlightStyle.define([
   { tag: [tags.variableName, tags.propertyName, tags.operator, tags.punctuation], color: "var(--text)" },
 ]);
 
+const lightHighlight = HighlightStyle.define([
+  { tag: tags.keyword, color: "var(--gold-ink)" },
+  { tag: tags.comment, color: "var(--text-muted)", fontStyle: "italic" },
+  { tag: tags.string, color: "var(--money-ink)" },
+  { tag: tags.number, color: "#005cc5" },
+  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: "#9a4b00" },
+  { tag: tags.definition(tags.variableName), color: "#0b4f8a" },
+  { tag: tags.typeName, color: "#6f42c1" },
+  { tag: [tags.variableName, tags.propertyName, tags.operator, tags.punctuation], color: "var(--text)" },
+]);
+
+function highlightFor(dark: boolean) {
+  return syntaxHighlighting(dark ? darkHighlight : lightHighlight);
+}
+
 const theme = EditorView.theme({
   "&": { backgroundColor: "transparent", color: "var(--text)", fontSize: "16px" },
   "&.cm-focused": { outline: "none" },
-  ".cm-scroller": { fontFamily: "var(--font-code), ui-monospace, monospace", lineHeight: "1.5", overflow: "auto" },
+  ".cm-scroller": { fontFamily: "var(--font-code), ui-monospace, monospace", lineHeight: "1.5", overflow: "auto", fontVariantLigatures: "none", fontFeatureSettings: '"liga" 0, "calt" 0' },
   ".cm-content": { padding: "12px 0", minHeight: "12rem", caretColor: "var(--caret)" },
   ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--caret)", borderLeftWidth: "2px", marginLeft: "-1px" },
   ".cm-gutters": { backgroundColor: "transparent", color: "var(--text-muted)", borderRight: "1px solid var(--line)" },
@@ -123,6 +138,7 @@ export function mountCodeMirror(options: {
   let applying = false;
   const readOnly = new Compartment();
   const appearance = new Compartment();
+  const highlighting = new Compartment();
   const darkNow = () => document.documentElement.dataset.theme !== "light";
   const view = new EditorView({
     parent: options.parent,
@@ -143,7 +159,7 @@ export function mountCodeMirror(options: {
         autocompletion({ activateOnTyping: true, maxRenderedOptions: 8, defaultKeymap: true }),
         highlightActiveLine(),
         keymap.of([...closeBracketsKeymap, ...completionKeymap, ...defaultKeymap, ...historyKeymap, indentWithTab]),
-        syntaxHighlighting(highlight),
+        highlighting.of(highlightFor(darkNow())),
         EditorView.lineWrapping,
         theme,
         appearance.of(EditorView.darkTheme.of(darkNow())),
@@ -165,7 +181,10 @@ export function mountCodeMirror(options: {
   });
 
   const appearanceObserver = new MutationObserver(() => {
-    view.dispatch({ effects: appearance.reconfigure(EditorView.darkTheme.of(darkNow())) });
+    const dark = darkNow();
+    view.dispatch({
+      effects: [appearance.reconfigure(EditorView.darkTheme.of(dark)), highlighting.reconfigure(highlightFor(dark))],
+    });
   });
   appearanceObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 

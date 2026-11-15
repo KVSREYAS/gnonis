@@ -131,6 +131,15 @@
     outline: 3px solid var(--ring);
     outline-offset: 2px;
   }
+  /* JetBrains Mono ligatures turn -> into → and <= into ≤, which misleads in C++. */
+  code,
+  pre,
+  kbd,
+  samp,
+  .font-mono {
+    font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
+  }
 }
 
 @utility font-display {
@@ -193,6 +202,8 @@
   background: var(--panel-2);
   padding: 0.1em 0.35em;
   border-radius: 4px;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
 }
 .reading pre {
   background: var(--ink);
@@ -202,6 +213,9 @@
   overflow-x: auto;
   font-size: 0.85em;
   line-height: 1.5;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
+  tab-size: 2;
 }
 .reading pre code {
   background: none;
@@ -270,6 +284,8 @@
   background: var(--panel-2);
   padding: 0.1em 0.35em;
   border-radius: 4px;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
 }
 .chat-md pre {
   background: var(--ink);
@@ -279,6 +295,9 @@
   overflow-x: auto;
   font-size: 0.85em;
   line-height: 1.5;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
+  tab-size: 2;
 }
 .chat-md pre code {
   background: none;
@@ -286,6 +305,93 @@
 }
 .chat-md > :last-child {
   margin-bottom: 0;
+}
+
+/* ---------- Highlighted lesson code (Shiki, dual theme) ---------- */
+
+.gnosis-code {
+  margin: 0 0 0.9em;
+  background: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.gnosis-code figcaption {
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 0.45em 1em 0;
+}
+.reading .gnosis-code pre,
+.chat-md .gnosis-code pre,
+.gnosis-code pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0.65em 1em 0.9em;
+  background: transparent;
+  overflow-x: auto;
+  font-size: 0.85em;
+  line-height: 1.55;
+  font-family: var(--font-code), ui-monospace, monospace;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
+  tab-size: 2;
+}
+.gnosis-code .shiki {
+  background: transparent !important;
+  color: var(--shiki-dark);
+}
+.gnosis-code .shiki span {
+  color: var(--shiki-dark);
+}
+[data-theme="light"] .gnosis-code .shiki,
+[data-theme="light"] .gnosis-code .shiki span {
+  color: var(--shiki-light);
+}
+.gnosis-code .shiki code {
+  display: grid;
+  min-width: 100%;
+  background: none;
+  padding: 0;
+  font-size: 1em;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
+}
+.gnosis-code-lines .shiki code {
+  counter-reset: line;
+}
+.gnosis-code-lines .shiki .line {
+  display: inline-block;
+  min-width: 100%;
+}
+.gnosis-code-lines .shiki .line::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  width: 2rem;
+  margin-right: 1rem;
+  color: var(--text-muted);
+  text-align: right;
+  user-select: none;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+  position: sticky;
+  left: 0;
+  background: var(--ink);
+}
+.gnosis-code:has(+ .gnosis-code-output) {
+  margin-bottom: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.gnosis-code + .gnosis-code-output {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-top-width: 0;
 }
 
 /* ---------- Motion ---------- */

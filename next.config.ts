@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
   // The e2e accounts suite builds a second copy (Supabase switched on) into its own folder.
   distDir: process.env.NEXT_DIST_DIR || ".next",
   allowedDevOrigins: ["127.0.0.1"],
-  serverExternalPackages: ["@vercel/sandbox"],
+  serverExternalPackages: ["@vercel/sandbox", "shiki"],
   outputFileTracingIncludes: {
     "/api/code/cpp": ["./content/courses/**/*"],
   },
