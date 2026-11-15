@@ -1,25 +1,64 @@
 ---
 id: cpp-systems/04-templates/01-templates-and-deduction
 title: "Templates and Type Deduction"
-estMinutes: 7
+estMinutes: 13
 xp: 90
-fun: 4
-missionIntro: "Function templates deduce T from the arguments. Know the three deduction cases and CTAD."
+fun: 5
+missionIntro: "One Vec2 template for tiles and physics, and the auto bug that damages a copy of the enemy instead of the enemy. The three deduction cases, CTAD, and variadic templates."
 keyIdeas:
   - "For `T` by value, deduction drops references and top-level const. For `T&` it keeps const. For `T&&` it's forwarding."
   - "auto uses the same rules as template deduction (except for braced initialisers)."
   - "Class template argument deduction (C++17) deduces class templates from constructors: `std::vector v{1, 2, 3};`."
 ---
 
-## Deduction cases
+## The feature: area damage
 
-`const int ci = 1;` then `f(ci)`:
+A fireball explodes and damages every enemy within its radius. The code loops over the enemy list, checks the distance, and subtracts hp. It compiles, it runs, and no enemy ever dies.
+
+## The careless version: auto copies
+
+```cpp
+#include <cstdio>
+#include <vector>
+
+struct Enemy { const char* name; float x, y; int hp; };
+
+void explode(std::vector<Enemy>& enemies, float cx, float cy, float r, int dmg) {
+    for (auto e : enemies) {                       // e is a copy
+        float dx = e.x - cx, dy = e.y - cy;
+        if (dx * dx + dy * dy <= r * r) e.hp -= dmg;
+    }
+}
+
+int main() {
+    std::vector<Enemy> enemies{{"slime", 1, 1, 20}, {"bat", 2, 0, 15}, {"ghost", 9, 9, 40}};
+    explode(enemies, 0, 0, 3, 25);
+    for (const auto& e : enemies) std::printf("%-5s hp %d\n", e.name, e.hp);
+}
+```
+```text
+slime hp 20
+bat   hp 15
+ghost hp 40
+```
+
+## What went wrong
+
+`auto e` follows the by-value deduction rule: it drops references, so `e` is a fresh copy of each enemy. The fireball damaged the copies, which were destroyed at the end of each loop iteration. The real enemies kept full hp.
+
+The fix is one character: `for (auto& e : enemies)`. With `auto&`, `e` is a reference to the element. To read without changing, write `const auto&`, which also avoids copying a big object.
+
+## The three deduction cases
+
+`auto` follows template argument deduction. Given `const int ci = 1;` and a call `f(ci)`:
 
 - `template<class T> void f(T)` gives T = int (const dropped: it's a copy)
 - `template<class T> void f(T&)` gives T = const int
 - `template<class T> void f(T&&)` gives T = const int&
 
 ![Deduction table: argument const int& through by-value, by-reference and forwarding parameters](/diagrams/cpp-systems/04-templates/01-templates-and-deduction.png)
+
+The by-value rule makes sense: a copy is a new object, so the original's `const` and reference-ness do not apply to it. The surprise is only that `auto` looks harmless.
 
 <MCQ
   id="deduce-value"
@@ -30,9 +69,42 @@ keyIdeas:
   devices={["phone", "desktop"]}
 />
 
+## Worked example: a Vec2 template
+
+A class template for the engine's 2D vectors, with CTAD so callers write `Vec2{3, 4}`:
+
+```cpp
+#include <cstdio>
+
+template <class T>
+struct Vec2 {
+    T x, y;
+    Vec2 operator+(Vec2 o) const { return {x + o.x, y + o.y}; }
+    Vec2 operator*(T k) const { return {x * k, y * k}; }
+};
+
+template <class T>
+T dot(Vec2<T> a, Vec2<T> b) { return a.x * b.x + a.y * b.y; }
+
+int main() {
+    Vec2 tile{3, 4};                  // CTAD: Vec2<int>
+    Vec2 pos{1.5f, 2.0f};             // CTAD: Vec2<float>
+    Vec2 vel{0.5f, -1.0f};
+    auto next = pos + vel * 2.0f;     // physics step
+    std::printf("tile %d,%d  dot %d\n", tile.x, tile.y, dot(tile, tile));
+    std::printf("next position %.1f,%.1f\n", next.x, next.y);
+}
+```
+```text
+tile 3,4  dot 25
+next position 2.5,0.0
+```
+
+`Vec2{3, 4}` works because C++20 deduces aggregate class templates from their members. `dot(tile, pos)` would not compile: T cannot be both `int` and `float`, which is what we want. Mixing tile coordinates and physics coordinates without a conversion is usually a bug.
+
 <Trace
   id="ctad"
-  prompt="CTAD and auto at work."
+  prompt="CTAD and auto at work on the inventory's item counts."
   code={"#include <cstdio>\n#include <vector>\n#include <type_traits>\nint main() {\n    std::vector v{1, 2, 3};\n    auto x = v[0];\n    auto& y = v[0];\n    y = 7;\n    std::printf(\"%d %d %zu %d\", x, v[0], v.size(), (int)std::is_same_v<decltype(v), std::vector<int>>);\n}"}
   steps={[{"line": 5, "note": "CTAD deduces std::vector<int>"}, {"line": 6, "note": "auto copies: x = 1"}, {"line": 7, "note": "auto& binds to the element"}, {"line": 8, "note": "v[0] becomes 7"}]}
   question="What does it print?"
@@ -41,7 +113,16 @@ keyIdeas:
   devices={["phone", "desktop"]}
 />
 
-## Your own template
+## When to use it, and when not
+
+- Use `auto` for long or unnameable types (iterators, lambdas), and `auto&` or `const auto&` in loops over objects.
+- Use plain `auto` in a loop only for small values you mean to copy (`for (int id : ids)`).
+- Use CTAD for obvious cases (`std::vector v{1, 2, 3}`, `Vec2{1.0f, 2.0f}`). Spell the type out when the deduced one would surprise a reader: `std::vector v{"a", "b"}` deduces `std::vector<const char*>`, not strings.
+- Do not write a template for one type. Write it when the second type shows up.
+
+## Coding task: highest damage roll
+
+A combo attack rolls several damage numbers and keeps the biggest. Damage may be an `int`, a `float` with crits, or a custom type.
 
 Sources: Meyers, *Effective Modern C++*, Items 1–2; [cppreference: template argument deduction](https://en.cppreference.com/w/cpp/language/template_argument_deduction)
 
@@ -49,11 +130,28 @@ Sources: Meyers, *Effective Modern C++*, Items 1–2; [cppreference: template ar
   id="max-of"
   devices={["desktop"]}
   language="cpp"
-  prompt="Write `template<class T> const T& max_of(const T& a, const T& b)` returning the larger (a on ties), and a variadic `template<class T, class... Rest> T max_all(T first, Rest... rest)` that returns the maximum of all its arguments using a fold or recursion."
+  prompt="Write `template<class T> const T& max_of(const T& a, const T& b)` returning the larger (a on ties), and a variadic `template<class T, class... Rest> T max_all(T first, Rest... rest)` that returns the maximum of all its arguments (the best damage roll of a combo) using a fold or recursion."
   starter={"template <class T> const T& max_of(const T& a, const T& b) { return a; }\ntemplate <class T, class... Rest> T max_all(T first, Rest... rest) { return first; }\n"}
   visibleTests={"#include \"check.h\"\n\nint main() {\n    CHECK(max_of(3, 7) == 7);\n    CHECK(max_all(1, 9, 4) == 9);\n    return 0;\n}\n"}
   tests={"#include \"check.h\"\n\n#include <string>\nint main() {\n    CHECK(max_of(3, 7) == 7 && max_of(7, 3) == 7);\n    int a = 5, b = 5; CHECK(&max_of(a, b) == &a);\n    CHECK(max_all(1, 9, 4) == 9 && max_all(42) == 42 && max_all(-3, -1, -2) == -1);\n    CHECK(max_all(std::string(\"a\"), std::string(\"c\"), std::string(\"b\")) == \"c\");\n    return 0;\n}\n"}
   solution={"template <class T> const T& max_of(const T& a, const T& b) { return (b > a) ? b : a; }\ntemplate <class T> T max_all(T first) { return first; }\ntemplate <class T, class... Rest> T max_all(T first, Rest... rest) { T r = max_all(rest...); return r > first ? r : first; }\n"}
   hints={["Recursion: max_all(first, rest...) = max(first, max_all(rest...)).", "Or use a fold over a lambda."]}
   explanation="Variadic templates power std::make_unique, std::tuple and every forwarding factory."
+/>
+
+## Coding task: lerp for any vector
+
+Cameras, health bars and enemy movement all smooth between two values with linear interpolation: `a + (b - a) * t`. Write it once for all of them.
+
+<Code
+  id="generic-lerp"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `template<class T> struct Vec2 { T x, y; }` with `operator+`, `operator-` and `operator*(T)`, plus `template<class V, class F> V lerp(const V& a, const V& b, F t)` returning `a + (b - a) * t`. lerp must work for plain floats and for Vec2<float>."
+  starter={"template <class T>\nstruct Vec2 {\n    T x, y;\n    Vec2 operator+(const Vec2& o) const { return {x + o.x, y + o.y}; }\n    Vec2 operator-(const Vec2& o) const { return {x - o.x, y - o.y}; }\n    Vec2 operator*(T k) const { return {x * k, y * k}; }\n};\ntemplate <class V, class F>\nV lerp(const V& a, const V& b, F t) { return a; }\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    CHECK(lerp(0.0f, 10.0f, 0.5f) == 5.0f);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <type_traits>\nint main() {\n    CHECK(lerp(0.0f, 10.0f, 0.5f) == 5.0f);\n    CHECK(lerp(100.0f, 0.0f, 0.25f) == 75.0f);\n    Vec2<float> cam{0, 0}, player{8, -4};\n    auto c = lerp(cam, player, 0.25f);\n    CHECK(c.x == 2.0f && c.y == -1.0f);\n    CHECK((std::is_same_v<decltype(c), Vec2<float>>));\n    auto end = lerp(cam, player, 1.0f);\n    CHECK(end.x == 8.0f && end.y == -4.0f);\n    Vec2 v{1.0, 2.0};\n    CHECK((std::is_same_v<decltype(v), Vec2<double>>));\n    auto d = lerp(v, Vec2<double>{3.0, 6.0}, 0.5);\n    CHECK(d.x == 2.0 && d.y == 4.0);\n    return 0;\n}\n"}
+  solution={"template <class T>\nstruct Vec2 {\n    T x, y;\n    Vec2 operator+(const Vec2& o) const { return {x + o.x, y + o.y}; }\n    Vec2 operator-(const Vec2& o) const { return {x - o.x, y - o.y}; }\n    Vec2 operator*(T k) const { return {x * k, y * k}; }\n};\ntemplate <class V, class F>\nV lerp(const V& a, const V& b, F t) { return a + (b - a) * t; }\n"}
+  hints={["Vec2 operator-(const Vec2& o) const { return {x - o.x, y - o.y}; }", "lerp needs nothing type-specific: it only uses +, - and * with t."]}
+  explanation="lerp is one template that works for any type with +, - and scaling. The camera uses it on Vec2<float>, the health bar on float, with no copy of the formula."
 />

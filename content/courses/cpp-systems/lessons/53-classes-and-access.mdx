@@ -1,64 +1,190 @@
 ---
 id: cpp-systems/oop/01-classes-and-access
 title: "Classes, Structs and Access"
-estMinutes: 7
+estMinutes: 12
 xp: 80
 fun: 5
-missionIntro: "A class bundles data with the functions that use it. public, private and protected decide which code can use each member."
+missionIntro: "Slime Siege needs a Player whose health can never go wrong. A class bundles the data with the functions that change it, and private stops the rest of the game from breaking the rules."
 keyIdeas:
   - "`struct` and `class` are the same thing, except the default access: struct is public, class is private."
   - "Member functions (methods) see the object's members directly."
   - "public is for everyone, private is for the class only, and protected also lets derived classes in."
+  - "Private data plus public methods lets one class guard a rule (an invariant) for the whole game."
 ---
+
+## The feature: the player's health
+
+Slime Siege needs a player. The player has health (0 to 100), a position, and a score. Many parts of the game touch health: slimes bite, spikes hurt, potions heal, the HUD draws the health bar, and the game-over screen checks if the player is dead.
+
+That is a lot of code changing one number. The rule the game depends on is simple: **health is always between 0 and 100**. The HUD draws a bar 0 to 100 pixels wide, and game over triggers at exactly 0.
+
+Let's see what happens if we write the player the careless way first.
+
+## The careless version: public fields
+
+```cpp
+#include <cstdio>
+
+struct Player {          // everything public
+    int hp = 100;
+    int max_hp = 100;
+};
+
+int main() {
+    Player p;
+    p.hp += 50;                        // potion code forgot the cap
+    std::printf("after potion: %d\n", p.hp);
+    p.hp -= 200;                       // big slime bite
+    std::printf("after bite:   %d\n", p.hp);
+    bool game_over = (p.hp == 0);      // game-over code checks for exactly 0
+    std::printf("game over?    %d\n", game_over);
+}
+```
+```text
+after potion: 150
+after bite:   -50
+game over?    0
+```
+
+## What went wrong
+
+Two bugs, both caused by the same design:
+
+1. The potion pushed health to 150. The health bar now draws past its frame.
+2. The bite took health to -50. The game-over check looks for `hp == 0`, so the player is dead but the game keeps running.
+
+Neither line looks wrong on its own. The potion programmer and the game-over programmer each assumed someone else kept health in range. With public fields, **every line in the game is responsible for the rule**, which means no line is.
+
+## The fix: private data, public methods
+
+Make `hp` private. Now the only way to change it is through member functions, and those functions enforce the rule. The rule lives in one place.
+
+```cpp
+#include <cstdio>
+
+class Player {
+public:
+    void heal(int amount) {
+        hp_ += amount;
+        if (hp_ > max_hp_) hp_ = max_hp_;
+    }
+    void take_damage(int amount) {
+        hp_ -= amount;
+        if (hp_ < 0) hp_ = 0;
+    }
+    int hp() const { return hp_; }
+    bool dead() const { return hp_ == 0; }
+private:
+    int hp_ = 100;
+    int max_hp_ = 100;
+};
+
+int main() {
+    Player p;
+    p.heal(50);
+    std::printf("after potion: %d\n", p.hp());
+    p.take_damage(200);
+    std::printf("after bite:   %d\n", p.hp());
+    std::printf("game over?    %d\n", p.dead());
+    // p.hp_ = 999;   // error: 'int Player::hp_' is private within this context
+}
+```
+```text
+after potion: 100
+after bite:   0
+game over?    1
+```
+
+## The words for what you just did
+
+- **Data member**: a variable inside the class (`hp_`). Each object has its own.
+- **Member function** or **method**: a function inside the class (`heal`). It reads and writes the members of the object it was called on.
+- **Encapsulation**: hiding the data and exposing only operations.
+- **Invariant**: the rule that is always true for a valid object (0 ≤ hp ≤ 100).
+- **Getter**: a small `const` method that returns a value (`hp()`), so code can read health without being able to write it.
+
+The trailing underscore in `hp_` is a naming habit for private members, not syntax.
 
 ## struct vs class
 
-Only one difference matters: the default access level. Convention: use `struct` for plain bundles of data and `class` when there's something to protect.
+Only one difference matters: the default access level. Members of a `struct` are public until you say otherwise. Members of a `class` are private until you say otherwise.
+
+Convention in game code: use `struct` for plain bundles with no rules (a `Vec2 { float x, y; }`, a color, a config record). Use `class` when there is a rule to protect (a player's health, an inventory's capacity).
 
 ![A class box with a public door for methods and a locked private room for data](/diagrams/cpp-systems/oop/01-classes-and-access.png)
 
 <MCQ
   id="default-access"
-  prompt={"In `class Car { int fuel; };`, what access does `fuel` have?"}
+  prompt="In `class Player { int hp; };`, what access does `hp` have?"
   options={["public", "private", "protected", "None"]}
   answer={1}
-  explanation="class defaults to private, struct to public."
+  explanation="class defaults to private, struct to public. Code outside Player cannot read or write hp."
   devices={["phone", "desktop"]}
 />
 
 <Trace
   id="methods"
-  prompt="Members and a method."
-  code={"#include <cstdio>\nstruct Car {\n    int fuel = 10;\n    void drive(int km) { fuel -= km / 2; }\n};\nint main() {\n    Car a, b;\n    a.drive(6);\n    b.drive(2);\n    a.drive(4);\n    std::printf(\"%d %d\", a.fuel, b.fuel);\n}"}
-  steps={[{"line": 8, "note": "each Car has its own fuel"}, {"line": 9, "note": "a: 10 - 3 = 7"}, {"line": 10, "note": "b: 10 - 1 = 9"}, {"line": 11, "note": "a: 7 - 2 = 5"}]}
+  prompt="Each Player object has its own stamina."
+  code={"#include <cstdio>\nstruct Player {\n    int stamina = 10;\n    void sprint(int tiles) { stamina -= tiles / 2; }\n};\nint main() {\n    Player a, b;\n    a.sprint(6);\n    b.sprint(2);\n    a.sprint(4);\n    std::printf(\"%d %d\", a.stamina, b.stamina);\n}"}
+  steps={[{"line": 8, "note": "each Player has its own stamina, starting at 10"}, {"line": 9, "note": "a: 10 - 3 = 7"}, {"line": 10, "note": "b: 10 - 1 = 9"}, {"line": 11, "note": "a: 7 - 2 = 5"}]}
   question="What does it print?"
   answer="5 9"
-  explanation="Every object gets its own copy of the data members, and methods act on the object they're called on."
+  explanation="Every object gets its own copy of the data members, and a method acts on the object it was called on."
   devices={["phone", "desktop"]}
 />
 
 ## Access in action
 
-Private members are a compile-time lock, not a runtime one. The compiler refuses code outside the class that touches them.
+Private members are a compile-time lock, not a runtime one. The compiler refuses any code outside the class that names them. It costs nothing when the game runs.
 
 <SpotBug
   id="private-access"
-  prompt="Which line won't compile?"
-  code={"class Safe {\n    int code = 1234;\npublic:\n    bool open(int guess) const { return guess == code; }\n};\nint main() {\n    Safe s;\n    bool ok = s.open(1111);\n    int c = s.code;\n}"}
+  prompt="A treasure chest keeps its lock code private. Which line won't compile?"
+  code={"class Chest {\n    int code = 1234;\npublic:\n    bool open(int guess) const { return guess == code; }\n};\nint main() {\n    Chest c;\n    bool ok = c.open(1111);\n    int peek = c.code;\n}"}
   bugLine={9}
-  explanation="`code` is private. Only Safe's own member functions (and friends) can read it."
+  explanation="`code` is private. Only Chest's own member functions (and friends) can read it, so cheating code cannot peek."
   devices={["phone", "desktop"]}
 />
+
+## When to use it, and when not
+
+Use a class with private data when:
+
+- the data has a rule (health range, inventory capacity, a sorted list)
+- several fields must change together (a player's position and its tile index)
+
+Do not wrap everything in getters and setters by reflex. A `Vec2` with `get_x()` and `set_x()` that do nothing but read and write adds noise and protects no rule. If any value of every field is valid, a plain `struct` with public fields is the honest choice.
+
+## Coding task: the HUD kill counter
+
+The HUD shows how many slimes you have defeated this run. The counter must start at 0, only go up one at a time, and reset when a new run starts.
 
 <Code
   id="counter-class"
   devices={["desktop"]}
   language="cpp"
-  prompt="Write `class Counter` with a private `int count_` starting at 0, and public methods `void click()` (adds 1), `void reset()` (back to 0) and `int value() const`."
+  prompt="Slime Siege's HUD shows a kill counter. Write `class Counter` with a private `int count_` starting at 0, and public methods `void click()` (one more kill), `void reset()` (new run, back to 0) and `int value() const` (what the HUD draws)."
   starter={"class Counter {\npublic:\n    void click() {}\n    void reset() {}\n    int value() const { return 0; }\n};\n"}
   visibleTests={"#include \"check.h\"\nint main() {\n    Counter c; c.click(); c.click();\n    CHECK(c.value() == 2);\n    return 0;\n}\n"}
   tests={"#include \"check.h\"\nint main() {\n    Counter c; CHECK(c.value() == 0);\n    for (int i = 0; i < 5; ++i) c.click();\n    CHECK(c.value() == 5);\n    c.reset(); CHECK(c.value() == 0);\n    Counter d; d.click(); CHECK(d.value() == 1 && c.value() == 0);\n    return 0;\n}\n"}
   solution={"class Counter {\n    int count_ = 0;\npublic:\n    void click() { ++count_; }\n    void reset() { count_ = 0; }\n    int value() const { return count_; }\n};\n"}
   hints={["Give count_ a default member initialiser: `int count_ = 0;`."]}
-  explanation="Private data with public methods is the basic shape of nearly every class."
+  explanation="Private data with public methods is the basic shape of nearly every class. Nothing outside Counter can set the kill count to 9999."
+/>
+
+## Coding task: a health component
+
+Now build the real health logic the player and every enemy will share.
+
+<Code
+  id="health-component"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `class Health`. The constructor `explicit Health(int max)` starts full. `void damage(int n)` lowers health but never below 0. `void heal(int n)` raises it but never above max. Both ignore negative n. Add `int current() const`, `int max() const` and `bool dead() const` (true at 0). Keep the data private."
+  starter={"class Health {\npublic:\n    explicit Health(int max) {}\n    void damage(int n) {}\n    void heal(int n) {}\n    int current() const { return 0; }\n    int max() const { return 0; }\n    bool dead() const { return false; }\n};\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    Health h(100);\n    h.damage(30);\n    CHECK(h.current() == 70);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\nint main() {\n    Health h(100);\n    CHECK(h.current() == 100 && h.max() == 100 && !h.dead());\n    h.damage(30); CHECK(h.current() == 70);\n    h.heal(500); CHECK(h.current() == 100);\n    h.damage(-20); CHECK(h.current() == 100);\n    h.heal(-20); CHECK(h.current() == 100);\n    h.damage(250); CHECK(h.current() == 0 && h.dead());\n    h.heal(5); CHECK(h.current() == 5 && !h.dead());\n    const Health boss(400); CHECK(boss.current() == 400 && boss.max() == 400);\n    return 0;\n}\n"}
+  solution={"class Health {\npublic:\n    explicit Health(int max) : current_(max), max_(max) {}\n    void damage(int n) {\n        if (n < 0) return;\n        current_ -= n;\n        if (current_ < 0) current_ = 0;\n    }\n    void heal(int n) {\n        if (n < 0) return;\n        current_ += n;\n        if (current_ > max_) current_ = max_;\n    }\n    int current() const { return current_; }\n    int max() const { return max_; }\n    bool dead() const { return current_ == 0; }\nprivate:\n    int current_;\n    int max_;\n};\n"}
+  hints={["Store current and max as private ints.", "Clamp after every change, and return early when n < 0."]}
+  explanation="This class guards one invariant (0 ≤ current ≤ max) for every entity in the game. Bugs like the -50 hp player above cannot happen any more, because there is no other way to change the number."
 />

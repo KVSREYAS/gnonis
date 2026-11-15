@@ -4,7 +4,7 @@ title: "Module test: Undefined behaviour"
 estMinutes: 12
 xp: 220
 fun: 5
-missionIntro: "Spot the undefined behaviour in each snippet. Then write overflow-safe arithmetic."
+missionIntro: "Spot the undefined behaviour in each snippet. Then write the overflow-safe score and position maths the release build needs."
 kind: boss
 keyIdeas:
   - "Signed overflow, out-of-bounds, use-after-free, aliasing violations and races are UB."
@@ -14,7 +14,7 @@ keyIdeas:
 
 ## Module test
 
-Six timed questions on Undefined behaviour. 3 wrong answers end the test. Then a coding task: overflow-safe maths.
+Milestone 9 check: the release build's mystery bugs are traced to their UB, packets and saves use memcpy, and the test build runs the sanitizers. Six timed questions on undefined behaviour. 3 wrong answers end the test. Then a coding task: overflow-safe maths.
 
 <Boss
   id="underground"
@@ -29,13 +29,13 @@ Six timed questions on Undefined behaviour. 3 wrong answers end the test. Then a
 
 ## Coding task: overflow-safe maths
 
-Add and average without ever stepping off the edge of `int`.
+The score must never wrap negative, and the camera's midpoint between two far-apart players must not overflow either.
 
 <Code
   id="checked-add"
   devices={["desktop"]}
   language="cpp"
-  prompt="Write `bool checked_add(int a, int b, int& out)` (false on overflow, without ever overflowing; no __builtin allowed) and `int midpoint_safe(int a, int b)`, which returns a + (b − a)/2 rounded towards a, without overflow even for INT_MIN/INT_MAX (use unsigned or wider arithmetic)."
+  prompt="Write `bool checked_add(int a, int b, int& out)` (false on overflow, without ever overflowing; no __builtin allowed), for adding score bonuses, and `int midpoint_safe(int a, int b)`, the camera's midpoint between two players: it returns a + (b − a)/2 rounded towards a, without overflow even for INT_MIN/INT_MAX (use unsigned or wider arithmetic)."
   starter={"bool checked_add(int a, int b, int& out) { out = (int)((long long)a + b); return true; }\nint midpoint_safe(int a, int b) { return (int)(((long long)a + b) / 2); }\n"}
   visibleTests={"#include \"check.h\"\n\n#include <climits>\nint main() {\n    int r; CHECK(checked_add(2, 3, r) && r == 5);\n    CHECK(!checked_add(INT_MAX, 1, r));\n    return 0;\n}\n"}
   tests={"#include \"check.h\"\n\n#include <climits>\n#include <numeric>\nint main() {\n    int r = 0;\n    CHECK(checked_add(2, 3, r) && r == 5);\n    CHECK(!checked_add(INT_MAX, 1, r) && !checked_add(INT_MIN, -1, r));\n    CHECK(checked_add(INT_MAX, INT_MIN, r) && r == -1);\n    CHECK(checked_add(INT_MAX, 0, r) && r == INT_MAX);\n    CHECK(midpoint_safe(INT_MAX, INT_MAX - 2) == std::midpoint(INT_MAX, INT_MAX - 2));\n    CHECK(midpoint_safe(INT_MIN, INT_MAX) == std::midpoint(INT_MIN, INT_MAX));\n    CHECK(midpoint_safe(1, 4) == std::midpoint(1, 4) && midpoint_safe(4, 1) == std::midpoint(4, 1));\n    return 0;\n}\n"}

@@ -16,7 +16,9 @@ def cell(a,x,y,w,h,txt,c,fs=9,tc=INK): a.add_patch(Rectangle((x,y),w,h,fc=c,ec=I
 def arrow(a,x1,y1,x2,y2,c=INK,ls="-"): a.annotate("",(x2,y2),(x1,y1),arrowprops=dict(arrowstyle="->",lw=2,color=c,ls=ls))
 def blank(a,xl,yl): a.set_xlim(*xl); a.set_ylim(*yl); a.axis("off")
 def note(a,x,y,t,c=GR,fs=9,**k): a.text(x,y,t,color=c,fontsize=fs,**k)
+ONLY=set(filter(None,os.environ.get("ONLY","").split(",")))  # e.g. ONLY=oop/00-slime-siege-map to redraw one file
 def save(f,path):
+    if ONLY and path not in ONLY: plt.close(f); return
     d=OUT+os.path.dirname(path); os.makedirs(d,exist_ok=True); f.tight_layout(); f.savefig(OUT+path+".png",dpi=150); plt.close(f); print(path)
 
 # ---------- 01-lifetime
@@ -39,8 +41,8 @@ for k,(t,c) in enumerate([("Shallow (default copy)",R),("Deep copy (rule of 3)",
 save(f,"01-lifetime/02-rule-of-zero-three-five")
 
 f,a=fig("A view outliving its owner",10,4.6); blank(a,(0,10),(0,4.4))
-box(a,0.3,3.0,2.6,0.9,"std::string tmp\n(temporary)",GOLD); box(a,4.0,3.0,3.2,0.9,"heap: \"Carl Johnson\"",GOLD,fc=GOLD+"22"); arrow(a,2.9,3.45,4.0,3.45,GOLD)
-box(a,0.3,1.0,2.6,0.9,"string_view sv",B); arrow(a,2.9,1.45,4.4,2.95,B)
+box(a,0.3,3.0,2.6,0.9,"boss_title(12)\n(temporary string)",GOLD); box(a,4.0,3.0,3.2,0.9,"heap: \"Slime King, Lv 12\"",GOLD,fc=GOLD+"22"); arrow(a,2.9,3.45,4.0,3.45,GOLD)
+box(a,0.3,1.0,2.6,0.9,"hud.boss_name\n(string_view)",B); arrow(a,2.9,1.45,4.4,2.95,B)
 a.plot([4.0,7.2],[3.0,3.9],color=R,lw=3); a.plot([4.0,7.2],[3.9,3.0],color=R,lw=3)
 note(a,4.0,2.4,"freed at end of full-expression",R,10); note(a,3.4,0.9,"sv still points here → dangling (UB)",R,10)
 save(f,"01-lifetime/03-lifetime-and-dangling")
@@ -325,29 +327,84 @@ p=np.exp(lg-lg.max()); p/=p.sum(); ax[2].bar(range(3),p,color=G); ax[2].set_titl
 for x in ax: x.set_xticks(range(3),["t0","t1","t2"])
 f.suptitle("STABLE SOFTMAX",color=G,fontweight="bold",fontsize=15,x=0.1,ha="left"); save(f,"13-capstone/03-softmax-and-sampling")
 
-# ---------- oop
-f,a=fig("A class: public door, private room",10,4.6); blank(a,(0,10),(0,4.4))
-a.add_patch(FancyBboxPatch((0.3,0.4),9.4,3.4,boxstyle="round,pad=0.02",fc=G+"10",ec=G,lw=2.5)); note(a,0.5,3.45,"class Safe",G,12,fontweight="bold")
-box(a,0.7,1.0,3.6,1.9,"public:\nopen(guess)\nvalue()",B,fc=B+"15"); box(a,5.6,1.0,3.6,1.9,"private:\nint code\n(locked room)",R,fc=R+"15")
-arrow(a,4.3,1.95,5.6,1.95,G); note(a,4.35,2.15,"methods\ncan reach",G,9)
-note(a,0.7,0.05,"outside code → only the public door. s.code is a compile error.",INK,10)
+# ---------- oop (Slime Siege entities)
+f,a=fig("class Player: public methods, private data",10,4.6); blank(a,(0,10),(0,4.4))
+a.add_patch(FancyBboxPatch((0.3,0.4),9.4,3.4,boxstyle="round,pad=0.02",fc=G+"10",ec=G,lw=2.5)); note(a,0.5,3.45,"class Player",G,12,fontweight="bold")
+box(a,0.7,1.0,3.6,1.9,"public:\nheal(n)  take_damage(n)\nhp()  dead()",B,fc=B+"15"); box(a,5.6,1.0,3.6,1.9,"private:\nint hp_  (0..100)\nint max_hp_",R,fc=R+"15")
+arrow(a,4.3,1.95,5.6,1.95,G); note(a,4.35,2.15,"methods\nkeep the rule",G,9)
+note(a,0.7,0.05,"game code outside → only the public methods. p.hp_ = -50 is a compile error.",INK,10)
 save(f,"oop/01-classes-and-access")
 
-f,a=fig("An object's life",11,3.8); blank(a,(0,11),(0,3.4))
-for i,(t,c) in enumerate([("Car c('A');",GR),("constructor\n: name(n) init list",G),("use it\nconst methods read",B),("scope ends",GOLD),("~Car()\ncleanup",R)]):
+f,a=fig("An enemy's life",11,3.8); blank(a,(0,11),(0,3.4))
+for i,(t,c) in enumerate([("Enemy e(\"slime\", 30);",GR),("constructor\n: name_(..), hp_(..)",G),("update, draw\nconst methods read",B),("scope ends /\nwave cleared",GOLD),("~Enemy()\n--alive",R)]):
     box(a,0.2+i*2.2,1.3,1.9,1.2,t,c,fs=9)
     if i: arrow(a,0.2+i*2.2-0.3,1.9,0.2+i*2.2,1.9)
 note(a,0.2,0.5,"destructors run automatically, in reverse order of construction",INK,10)
 save(f,"oop/02-constructors-and-destructors")
 
 f,a=fig("static: one counter for the whole class",10,4.4); blank(a,(0,10),(0,4.2))
-for i,n in enumerate("abc"): box(a,0.4+i*2.2,2.7,1.8,0.9,f"Car {n}\nfuel (own copy)",G,fs=9); arrow(a,1.3+i*2.2,2.7,4.4,1.45,GOLD)
-box(a,3.3,0.5,2.6,0.9,"Car::alive = 3",GOLD,fc=GOLD+"22"); note(a,7.0,0.9,"shared, lives with\nthe class",GOLD,10)
+for i,n in enumerate(["slime","bat","slime"]): box(a,0.4+i*2.2,2.7,1.8,0.9,f"Enemy ({n})\nhp_ (own copy)",G,fs=9); arrow(a,1.3+i*2.2,2.7,4.4,1.45,GOLD)
+box(a,3.3,0.5,2.6,0.9,"Enemy::alive = 3",GOLD,fc=GOLD+"22"); note(a,7.0,0.9,"shared, lives with\nthe class",GOLD,10)
 save(f,"oop/03-static-operators-and-friends")
 
-f,a=fig("How a virtual call finds Truck::honk",11,4.6); blank(a,(0,11),(0,4.4))
-note(a,0.3,3.9,"Truck object",INK,11,fontweight="bold"); cell(a,0.3,2.8,2.4,0.7,"vptr (hidden)",P+"55",10); cell(a,0.3,2.1,2.4,0.7,"data members",GR+"44",10)
-note(a,4.0,3.9,"Truck's vtable",INK,11,fontweight="bold"); cell(a,4.0,2.8,2.8,0.7,"slot 0: honk",GOLD+"55",10); cell(a,4.0,2.1,2.8,0.7,"slot 1: ~Truck",GOLD+"55",10)
-arrow(a,2.7,3.15,4.0,3.15,P); box(a,8.0,2.8,2.7,0.7,"Truck::honk()",G,fs=10); arrow(a,6.8,3.15,8.0,3.15,G)
-note(a,0.3,1.0,"v.honk() on a Vehicle& → load vptr → load slot 0 → call it. Non-virtual kind() skips all this\nand uses the static type (Vehicle).",INK,10)
+f,a=fig("How a virtual call finds Bat::update",11,4.6); blank(a,(0,11),(0,4.4))
+note(a,0.3,3.9,"Bat object",INK,11,fontweight="bold"); cell(a,0.3,2.8,2.4,0.7,"vptr (hidden)",P+"55",10); cell(a,0.3,2.1,2.4,0.7,"x_, hp_ ...",GR+"44",10)
+note(a,4.0,3.9,"Bat's vtable",INK,11,fontweight="bold"); cell(a,4.0,2.8,2.8,0.7,"slot 0: ~Bat",GOLD+"55",10); cell(a,4.0,2.1,2.8,0.7,"slot 1: update",GOLD+"55",10)
+arrow(a,2.7,3.15,4.0,3.15,P); box(a,8.0,2.1,2.7,0.7,"Bat::update()",G,fs=10); arrow(a,6.8,2.45,8.0,2.45,G)
+note(a,0.3,1.0,"e->update() on an Enemy* → load vptr → load the update slot → call it. A non-virtual\nfunction skips all this and uses the pointer's type (Enemy).",INK,10)
 save(f,"oop/04-inheritance-and-polymorphism")
+
+f,a=fig("Slime Siege: one engine, one module at a time",12,6.4); blank(a,(0,12),(0,6.4))
+mods=[("Entities","OOP",G),("Resources","RAII",G),("Level loading","move",G),("Spawner + assets","smart ptrs",G),("Generic parts","templates",B),("Inventory, events","STL",B),("Component layout","layout",B),
+      ("Particles + ECS","DOD",P),("Crash hunting","UB",P),("Asset thread","threads",P),("Fast physics","SIMD",GOLD),("60 FPS","profiling",GOLD),("Engine core","arena, ring, pool",GOLD),("NPC brain","neural net",R)]
+for i,(t,cxx,c) in enumerate(mods):
+    col,row=i%7,i//7; x=0.25+col*1.68; y=3.6-row*2.3
+    box(a,x,y,1.5,1.5,f"{i+1}\n{t}\n({cxx})",c,fc=c+"18",fs=8)
+    if col: arrow(a,x-0.18,y+0.75,x,y+0.75,GR)
+arrow(a,0.25+6*1.68+0.75,3.6,0.25+0.75,1.3+1.5,GR,ls="--")
+note(a,0.25,0.5,"Each module = one feature milestone. Each lesson: the feature, the careless version and what breaks, the fix, a worked example.",INK,10)
+save(f,"oop/00-slime-siege-map")
+
+f,a=fig("Stack vs heap: who outlives cast_fireball()?",11,5); blank(a,(0,11),(0,5))
+note(a,0.3,4.5,"STACK (automatic)",B,12,fontweight="bold"); note(a,6.2,4.5,"HEAP (new / delete)",GOLD,12,fontweight="bold")
+cell(a,0.3,3.4,4.6,0.7,"main(): Fireball* fb",B+"33",10)
+a.add_patch(Rectangle((0.3,1.6),4.6,1.6,fc=R+"15",ec=R,lw=2,ls="--")); note(a,0.45,2.85,"cast_fireball() frame",R,10,fontweight="bold")
+cell(a,0.5,1.8,4.2,0.7,"Fireball f  (local)",R+"33",10); note(a,0.5,1.2,"gone when the function returns:\n&f dangles",R,10)
+box(a,6.2,2.6,4.2,1.1,"new Fireball\nlives until delete",GOLD,fc=GOLD+"22"); arrow(a,4.9,3.75,6.2,3.3,G)
+note(a,6.2,1.9,"forget delete → leak\ndelete twice → crash\nuse after delete → undefined",GR,10)
+save(f,"oop/06-stack-heap-and-pointers")
+
+# ---------- Slime Siege additions (Round 10)
+f,a=fig("Sparse set: the Health component pool",11,5); blank(a,(0,11),(0,5))
+note(a,0.3,4.45,"index[e]  (sparse: one slot per entity id)",B,11,fontweight="bold")
+for e,v in enumerate(["–","0","–","2","1","–"]):
+    cell(a,0.3+e*1.1,3.5,1.0,0.7,v,(B+"33") if v!="–" else (GR+"33"),11); note(a,0.62+e*1.1,3.2,f"e{e}",INK,9)
+note(a,0.3,2.45,"dense (packed, no gaps): systems loop over this",G,11,fontweight="bold")
+for i,(hp,o) in enumerate([("hp 30","e1"),("hp 12","e4"),("hp 50","e3")]):
+    cell(a,0.3+i*1.6,1.5,1.5,0.7,hp,G+"33",11); note(a,0.75+i*1.6,1.15,f"owner {o}",INK,9)
+for e,i in [(1,0),(4,1),(3,2)]: arrow(a,0.8+e*1.1,3.5,1.05+i*1.6,2.2,GR)
+box(a,7.4,1.3,3.3,1.6,"remove e1:\nmove last (e3) into slot 0,\npop, set index[3] = 0",R,fc=R+"15",fs=9)
+note(a,0.3,0.4,"add, remove, has, get: O(1). Iteration touches only live components.",INK,10)
+save(f,"07-dod/05-entity-component-system")
+
+f,a=fig("The load queue: mutex + condition variable",11,4.8); blank(a,(0,11),(0,4.6))
+box(a,0.3,2.6,2.6,1.2,"main thread\npush(\"bat.png\")\nnotify_one()",B,fc=B+"15",fs=9)
+a.add_patch(Rectangle((3.8,2.4),3.4,1.6,fc=GOLD+"18",ec=GOLD,lw=2)); note(a,3.95,3.7,"std::mutex guards:",GOLD,10,fontweight="bold")
+for i,t in enumerate(["slime.png","bat.png"]): cell(a,4.0+i*1.55,2.6,1.45,0.7,t,GOLD+"44",9)
+box(a,8.1,2.6,2.6,1.2,"loader thread\ncv.wait(lk, pred)\npop, unlock, load",G,fc=G+"15",fs=9)
+arrow(a,2.9,3.2,3.8,3.2,B); arrow(a,7.2,3.2,8.1,3.2,G)
+note(a,0.3,1.5,"wait() unlocks while asleep and re-checks the predicate on wake-up:\n!queue.empty() || closed. Spurious wake-ups and early notifies are both safe.",INK,10)
+note(a,0.3,0.5,"Change the queue only while holding the lock; notify after the change.",GR,10)
+save(f,"09-concurrency/05-mutexes-and-condition-variables")
+
+f,a=fig("Spatial grid: check 9 cells, not every enemy",10,5.6); blank(a,(0,10),(0,5.6))
+for cx in range(6):
+    for cy in range(5):
+        hot=abs(cx-2)<=1 and abs(cy-2)<=1
+        a.add_patch(Rectangle((0.3+cx*0.9,0.3+cy*0.9),0.9,0.9,fc=(G+"22") if hot else BG,ec=GR,lw=1))
+rng=np.random.default_rng(7)
+for x,y in rng.uniform([0.4,0.4],[5.6,4.6],(26,2)): a.add_patch(Circle((x,y),0.07,color=P))
+a.add_patch(Circle((0.3+2.5*0.9,0.3+2.5*0.9),0.11,color=R)); note(a,0.3+2.2*0.9,0.3+2.12*0.9,"this slime",R,9,fontweight="bold")
+note(a,6.0,4.4,"key: Cell{x, y}\n= floor(pos / cell size)",INK,10); note(a,6.0,3.2,"unordered_map<Cell,\n  vector<int>, CellHash>",B,10)
+note(a,6.0,1.8,"neighbours: own cell\n+ the 8 around it",G,10); note(a,6.0,0.7,"2,000 enemies: tens of\nchecks each, not 2,000",GR,10)
+save(f,"05-stl/07-maps-and-hashing")

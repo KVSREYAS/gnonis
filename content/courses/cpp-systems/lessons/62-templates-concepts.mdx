@@ -1,34 +1,81 @@
 ---
 id: cpp-systems/04-templates/00-concepts
 title: "Concepts: Templates, Concepts and constexpr"
-estMinutes: 8
+estMinutes: 12
 xp: 40
-fun: 1
-missionIntro: "How the compiler generates code from templates, how concepts restrict them, and what runs at compile time."
+fun: 2
+missionIntro: "Milestone 5 of Slime Siege: generic engine parts. One Vec2 for ints and floats, one resource cache for textures and sounds, and tables the compiler builds before the game starts."
 keyIdeas:
   - "A template is a pattern. The compiler creates a real function or class for each set of template arguments used."
   - "Template argument deduction works out T from the call's argument types."
   - "A concept is a named compile-time test on a type, used to reject bad arguments with a clear error."
   - "constexpr functions can run during compilation when their inputs are known then."
 ---
+## Milestone 5: generic engine parts
+
+**What we build this module:** a `Vec2<T>` used for tile coordinates (`int`) and physics positions (`float`); a `ResourceCache<T>` that works for textures, sounds and fonts; a damage function that accepts any enemy type but rejects nonsense at compile time; and an XP-per-level table computed by the compiler.
+
+**Why the game needs it:** the engine has many pieces that are the same code for different types. Writing each by hand means copies, and copies drift apart: someone fixes a bug in one and forgets the other. Templates let us write the code once and have the compiler generate each version, with no runtime cost.
+
+## The careless version: copy and paste
+
+Before templates, the engine had two vector types, one for tiles and one for physics:
+
+```cpp
+#include <cmath>
+#include <cstdio>
+
+struct Vec2i { int x, y; };
+struct Vec2f { float x, y; };
+
+int   dist_sq(Vec2i a, Vec2i b) { int dx = a.x - b.x, dy = a.y - b.y; return dx * dx + dy * dy; }
+float dist_sq(Vec2f a, Vec2f b) { float dx = a.x - b.x, dy = a.y - b.x; return dx * dx + dy * dy; }
+
+int main() {
+    std::printf("tile distance^2:    %d\n", dist_sq(Vec2i{0, 0}, Vec2i{3, 4}));
+    std::printf("physics distance^2: %.1f\n", dist_sq(Vec2f{0, 0}, Vec2f{3, 4}));
+}
+```
+```text
+tile distance^2:    25
+physics distance^2: 18.0
+```
+
+Same points, different answers. The float copy says `a.y - b.x`: a paste error. The physics engine now thinks enemies are closer than they are, so slimes start attacking from too far away. The int version was tested, the float one was not, and nothing forced them to stay the same.
+
 ## What a template is
 
 A **function template** is code with a placeholder type:
 
 ```cpp
+#include <cstdio>
+
 template <class T>
-T max_of(T a, T b) { return a < b ? b : a; }
+struct Vec2 { T x, y; };
+
+template <class T>
+T dist_sq(Vec2<T> a, Vec2<T> b) {
+    T dx = a.x - b.x, dy = a.y - b.y;
+    return dx * dx + dy * dy;
+}
+
+int main() {
+    std::printf("tile distance^2:    %d\n", dist_sq(Vec2<int>{0, 0}, Vec2<int>{3, 4}));
+    std::printf("physics distance^2: %.1f\n", dist_sq(Vec2<float>{0, 0}, Vec2<float>{3, 4}));
+}
+```
+```text
+tile distance^2:    25
+physics distance^2: 25.0
 ```
 
-It is not a function yet. When you call `max_of(2, 5)`, the compiler:
+When you call `dist_sq` with `Vec2<int>`, the compiler:
 
 1. **Deduces** `T = int` from the argument types.
-2. **Instantiates** the template: it writes a real function `int max_of(int, int)` by substituting `int` for `T`.
+2. **Instantiates** the template: it writes a real function by substituting `int` for `T`.
 3. Compiles that function like any other.
 
-A call with `double` makes a second, separate function. Each instantiation is fully typed and can be inlined and optimized, so templates have no runtime cost. The price is compile time and code size.
-
-Templates must be visible where they are used, which is why they usually live in headers.
+The `float` call makes a second, separate function from the same source. One fix fixes both. Each instantiation is fully typed and optimized, so templates cost nothing at runtime. The price is compile time and code size. Templates must be visible where they are used, so they usually live in headers.
 
 ## Deduction rules worth knowing
 
@@ -39,71 +86,93 @@ For a parameter written `T x` (by value):
 
 For `T& x`, constness is kept. For `T&& x` (a forwarding reference), an lvalue argument makes `T` an lvalue reference.
 
-If two arguments disagree, deduction fails:
+`auto` uses the same rules. That is a classic game bug: `auto e = enemies[i]; e.hp -= 10;` copies the enemy and damages the copy. Write `auto&` when you mean the original.
 
-```cpp
-max_of(2, 3.5);          // error: T is int or double?
-max_of<double>(2, 3.5);  // fine: T given explicitly
-```
+If two arguments disagree, deduction fails: `max_of(2, 3.5)` does not compile (int or double?), `max_of<double>(2, 3.5)` does.
 
-Class templates such as `std::vector<int>` take explicit arguments, though C++17 **class template argument deduction** lets you write `std::vector v{1, 2, 3};`.
+**CTAD** (class template argument deduction, C++17) lets you write `Vec2 v{1.0f, 2.0f};` and get `Vec2<float>`.
 
 ![Deduction of T from different argument forms](/diagrams/cpp-systems/04-templates/01-templates-and-deduction.png)
 
 ## Concepts: requirements on T
 
-Without limits, `max_of` accepts any type. If a type has no `<`, the error appears deep inside the template body and can be long.
+Without limits, a template accepts any type. If a type lacks an operation the template uses, the error appears deep inside the template body and can run to dozens of lines.
 
-A **concept** is a named boolean test on types, checked at compile time:
+A **concept** is a named compile-time test on a type:
 
 ```cpp
 template <class T>
-concept Ordered = requires(T a, T b) {
-    { a < b } -> std::convertible_to<bool>;
+concept Damageable = requires(T e, int dmg) {
+    e.take_damage(dmg);
+    { e.alive() } -> std::convertible_to<bool>;
 };
 
-template <Ordered T>
-T max_of(T a, T b) { return a < b ? b : a; }
+template <Damageable E>
+void explode(E& target) { target.take_damage(50); }
 ```
 
-Now `max_of(obj1, obj2)` with an unordered type fails at the call, with a message naming `Ordered`. Concepts also choose between overloads: the compiler prefers the overload whose constraints are more specific. The standard library provides many, such as `std::integral` and `std::floating_point`.
+Now `explode(some_tile)` fails at the call, with a message naming `Damageable`. Concepts also choose between overloads: the compiler prefers the overload with the more specific constraint. The standard library provides many, such as `std::integral` and `std::floating_point`.
 
-## constexpr and consteval
+## constexpr: work done by the compiler
 
-`constexpr` on a function means it **may** be evaluated by the compiler when all inputs are compile-time constants. Otherwise it runs at runtime like normal code.
+`constexpr` on a function means it **may** be evaluated while compiling, when all inputs are constants. Otherwise it runs at runtime like normal code.
 
 ```cpp
-constexpr int sq(int x) { return x * x; }
-constexpr int k = sq(12);   // computed while compiling: 144
-int y = sq(read_int());     // computed at runtime
-static_assert(sq(3) == 9);  // checked while compiling
+constexpr int xp_for_level(int lv) { return 50 * lv * (lv + 1); }
+constexpr int max_xp = xp_for_level(99);   // computed while compiling
+static_assert(xp_for_level(1) == 100);     // checked while compiling
 ```
 
 - `consteval` **must** run at compile time.
 - `if constexpr` discards the branch that does not apply, so it never has to compile for that `T`.
+- Undefined behaviour is not allowed during compile-time evaluation, so the compiler reports it as an error. `static_assert` with `constexpr` is a cheap way to test small functions.
 
-Undefined behaviour is not allowed during compile-time evaluation, so the compiler reports it as an error. That makes `static_assert` with `constexpr` a cheap way to test small functions.
-
-## Variadic templates and CTAD
+## Variadic templates
 
 A **variadic template** accepts any number of template arguments. `class... Ts` is a **template parameter pack**, `Ts... args` a **function parameter pack**:
 
 ```cpp
+#include <cstdio>
+
 template <class... Ts>
-auto sum(Ts... xs) { return (xs + ... + 0); }   // fold expression
-sum(1, 2, 3);   // 6
+int total_damage(Ts... hits) {
+    std::printf("%zu hits\n", sizeof...(Ts));   // how many arguments
+    return (hits + ... + 0);                    // fold expression
+}
+
+int main() {
+    std::printf("combo damage: %d\n", total_damage(12, 8, 30));
+}
+```
+```text
+3 hits
+combo damage: 50
 ```
 
-`(xs + ... + 0)` is a **fold expression**: it expands to `1 + (2 + (3 + 0))`. `sizeof...(Ts)` gives the count. This is how `std::make_unique<T>(args...)` and `emplace_back(args...)` accept any constructor arguments, together with `std::forward<Ts>(args)...`.
+`(hits + ... + 0)` is a **fold expression**: it expands to `12 + (8 + (30 + 0))`. This is how `std::make_unique<Slime>(args...)` and `emplace_back(args...)` accept any constructor arguments, together with `std::forward<Ts>(args)...`.
 
-**CTAD** (class template argument deduction, C++17) deduces a class template's arguments from constructor arguments: `std::pair p{1, 2.0};` becomes `std::pair<int, double>`.
+`sizeof...(Ts)` gives the count. `decltype(expr)` gives the type of an expression without evaluating it.
 
-`decltype(expr)` gives the type of an expression without evaluating it, used to name types that are hard to write.
+## When to use templates, and when not
+
+- Use them when the same logic really applies to several types: math types, containers, caches, algorithms.
+- Do not template code that only ever uses one type. It slows compiles and makes errors longer for no gain.
+- If the types are chosen at runtime (enemy kinds loaded from a level file), templates cannot help: the compiler needs the type while compiling. Use virtual functions or `std::variant` instead.
+- Constrain public templates with concepts so misuse fails with a short message.
 
 <MCQ
   id="concept-check"
-  prompt="You call `max_of(2, 5)` and `max_of(1.0, 2.0)`. How many functions does the compiler generate from the template?"
+  prompt="You call `dist_sq` with `Vec2<int>` and with `Vec2<float>`. How many functions does the compiler generate from the template?"
   options={["One, shared by both", "Two, one for int and one for double", "Zero, templates are interpreted", "It depends on optimization level"]}
   answer={1}
-  explanation="Each distinct set of template arguments makes one instantiation."
+  explanation="Each distinct set of template arguments makes one instantiation. Here T = int and T = float give two."
+/>
+
+<MCQ
+  id="concept-runtime-type"
+  prompt="The level file says which enemy kind to spawn at each position (slime, bat or ghost). Can `template <class E> void spawn()` pick the kind from the file?"
+  options={["Yes, the template reads the type at runtime", "No: template arguments are fixed at compile time, so you need virtual functions, a variant, or a switch that calls spawn<Slime>(), spawn<Bat>() and so on", "Yes, with if constexpr", "Only with concepts"]}
+  answer={1}
+  explanation="Templates are instantiated while compiling. A value read from a file at runtime cannot become a template argument. A switch over the kind can call each instantiation."
+  devices={["phone", "desktop"]}
 />

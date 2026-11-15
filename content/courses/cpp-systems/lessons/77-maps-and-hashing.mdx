@@ -1,0 +1,168 @@
+---
+id: cpp-systems/05-stl/07-maps-and-hashing
+title: "Maps, Hashing and the Spatial Grid"
+estMinutes: 15
+xp: 90
+fun: 5
+missionIntro: "Checking the inventory with operator[] quietly adds empty items to it, and collision checks that compare every enemy with every other enemy eat the frame. std::map, std::unordered_map, what a hash is, and a hash grid for neighbours."
+keyIdeas:
+  - "m[key] inserts a default value when the key is missing. Use find, contains or at to look without inserting."
+  - "std::map is a sorted tree (O(log n), ordered iteration); std::unordered_map is a hash table (O(1) average, no order)."
+  - "A custom key type in unordered_map needs a hash function and operator==."
+  - "A spatial hash grid maps a cell to the entities in it, so a collision check only looks at nearby cells."
+---
+
+## The feature: the inventory
+
+The inventory maps item names to counts: `"potion" -> 3`, `"key" -> 1`. The shop screen checks whether the player has a dragon egg before offering a trade.
+
+## The careless version: looking with operator[]
+
+```cpp
+#include <cstdio>
+#include <map>
+#include <string>
+
+int main() {
+    std::map<std::string, int> inventory{{"potion", 3}, {"key", 1}};
+    if (inventory["dragon egg"] > 0) std::printf("trade available\n");   // just checking...
+    if (inventory["golden fork"] > 0) std::printf("trade available\n");
+    std::printf("inventory screen shows %zu items:\n", inventory.size());
+    for (const auto& [name, count] : inventory) std::printf("  %-12s x%d\n", name.c_str(), count);
+}
+```
+```text
+inventory screen shows 4 items:
+  dragon egg   x0
+  golden fork  x0
+  key          x1
+  potion       x3
+```
+
+## What went wrong
+
+`operator[]` returns a reference to the value for that key, so it must have a value to refer to. If the key is missing, it **inserts** one, with a default value (0 for `int`). Two "checks" added two items to the inventory. The inventory screen now lists a dragon egg and a golden fork, both x0, and the save file stores them.
+
+For the same reason, `operator[]` does not compile on a `const std::map`: it might modify it.
+
+## The fix: look without inserting
+
+```cpp
+#include <cstdio>
+#include <map>
+#include <string>
+
+int count_of(const std::map<std::string, int>& inv, const std::string& item) {
+    auto it = inv.find(item);
+    return it == inv.end() ? 0 : it->second;
+}
+
+int main() {
+    std::map<std::string, int> inventory{{"potion", 3}, {"key", 1}};
+    std::printf("dragon eggs: %d\n", count_of(inventory, "dragon egg"));
+    std::printf("has key: %s\n", inventory.contains("key") ? "yes" : "no");
+    inventory["potion"] += 2;              // here inserting is what we want: picking up items
+    std::printf("inventory has %zu items, potions x%d\n", inventory.size(), inventory.at("potion"));
+}
+```
+```text
+dragon eggs: 0
+has key: yes
+inventory has 2 items, potions x5
+```
+
+- `find(key)` returns an iterator, or `end()` if missing.
+- `contains(key)` (C++20) returns a bool.
+- `at(key)` returns the value, or throws `std::out_of_range`.
+- `operator[]` is right when you **want** to create the entry: `inventory[item] += n` when picking something up.
+
+## map or unordered_map
+
+- `std::map` is a balanced binary tree. Lookup is O(log n), and iterating visits keys in sorted order. Each element is a separate heap node.
+- `std::unordered_map` is a hash table. A **hash function** turns the key into a number, which picks a bucket. Lookup is O(1) on average. Iteration order is unspecified.
+
+For the inventory screen, sorted order is a feature, so `std::map` is fine. For "entity id to index", with thousands of lookups per frame and no need for order, use `std::unordered_map`.
+
+## The second feature: collisions with a spatial grid
+
+Every frame, each enemy must check for collisions with the enemies near it. Comparing every pair is n·(n-1)/2 checks: 2,000 enemies is about 2 million checks per frame.
+
+A **spatial hash grid** divides the world into cells (say 4x4 world units). Each enemy is put in the bucket for its cell. To find an enemy's neighbours, look only in its own cell and the 8 around it.
+
+![World divided into grid cells; one slime checks only its own cell and the 8 around it](/diagrams/cpp-systems/05-stl/07-maps-and-hashing.png)
+
+The key is a cell coordinate, a pair of ints, which has no built-in hash. We supply one:
+
+```cpp
+#include <cmath>
+#include <cstdio>
+#include <unordered_map>
+#include <vector>
+
+struct Cell {
+    int x, y;
+    bool operator==(const Cell&) const = default;
+};
+struct CellHash {
+    std::size_t operator()(Cell c) const {
+        return std::hash<long long>{}((static_cast<long long>(c.x) << 32) ^ static_cast<unsigned>(c.y));
+    }
+};
+
+int main() {
+    const float CELL = 4.0f;
+    std::unordered_map<Cell, std::vector<int>, CellHash> grid;
+    float pos[][2] = {{1, 1}, {2, 3}, {5, 1}, {30, 30}, {-1, 2}};
+    for (int id = 0; id < 5; ++id) {
+        Cell c{(int)std::floor(pos[id][0] / CELL), (int)std::floor(pos[id][1] / CELL)};
+        grid[c].push_back(id);                  // inserting is what we want here
+    }
+    Cell me{0, 0};                              // enemy 0's cell
+    std::printf("near enemy 0:");
+    for (int dx = -1; dx <= 1; ++dx)
+        for (int dy = -1; dy <= 1; ++dy)
+            if (auto it = grid.find({me.x + dx, me.y + dy}); it != grid.end())
+                for (int id : it->second) if (id != 0) std::printf(" %d", id);
+    std::printf("\n");
+}
+```
+```text
+near enemy 0: 4 1 2
+```
+
+Enemy 3 at (30, 30) is never looked at. With enemies spread over the map, each check touches a handful of neighbours instead of all 2,000.
+
+`std::floor` matters: plain `(int)(-1 / 4.0f)` is 0, which would put enemy 4 at x = -1 in the same cell column as x = 1.
+
+## When to use them, and when not
+
+- Use `std::unordered_map` for lookups by key when order does not matter; `std::map` when you need sorted iteration or ordered queries (`lower_bound`).
+- Do not use a map when the keys are small dense integers (entity indices 0..n): a `std::vector` indexed directly is far faster.
+- For a few dozen items, a sorted `std::vector` of pairs searched with `lower_bound` often beats both, thanks to cache locality.
+- A bad hash (say, returning `c.x` only) puts a whole column of cells in one bucket and makes lookups slow. Mix all fields into the hash.
+
+<MCQ
+  id="map-lookup"
+  prompt="`void show_count(const std::map<std::string, int>& inv)` needs the potion count. Which line compiles and does not modify anything?"
+  options={["inv[\"potion\"]", "inv.at(\"potion\") (throws if missing)", "inv.insert({\"potion\", 0})", "inv.operator[](\"potion\")"]}
+  answer={1}
+  explanation="operator[] may insert, so it is not available on a const map. at() reads only and throws std::out_of_range if the key is missing; find() and contains() check without throwing."
+  devices={["phone", "desktop"]}
+/>
+
+## Coding task: the spatial grid
+
+The collision system rebuilds this grid every frame and asks it for each enemy's neighbours.
+
+<Code
+  id="spatial-grid"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `class SpatialGrid` with `explicit SpatialGrid(float cell_size)`, `void insert(int id, float x, float y)`, and `std::vector<int> near(float x, float y) const` returning the ids in the cell containing (x, y) and the 8 cells around it, sorted ascending. Use std::floor for cell coordinates (negative positions must work) and an unordered_map keyed by cell with your own hash. `void clear()` empties it."
+  starter={"#include <algorithm>\n#include <cmath>\n#include <unordered_map>\n#include <vector>\nclass SpatialGrid {\npublic:\n    explicit SpatialGrid(float cell_size) : cell_(cell_size) {}\n    void insert(int id, float x, float y) { all_.push_back(id); }\n    std::vector<int> near(float x, float y) const { return all_; }   // every enemy: too many\n    void clear() { all_.clear(); }\nprivate:\n    float cell_;\n    std::vector<int> all_;\n};\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    SpatialGrid g(4);\n    g.insert(1, 1, 1);\n    g.insert(2, 30, 30);\n    auto n = g.near(0, 0);\n    CHECK(n.size() == 1 && n[0] == 1);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\nint main() {\n    SpatialGrid g(4);\n    g.insert(5, 1, 1);\n    g.insert(2, 5, 1);\n    g.insert(9, -1, 2);\n    g.insert(7, 30, 30);\n    g.insert(3, -5, -5);\n    g.insert(4, 9, 0);\n    auto n = g.near(2, 2);\n    CHECK((n == std::vector<int>{2, 5, 9}));\n    auto m = g.near(-0.5f, 0);\n    CHECK((m == std::vector<int>{5, 9}));\n    auto far = g.near(29, 29);\n    CHECK((far == std::vector<int>{7}));\n    CHECK(g.near(100, -100).empty());\n    auto e = g.near(8.5f, 1);\n    CHECK((e == std::vector<int>{2, 4}));\n    g.clear();\n    CHECK(g.near(2, 2).empty());\n    SpatialGrid big(10);\n    for (int i = 0; i < 100; ++i) big.insert(i, float(i), 0);\n    auto b = big.near(55, 0);\n    CHECK(b.size() == 30 && b.front() == 40 && b.back() == 69);\n    return 0;\n}\n"}
+  solution={"#include <algorithm>\n#include <cmath>\n#include <unordered_map>\n#include <vector>\nclass SpatialGrid {\npublic:\n    explicit SpatialGrid(float cell_size) : cell_(cell_size) {}\n    void insert(int id, float x, float y) { grid_[cell_of(x, y)].push_back(id); }\n    std::vector<int> near(float x, float y) const {\n        Cell c = cell_of(x, y);\n        std::vector<int> out;\n        for (int dx = -1; dx <= 1; ++dx)\n            for (int dy = -1; dy <= 1; ++dy)\n                if (auto it = grid_.find(Cell{c.x + dx, c.y + dy}); it != grid_.end())\n                    out.insert(out.end(), it->second.begin(), it->second.end());\n        std::ranges::sort(out);\n        return out;\n    }\n    void clear() { grid_.clear(); }\nprivate:\n    struct Cell {\n        int x, y;\n        bool operator==(const Cell&) const = default;\n    };\n    struct CellHash {\n        std::size_t operator()(Cell c) const {\n            return std::hash<long long>{}((static_cast<long long>(c.x) << 32) ^ static_cast<unsigned>(c.y));\n        }\n    };\n    Cell cell_of(float x, float y) const {\n        return Cell{static_cast<int>(std::floor(x / cell_)), static_cast<int>(std::floor(y / cell_))};\n    }\n    float cell_;\n    std::unordered_map<Cell, std::vector<int>, CellHash> grid_;\n};\n"}
+  hints={["struct Cell { int x, y; bool operator==(const Cell&) const = default; }; plus a hash struct combining x and y.", "near is const, so use find, not operator[].", "Collect ids into a vector, then std::ranges::sort."]}
+  explanation="Grouping by cell turns an all-pairs check into a check of nine buckets. The const near() is forced to use find, which is exactly the inventory lesson."
+/>

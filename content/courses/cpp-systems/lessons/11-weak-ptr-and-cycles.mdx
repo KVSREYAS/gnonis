@@ -1,53 +1,204 @@
 ---
 id: cpp-systems/03-ownership/03-weak-ptr-and-cycles
 title: "weak_ptr and Reference Cycles"
-estMinutes: 7
+estMinutes: 14
 xp: 90
-fun: 4
-missionIntro: "Two shared_ptrs pointing at each other never die. weak_ptr breaks the cycle."
+fun: 5
+missionIntro: "A slime squad whose leader and members own each other never gets freed, and a homing missile that owns its target keeps a dead bat flying. weak_ptr points at something without keeping it alive."
 keyIdeas:
   - "A cycle of shared_ptrs keeps every member alive forever: the counts never reach zero."
   - "weak_ptr observes without owning: it bumps the weak count, and lock() returns a shared_ptr or null."
   - "Typical pattern: parents own children (shared_ptr or unique_ptr), and children point back with weak_ptr or a raw pointer."
 ---
 
-## Spot the cycle
+## The feature: squads and homing missiles
 
+Two new things in Slime Siege:
 
+1. **Slime squads.** A squad leader keeps a list of its members so it can give orders. Each member keeps a pointer to its leader so it can follow.
+2. **Homing missiles.** A turret fires a missile that steers toward a target enemy until it hits.
+
+Both need a pointer from one game object to another. And both go wrong if that pointer is a `shared_ptr`.
+
+## The careless version: everyone owns everyone
+
+```cpp
+#include <cstdio>
+#include <memory>
+#include <vector>
+
+struct Slime {
+    int id;
+    std::shared_ptr<Slime> leader;                 // member -> leader
+    std::vector<std::shared_ptr<Slime>> members;   // leader -> members
+    Slime(int i, std::shared_ptr<Slime> l) : id(i), leader(std::move(l)) {}
+    ~Slime() { std::printf("slime %d freed\n", id); }
+};
+
+int main() {
+    {
+        auto boss = std::make_shared<Slime>(1, nullptr);
+        for (int i = 2; i <= 3; ++i) {
+            auto m = std::make_shared<Slime>(i, boss);
+            boss->members.push_back(m);
+        }
+        std::printf("squad of 3 formed\n");
+    }   // the level ends
+    std::printf("level unloaded\n");
+    std::fflush(stdout);   // show our output before the leak report
+}
+```
+```text
+squad of 3 formed
+level unloaded
+==1==ERROR: LeakSanitizer: detected memory leaks
+SUMMARY: AddressSanitizer: 224 byte(s) leaked in 4 allocation(s).
+```
+
+## What went wrong
+
+When `boss` went out of scope, its strong count dropped from 3 to 2, not 0: both members still own it. The members are owned by the boss. Nobody outside holds any of them, but every count is above zero, so nothing is freed. The destructors never ran, and LeakSanitizer reports the memory as leaked at exit.
+
+In a real game this happens every level. Each squad leaks, memory use climbs level by level, and any cleanup in the destructors (removing the slime from the physics world, stopping its sound) never runs.
 
 ![Two nodes holding shared_ptrs to each other (counts stuck at 1) versus a weak back-edge](/diagrams/cpp-systems/03-ownership/03-weak-ptr-and-cycles.png)
 
 <SpotBug
   id="cycle-leak"
-  prompt="Which line creates a leak?"
+  prompt="A squad is a pair of linked nodes. Which line creates the leak?"
   code={"#include <memory>\nstruct Node {\n    std::shared_ptr<Node> next;\n    std::shared_ptr<Node> prev;\n};\nint main() {\n    auto a = std::make_shared<Node>();\n    auto b = std::make_shared<Node>();\n    a->next = b;\n    b->prev = a;\n}"}
   bugLine={10}
-  explanation="After this line a and b own each other. When main's locals die, both counts drop to 1, never 0. Make prev a weak_ptr."
+  explanation="After this line a and b own each other. When main's locals die, both counts drop to 1, never 0. Make prev a weak_ptr, so the back-pointer does not own."
   devices={["phone", "desktop"]}
 />
 
+## The fix: std::weak_ptr
+
+A `std::weak_ptr` points at an object managed by `shared_ptr` but does **not** own it. It increments the weak count, not the strong count, so it never keeps the object alive.
+
+To use the object, call `lock()`. It returns a `shared_ptr` that keeps the object alive while you use it, or an empty `shared_ptr` if the object is already gone. This is a check and a grab in one step, so there is no gap where the object could die between them.
+
+The rule for cycles: pick one direction to own (the leader owns members), and make the other direction weak.
+
+```cpp
+#include <cstdio>
+#include <memory>
+#include <vector>
+
+struct Slime {
+    int id;
+    std::weak_ptr<Slime> leader;                   // member -> leader: does not own
+    std::vector<std::shared_ptr<Slime>> members;   // leader -> members: owns
+    Slime(int i, std::shared_ptr<Slime> l) : id(i), leader(l) {}
+    ~Slime() { std::printf("slime %d freed\n", id); }
+};
+
+int main() {
+    {
+        auto boss = std::make_shared<Slime>(1, nullptr);
+        for (int i = 2; i <= 3; ++i) {
+            auto m = std::make_shared<Slime>(i, boss);
+            boss->members.push_back(m);
+        }
+        if (auto l = boss->members[0]->leader.lock())
+            std::printf("slime 2 follows slime %d\n", l->id);
+    }
+    std::printf("level unloaded\n");
+}
+```
+```text
+slime 2 follows slime 1
+slime 1 freed
+slime 2 freed
+slime 3 freed
+level unloaded
+```
+
+The boss dies first (strong count 0), its destructor destroys the `members` vector, and the members die with it.
+
+## Homing missiles: pointing at something that may die
+
+The missile needs its target's position every frame. But the missile should not keep the target alive: if the player's sword kills the bat first, the bat must die. With a `weak_ptr`, the missile checks each frame:
+
+```cpp
+#include <cstdio>
+#include <memory>
+
+struct Enemy { const char* name; float x; };
+
+struct Missile {
+    std::weak_ptr<Enemy> target;
+    float x = 0;
+    bool update() {                                 // false: target gone, missile fizzles
+        auto t = target.lock();
+        if (!t) return false;
+        x += (t->x - x) * 0.5f;
+        std::printf("missile at %.1f chasing %s at %.1f\n", x, t->name, t->x);
+        return true;
+    }
+};
+
+int main() {
+    auto bat = std::make_shared<Enemy>(Enemy{"bat", 10});
+    Missile m{bat};
+    m.update();
+    m.update();
+    bat.reset();                                    // the player's sword got there first
+    if (!m.update()) std::printf("target gone, missile fizzles\n");
+}
+```
+```text
+missile at 5.0 chasing bat at 10.0
+missile at 7.5 chasing bat at 10.0
+target gone, missile fizzles
+```
+
 <MCQ
   id="lock"
-  prompt="`std::weak_ptr<T> w` observes an object that has already been destroyed. What does `w.lock()` return?"
+  prompt="A missile's `std::weak_ptr<Enemy> target` observes a bat that has already been destroyed. What does `target.lock()` return?"
   options={["A dangling shared_ptr", "An empty shared_ptr", "It throws", "UB"]}
   answer={1}
   explanation="lock() is the safe check-and-take. The shared_ptr(weak_ptr) constructor throws bad_weak_ptr instead."
   devices={["phone", "desktop"]}
 />
 
-## Fix it
+## When to use it, and when not
 
-Source: [cppreference: weak_ptr](https://en.cppreference.com/w/cpp/memory/weak_ptr)
+- Use `weak_ptr` for back-pointers in a structure the other direction owns (member to leader, child to parent), and for "I want to use this if it still exists" references (missile targets, an AI's current enemy, a cache that should not keep things alive).
+- If the referenced object always outlives the referrer (a child that is destroyed with its parent), a raw pointer or reference is simpler and has no cost. Use `weak_ptr` when it may die first.
+- `weak_ptr` only works with objects owned by `shared_ptr`. It cannot observe a `unique_ptr` object.
+- `lock()` is an atomic operation. Locking once per frame per missile is fine; locking inside a tight inner loop is not. Lock once, keep the `shared_ptr` for the loop.
+
+## Coding task: the scene graph
+
+The sword is attached to the hand, the hand to the player. Each child needs to find its parent to compute its world position.
 
 <Code
   id="tree-weak"
   devices={["desktop"]}
   language="cpp"
-  prompt="Complete `TreeNode`. Children are owned via `std::vector<std::shared_ptr<TreeNode>> kids`, the parent is a `std::weak_ptr<TreeNode> parent`, and `add_child(self)` creates a child whose parent is self. A global counter `alive` tracks construction and destruction. When the root dies, every node must be destroyed."
+  prompt="The scene graph attaches a sword to a hand and a hand to the player. Complete `TreeNode`. Children are owned via `std::vector<std::shared_ptr<TreeNode>> kids`, the parent is a `std::weak_ptr<TreeNode> parent`, and `add_child(self)` creates a child whose parent is self. A global counter `alive` tracks construction and destruction. When the root (the player) dies, every node must be destroyed."
   starter={"#include <memory>\n#include <vector>\nextern int alive;\nstruct TreeNode {\n    std::vector<std::shared_ptr<TreeNode>> kids;\n    std::shared_ptr<TreeNode> parent; // TODO: wrong type\n    TreeNode() { ++alive; }\n    ~TreeNode() { --alive; }\n};\nstd::shared_ptr<TreeNode> add_child(const std::shared_ptr<TreeNode>& self) {\n    auto k = std::make_shared<TreeNode>();\n    k->parent = self;\n    self->kids.push_back(k);\n    return k;\n}\n"}
   visibleTests={"#include \"check.h\"\n\nint alive = 0;\nint main() {\n    { auto r = std::make_shared<TreeNode>(); add_child(r); }\n    CHECK(alive == 0);\n    return 0;\n}\n"}
   tests={"#include \"check.h\"\n\nint alive = 0;\nint main() {\n    {\n        auto r = std::make_shared<TreeNode>();\n        auto c = add_child(r); auto g = add_child(c); add_child(r);\n        CHECK(alive == 4);\n        CHECK(g->parent.lock() == c);\n    }\n    CHECK(alive == 0);\n    return 0;\n}\n"}
   solution={"#include <memory>\n#include <vector>\nextern int alive;\nstruct TreeNode {\n    std::vector<std::shared_ptr<TreeNode>> kids;\n    std::weak_ptr<TreeNode> parent;\n    TreeNode() { ++alive; }\n    ~TreeNode() { --alive; }\n};\nstd::shared_ptr<TreeNode> add_child(const std::shared_ptr<TreeNode>& self) {\n    auto k = std::make_shared<TreeNode>();\n    k->parent = self;\n    self->kids.push_back(k);\n    return k;\n}\n"}
   hints={["One word to change."]}
-  explanation="Parent-owns-child plus a weak back-pointer is the standard tree and graph pattern."
+  explanation="Parent owns child plus a weak back-pointer is the standard tree and graph pattern. Scene graphs, UI trees and squad hierarchies all use it."
+/>
+
+## Coding task: target lock
+
+Turrets need a target system that handles enemies dying at any moment, without keeping them alive.
+
+<Code
+  id="target-lock"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `class Turret`. `void aim(const std::shared_ptr<Enemy>& e)` remembers the target without owning it. `bool has_target() const` is true if the target is still alive. `int fire(int dmg)` subtracts dmg from the target's hp and returns its new hp, or returns -1 if there is no live target. Enemy counts live enemies in g_enemies, so the tests can tell if the turret keeps an enemy alive."
+  starter={"#include <memory>\nextern int g_enemies;\nstruct Enemy {\n    int hp;\n    explicit Enemy(int h) : hp(h) { ++g_enemies; }\n    ~Enemy() { --g_enemies; }\n};\nclass Turret {\npublic:\n    void aim(const std::shared_ptr<Enemy>& e) { target_ = e; }\n    bool has_target() const { return target_ != nullptr; }\n    int fire(int dmg) {\n        if (!target_) return -1;\n        target_->hp -= dmg;\n        return target_->hp;\n    }\nprivate:\n    std::shared_ptr<Enemy> target_;   // owns the target: keeps it alive\n};\n"}
+  visibleTests={"#include \"check.h\"\nint g_enemies = 0;\nint main() {\n    Turret t;\n    auto bat = std::make_shared<Enemy>(30);\n    t.aim(bat);\n    bat.reset();\n    CHECK(g_enemies == 0 && !t.has_target());\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\nint g_enemies = 0;\nint main() {\n    Turret t;\n    CHECK(!t.has_target() && t.fire(5) == -1);\n    auto bat = std::make_shared<Enemy>(30);\n    t.aim(bat);\n    CHECK(t.has_target());\n    CHECK(t.fire(10) == 20 && bat->hp == 20);\n    CHECK(g_enemies == 1);\n    bat.reset();\n    CHECK(g_enemies == 0);\n    CHECK(!t.has_target() && t.fire(10) == -1);\n    auto ghost = std::make_shared<Enemy>(50);\n    t.aim(ghost);\n    CHECK(t.fire(25) == 25 && t.fire(25) == 0);\n    ghost.reset();\n    CHECK(g_enemies == 0 && !t.has_target());\n    return 0;\n}\n"}
+  solution={"#include <memory>\nextern int g_enemies;\nstruct Enemy {\n    int hp;\n    explicit Enemy(int h) : hp(h) { ++g_enemies; }\n    ~Enemy() { --g_enemies; }\n};\nclass Turret {\npublic:\n    void aim(const std::shared_ptr<Enemy>& e) { target_ = e; }\n    bool has_target() const { return !target_.expired(); }\n    int fire(int dmg) {\n        if (auto t = target_.lock()) {\n            t->hp -= dmg;\n            return t->hp;\n        }\n        return -1;\n    }\nprivate:\n    std::weak_ptr<Enemy> target_;\n};\n"}
+  hints={["Store `std::weak_ptr<Enemy>`.", "has_target: `!target_.expired()`.", "fire: `if (auto t = target_.lock()) { ... }`."]}
+  explanation="The turret refers to the enemy but does not own it. When the world frees the enemy, the turret sees it at once through the weak count, and it never extends the enemy's life."
 />

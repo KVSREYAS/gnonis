@@ -1,25 +1,67 @@
 ---
 id: cpp-systems/11-perf/01-benchmarking-pitfalls
 title: "Benchmarking Pitfalls"
-estMinutes: 8
+estMinutes: 11
 xp: 100
-fun: 3
-missionIntro: "The optimiser deletes work whose results are unused, and noisy machines give unstable numbers. Repeat runs and report the spread."
+fun: 5
+missionIntro: "The first timing run of the particle clear is many times slower than the next. The optimiser deletes unused work, the first run pays for page faults, and averages hide stutters. Warm up, repeat, and report the median and the worst frames."
 keyIdeas:
   - "Dead-code elimination: if the result isn't used, the loop may vanish. Use benchmark::DoNotOptimize, or consume the result."
   - "Warm up, repeat, and report the median or minimum with spread. Pin the CPU frequency or at least note it."
-  - "Microbenchmarks lie about caches: a 4 KB working set lives in L1, while production data might not."
+  - "For frame times, the average hides stutter: report the median and the worst 1% (p99)."
 ---
 
-## Spot the broken benchmark
+## The feature: should the particle buffer be cleared or reallocated?
 
+Between waves, the effects system needs an empty particle buffer of 16 million floats. Someone writes a quick benchmark: time one clear, report it.
 
+## The careless version: one sample
+
+```cpp
+#include <chrono>
+#include <cstdio>
+#include <cstring>
+#include <memory>
+
+int main() {
+    const std::size_t n = 16 << 20;                          // 16 M floats = 64 MiB
+    auto buf = std::make_unique_for_overwrite<float[]>(n);   // fresh memory, never touched
+    auto ms = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };
+    for (int run = 1; run <= 4; ++run) {
+        auto t0 = std::chrono::steady_clock::now();
+        std::memset(buf.get(), 0, n * sizeof(float));
+        auto t1 = std::chrono::steady_clock::now();
+        std::printf("clear run %d: %6.2f ms   (buf[123] = %g)\n", run, ms(t1 - t0), buf[123]);
+    }
+}
+```
+```text
+clear run 1:  32.34 ms   (buf[123] = 0)
+clear run 2:   5.05 ms   (buf[123] = 0)
+clear run 3:   2.09 ms   (buf[123] = 0)
+clear run 4:   2.01 ms   (buf[123] = 0)
+```
+
+Same code, same buffer. The first run is several times slower than the others. If the benchmark had stopped after run 1, the team would have rewritten a clear that is actually fast.
+
+## What went wrong
+
+A fresh allocation is only reserved address space. The first write to each 4 KiB page causes a **page fault**: the operating system stops the program, finds a physical page, zeroes it, and maps it. Run 1 paid for the page faults (up to 16,384 of them, fewer if the system uses huge pages); later runs write to memory that is already mapped. Caches, branch predictors and CPU clock speed have similar warm-up effects.
+
+## The concept: a benchmark you can trust
+
+1. **Use the result** so the compiler cannot delete the work (the print of `buf[123]` above does that).
+2. **Warm up**: run the code a few times before timing.
+3. **Repeat** many times and look at the **distribution**: the median for "typical", the minimum for "best possible", and a high percentile for "how bad it gets".
+4. **Match production**: the same input size, the same compiler flags.
+
+For a game, the last point matters most for frame times. A game averaging 60 FPS that drops one frame in fifty to 50 ms feels worse than a steady 50 FPS. Players notice the worst frames, so report the median and the **p99** (the frame time that 99% of frames are faster than).
 
 ![Benchmark timeline showing warm-up, repeated samples and median versus a single noisy run](/diagrams/cpp-systems/11-perf/01-benchmarking-pitfalls.png)
 
 <MCQ
   id="dce"
-  prompt="A benchmark of `for (i...) x = sqrt(i);` reports 0.3 ns per iteration at -O2, and x is never used. Most likely?"
+  prompt="A benchmark of the slime distance check, `for (i...) d = sqrt(dx*dx + dy*dy);`, reports 0.3 ns per iteration at -O2, and d is never used. Most likely?"
   options={["sqrt is that fast", "The compiler deleted the loop because x is unused", "The timer is broken", "Caching"]}
   answer={1}
   explanation="Carruth's CppCon 2015 talk demonstrates exactly this."
@@ -28,21 +70,43 @@ keyIdeas:
 
 <Predict
   id="timer-res"
-  prompt="Your timer resolution is ~20 ns and one call takes ~2 ns. Minimum iterations per timing sample to keep timer error under 1%?"
+  prompt="Your timer resolution is ~20 ns and one collision check takes ~2 ns. Minimum iterations per timing sample to keep timer error under 1%?"
   answer={1000}
   tolerance={{"mode": "relative", "value": 0.01}}
   explanation="Error 20 ns ≤ 1% of total → total ≥ 2000 ns → 1,000 iterations."
   devices={["phone", "desktop"]}
 />
 
+## When to benchmark, and when not
+
+- Benchmark a small piece of code to compare two versions of it, after a profiler has shown that it matters.
+- Do not trust a microbenchmark about caches: a 4 KiB working set stays in L1 in the benchmark but not in the real frame, next to everything else.
+- Do not benchmark debug builds. `-O0` timings say nothing about the shipped game.
+- For "is the game fast enough?", measure whole frames in the real game, not functions in isolation.
+
+Sources: Chandler Carruth, [Tuning C++: Benchmarks, and CPUs, and Compilers! Oh My! (CppCon 2015)](https://www.youtube.com/watch?v=nXaxk27zwlk), [Google Benchmark user guide](https://github.com/google/benchmark/blob/main/docs/user_guide.md), Andrei Alexandrescu, *Writing Fast Code*
+
 <Ordering
   id="bench-steps"
-  prompt="Order a trustworthy benchmark."
+  prompt="Order a trustworthy benchmark of the particle update."
   items={["Fix the input size to match production", "Warm up (caches, page faults, frequency)", "Run many repetitions with DoNotOptimize on results", "Report median and spread, not one run", "Profile the winner to explain why it wins"]}
   explanation="Explain, don't just measure."
   devices={["phone", "desktop"]}
 />
 
-## Sources
+## Coding task: the frame-time report
 
-Chandler Carruth, [Tuning C++: Benchmarks, and CPUs, and Compilers! Oh My! (CppCon 2015)](https://www.youtube.com/watch?v=nXaxk27zwlk), [Google Benchmark user guide](https://github.com/google/benchmark/blob/main/docs/user_guide.md), Andrei Alexandrescu, *Writing Fast Code*
+The debug overlay records every frame's time in milliseconds. Turn a recording into the three numbers the team checks before each release.
+
+<Code
+  id="frame-stats"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `FrameStats summarize(std::vector<double> ms, double budget)` with `struct FrameStats { double median_ms, p99_ms; int over_budget; };`. median: middle value of the sorted times (average of the middle two for an even count). p99: the sorted value at index ceil(0.99 * n) - 1. over_budget: how many frames took longer than budget. Assume ms is not empty."
+  starter={"#include <algorithm>\n#include <cmath>\n#include <vector>\nstruct FrameStats { double median_ms, p99_ms; int over_budget; };\nFrameStats summarize(std::vector<double> ms, double budget) { return {0, 0, -1}; }\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    FrameStats s = summarize({16, 15, 17, 40, 16}, 16.7);\n    CHECK(s.median_ms == 16);\n    CHECK(s.p99_ms == 40);\n    CHECK(s.over_budget == 2);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\nint main() {\n    FrameStats s = summarize({16, 15, 17, 40, 16}, 16.7);\n    CHECK(s.median_ms == 16 && s.p99_ms == 40 && s.over_budget == 2);\n    FrameStats e = summarize({10, 20, 30, 40}, 25);\n    CHECK(e.median_ms == 25 && e.p99_ms == 40 && e.over_budget == 2);\n    std::vector<double> f;\n    for (int i = 1; i <= 100; ++i) f.push_back(i);\n    FrameStats h = summarize(f, 99.5);\n    CHECK(h.median_ms == 50.5 && h.p99_ms == 99 && h.over_budget == 1);\n    std::vector<double> g(200, 16.0);\n    g[7] = 50; g[100] = 45; g[150] = 30;\n    FrameStats k = summarize(g, 16.7);\n    CHECK(k.median_ms == 16 && k.p99_ms == 30 && k.over_budget == 3);\n    FrameStats one = summarize({12.5}, 16.7);\n    CHECK(one.median_ms == 12.5 && one.p99_ms == 12.5 && one.over_budget == 0);\n    return 0;\n}\n"}
+  solution={"#include <algorithm>\n#include <cmath>\n#include <vector>\nstruct FrameStats { double median_ms, p99_ms; int over_budget; };\nFrameStats summarize(std::vector<double> ms, double budget) {\n    std::sort(ms.begin(), ms.end());\n    std::size_t n = ms.size();\n    double med = n % 2 ? ms[n / 2] : (ms[n / 2 - 1] + ms[n / 2]) / 2;\n    std::size_t k = (std::size_t)std::ceil(0.99 * n) - 1;\n    int over = (int)std::count_if(ms.begin(), ms.end(), [&](double t) { return t > budget; });\n    return {med, ms[k], over};\n}\n"}
+  hints={["Sort a copy (the parameter is already a copy).", "std::size_t k = (std::size_t)std::ceil(0.99 * n) - 1; p99 = ms[k]. For n = 100 that is index 98, the 99th smallest."]}
+  explanation="The median tells you the usual frame, p99 tells you how bad the stutters are, and the count over budget tells you how often they happen. A frame budget of 16.7 ms is 60 FPS."
+/>

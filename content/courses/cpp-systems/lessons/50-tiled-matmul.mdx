@@ -1,25 +1,82 @@
 ---
 id: cpp-systems/13-capstone/02-tiled-matmul
 title: "Fast Matmul: Loop Order and Tiling"
-estMinutes: 10
+estMinutes: 12
 xp: 120
 fun: 5
-missionIntro: "Matrix multiply is ~all of inference compute. The naive i-j-k loop leaves 10x or more on the table, and loop order plus tiling recovers much of it."
+missionIntro: "Every enemy runs the brain each frame, and matrix multiply is nearly all of its cost. The textbook i-j-k loop leaves a large factor on the table, and loop order plus tiling recovers much of it."
 keyIdeas:
   - "C = A·B with i-j-k order strides down B's columns (cache-hostile). i-k-j order streams rows of B and C contiguously, which vectorises well."
   - "Tiling keeps blocks of A, B and C in cache and reuses each loaded element many times."
   - "FLOPs = 2·M·N·K. Arithmetic intensity determines whether you're memory- or compute-bound."
 ---
 
-## FLOPs
+## The feature: brains for the whole horde
 
+The slime king is not the only one thinking. In the final wave every elite slime runs a smaller copy of the brain. Instead of one matrix-vector product per slime, the game stacks all slimes' inputs into one matrix and runs each layer as a single matrix multiply: `[slimes, inputs] × [inputs, hidden]`.
 
+## The careless version: the textbook loop order
+
+```cpp
+#include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <vector>
+
+__attribute__((noipa)) void mm_ijk(const float* A, const float* B, float* C, int M, int N, int K) {
+    for (int i = 0; i < M; ++i)
+        for (int j = 0; j < N; ++j) {
+            float s = 0;
+            for (int k = 0; k < K; ++k) s += A[i * K + k] * B[k * N + j];     // walks down a column of B
+            C[i * N + j] = s;
+        }
+}
+__attribute__((noipa)) void mm_ikj(const float* __restrict A, const float* __restrict B, float* __restrict C,
+                                   int M, int N, int K) {
+    std::fill(C, C + M * N, 0.f);
+    for (int i = 0; i < M; ++i)
+        for (int k = 0; k < K; ++k) {
+            float a = A[i * K + k];
+            for (int j = 0; j < N; ++j) C[i * N + j] += a * B[k * N + j];   // walks along a row of B and C
+        }
+}
+
+int main() {
+    const int M = 1024, K = 512, N = 512;          // 1024 slimes, 512 inputs, 512 hidden units
+    std::vector<float> A(M * K, 0.5f), B(K * N, 0.25f), C(M * N);
+    auto ms = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };
+    auto t0 = std::chrono::steady_clock::now();
+    mm_ijk(A.data(), B.data(), C.data(), M, N, K);
+    auto t1 = std::chrono::steady_clock::now();
+    float first = C[7];
+    mm_ikj(A.data(), B.data(), C.data(), M, N, K);
+    auto t2 = std::chrono::steady_clock::now();
+    std::printf("i-j-k: %6.1f ms   C[7] = %g\n", ms(t1 - t0), first);
+    std::printf("i-k-j: %6.1f ms   C[7] = %g\n", ms(t2 - t1), C[7]);
+}
+```
+```text
+i-j-k:  220.2 ms   C[7] = 64
+i-k-j:   82.5 ms   C[7] = 64
+```
+
+(One run at `-O2`.) Same result, same number of multiplies. On the same machine, `-O3`, which also vectorizes loops whose length is only known at run time, took the i-k-j version to about 21 ms while i-j-k stayed above 200 ms.
+
+## What went wrong
+
+In i-j-k, the inner loop reads `B[k*N + j]` for k = 0, 1, 2...: each step jumps N floats (2 KiB) through memory, a new cache line every time. B is 1 MiB, larger than L1 and L2, so the lines are fetched again for every row of A. The CPU spends its time waiting for memory, and the strided loop cannot be vectorized either.
+
+## The concept: loop order, then tiles
+
+**Loop order.** Swapping to i-k-j does the same additions in a different order. The inner loop walks one row of B and one row of C, both contiguous: every byte of a fetched cache line is used, and the loop can be vectorized (GCC does it at `-O3` here; at `-O2` it only vectorizes loops whose length it can handle cheaply).
+
+**Tiling.** For large matrices even i-k-j streams all of B for each row of A. Tiling splits i, k and j into blocks of T (say 32 or 64) and finishes all the work on one block of A, B and C before moving on. The blocks stay in cache and each loaded value is reused T times. Real BLAS libraries add register blocking and packing on top of this.
 
 ![Tiled matmul: T×T blocks of A, B and C held in cache while the i-k-j inner loop streams rows](/diagrams/cpp-systems/13-capstone/02-tiled-matmul.png)
 
 <Predict
   id="flops"
-  prompt="FLOPs for multiplying a [1, 4096] activation by a [4096, 4096] weight matrix (one token, one projection)?"
+  prompt="In a language model, the same kernel multiplies a [1, 4096] activation by a [4096, 4096] weight matrix (one token, one projection). How many FLOPs?"
   answer={33554432}
   tolerance={{"mode": "relative", "value": 0.01}}
   unit="FLOP"
@@ -39,26 +96,52 @@ keyIdeas:
 
 <MCQ
   id="ikj"
-  prompt="Why is i-k-j faster than i-j-k for row-major matrices?"
+  prompt="Why is i-k-j faster than i-j-k for the horde's row-major matrices?"
   options={["Fewer FLOPs", "The inner loop walks B and C rows contiguously, so it's cache-friendly and vectorisable", "It uses less memory", "The compiler likes k"]}
   answer={1}
   explanation="Same FLOPs, different memory access."
   devices={["phone", "desktop"]}
 />
 
-## Build it
+## When to use it, and when not
+
+- Use i-k-j (or a transposed B with i-j-k) for any row-major matmul you write yourself. It costs nothing.
+- Add tiling when the matrices no longer fit in cache: here B is 1 MiB, a tile of 64×64 floats is 16 KiB.
+- For a single slime (one row, M = 1) there is no reuse to gain from tiling: the cost is reading the weights once. That is why a language model generating one token at a time is limited by memory bandwidth.
+- In shipped code, call a tuned library (OpenBLAS, Eigen, oneDNN) unless the matrices are tiny or you need full control.
 
 Sources: [Siboehm, How to Optimize a CUDA Matmul](https://siboehm.com/articles/22/CUDA-MMM) (CPU ideas carry over), Goto & van de Geijn, [Anatomy of High-Performance Matrix Multiplication](https://www.cs.utexas.edu/~flame/pubs/GotoTOMS_revision.pdf), [Algorithmica: matmul](https://en.algorithmica.org/hpc/algorithms/matmul/)
+
+## Coding task: the tiled matmul
+
+The kernel every brain layer runs on.
 
 <Code
   id="matmul-tiled"
   devices={["desktop"]}
   language="cpp"
-  prompt="Write `void matmul(const float* A, const float* B, float* C, int M, int N, int K, int T)`. A is M×K, B is K×N and C is M×N, all row-major. Overwrite C with A·B using T×T×T tiles over (i, k, j) with i-k-j order inside the tiles. Handle sizes that aren't multiples of T."
+  prompt="Write the brain's matmul kernel `void matmul(const float* A, const float* B, float* C, int M, int N, int K, int T)`. A is M×K (slimes × inputs), B is K×N (weights) and C is M×N, all row-major. Overwrite C with A·B using T×T×T tiles over (i, k, j) with i-k-j order inside the tiles. Handle sizes that aren't multiples of T."
   starter={"void matmul(const float* A, const float* B, float* C, int M, int N, int K, int T) {}\n"}
   visibleTests={"#include \"check.h\"\n\nint main() { float A[4] = {1, 2, 3, 4}, B[4] = {5, 6, 7, 8}, C[4] = {9, 9, 9, 9}; matmul(A, B, C, 2, 2, 2, 1); CHECK(C[0] == 19 && C[3] == 50); return 0; }\n"}
   tests={"#include \"check.h\"\n\n#include <vector>\n#include <array>\n#include <cmath>\nint main() {\n    float A[4] = {1, 2, 3, 4}, B[4] = {5, 6, 7, 8}, C[4] = {9, 9, 9, 9}; matmul(A, B, C, 2, 2, 2, 1); CHECK(C[0] == 19 && C[1] == 22 && C[2] == 43 && C[3] == 50);\n    for (auto [M, N, K, T] : std::vector<std::array<int, 4>>{{1, 7, 5, 4}, {33, 17, 29, 8}, {64, 64, 64, 16}, {5, 3, 70, 32}}) {\n        std::vector<float> a(M * K), b(K * N), c(M * N, 123.f);\n        for (int i = 0; i < M * K; ++i) a[i] = (i % 7) - 3.f;\n        for (int i = 0; i < K * N; ++i) b[i] = (i % 5) * 0.5f;\n        matmul(a.data(), b.data(), c.data(), M, N, K, T);\n        for (int i = 0; i < M; ++i) for (int j = 0; j < N; ++j) {\n            double r = 0; for (int k = 0; k < K; ++k) r += a[i * K + k] * b[k * N + j];\n            CHECK(std::fabs(c[i * N + j] - r) < 1e-3);\n        }\n    }\n    return 0;\n}\n"}
   solution={"#include <algorithm>\nvoid matmul(const float* A, const float* B, float* C, int M, int N, int K, int T) {\n    std::fill(C, C + (long)M * N, 0.f);\n    for (int i0 = 0; i0 < M; i0 += T)\n        for (int k0 = 0; k0 < K; k0 += T)\n            for (int j0 = 0; j0 < N; j0 += T)\n                for (int i = i0; i < std::min(i0 + T, M); ++i)\n                    for (int k = k0; k < std::min(k0 + T, K); ++k) {\n                        float a = A[i * K + k];\n                        for (int j = j0; j < std::min(j0 + T, N); ++j) C[i * N + j] += a * B[k * N + j];\n                    }\n}\n"}
   hints={["Zero C first.", "Hoist A[i*K+k] out of the j loop."]}
   explanation="Real BLAS adds register blocking and packing on top of this. Same idea, more levels."
+/>
+
+## Coding task: a dense layer with ReLU
+
+A full network layer is a matmul plus a bias per output, followed by ReLU (negative values become 0).
+
+<Code
+  id="dense-relu"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `void dense_relu(const float* X, const float* W, const float* b, float* Y, int M, int K, int N)`. X is M×K (one row per slime), W is K×N, b has N biases, Y is M×N; all row-major. Compute Y[i][j] = max(0, b[j] + sum over k of X[i][k] * W[k][j]). Use i-k-j order: start each row of Y at the biases, accumulate, then apply ReLU to the row."
+  starter={"#include <algorithm>\nvoid dense_relu(const float* X, const float* W, const float* b, float* Y, int M, int K, int N) {}\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    float X[2] = {1, 2};\n    float W[4] = {1, -1,\n                  2, -3};\n    float b[2] = {0.5f, 1};\n    float Y[2] = {-9, -9};\n    dense_relu(X, W, b, Y, 1, 2, 2);\n    CHECK(Y[0] == 5.5f && Y[1] == 0);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <cmath>\n#include <vector>\nint main() {\n    float X[2] = {1, 2};\n    float W[4] = {1, -1,\n                  2, -3};\n    float b[2] = {0.5f, 1};\n    float Y[2] = {-9, -9};\n    dense_relu(X, W, b, Y, 1, 2, 2);\n    CHECK(Y[0] == 5.5f && Y[1] == 0);\n    const int M = 7, K = 13, N = 5;\n    std::vector<float> x(M * K), w(K * N), bb(N), y(M * N, 42.f);\n    for (int i = 0; i < M * K; ++i) x[i] = (i % 5) - 2.0f;\n    for (int i = 0; i < K * N; ++i) w[i] = (i % 3) * 0.5f - 0.5f;\n    for (int j = 0; j < N; ++j) bb[j] = j - 2.0f;\n    dense_relu(x.data(), w.data(), bb.data(), y.data(), M, K, N);\n    int zeros = 0;\n    for (int i = 0; i < M; ++i)\n        for (int j = 0; j < N; ++j) {\n            double r = bb[j];\n            for (int k = 0; k < K; ++k) r += x[i * K + k] * w[k * N + j];\n            r = r > 0 ? r : 0;\n            zeros += r == 0;\n            CHECK(std::fabs(y[i * N + j] - r) < 1e-4);\n        }\n    CHECK(zeros > 0 && zeros < M * N);\n    return 0;\n}\n"}
+  solution={"#include <algorithm>\nvoid dense_relu(const float* X, const float* W, const float* b, float* Y, int M, int K, int N) {\n    for (int i = 0; i < M; ++i) {\n        float* y = Y + i * N;\n        std::copy(b, b + N, y);\n        for (int k = 0; k < K; ++k) {\n            float a = X[i * K + k];\n            for (int j = 0; j < N; ++j) y[j] += a * W[k * N + j];\n        }\n        for (int j = 0; j < N; ++j) y[j] = std::max(y[j], 0.0f);\n    }\n}\n"}
+  hints={["For each i: copy b into row i of Y; for each k: a = X[i*K + k]; for each j: Y[i*N + j] += a * W[k*N + j].", "After the k loop: for each j: Y[i*N + j] = std::max(Y[i*N + j], 0.0f)."]}
+  explanation="Starting from the bias saves a separate pass, and the inner loop stays contiguous over W and Y. ReLU after the row is finished touches data that is still in cache. This is one hidden layer of the boss brain."
 />

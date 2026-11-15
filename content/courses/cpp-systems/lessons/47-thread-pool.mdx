@@ -1,25 +1,100 @@
 ---
 id: cpp-systems/12-building-blocks/03-thread-pool
 title: "A Thread Pool with Futures"
-estMinutes: 9
+estMinutes: 12
 xp: 110
-fun: 4
-missionIntro: "Spawning a thread costs microseconds. Keep a pool of workers and submit tasks that return std::future."
+fun: 5
+missionIntro: "The slime AI is split into jobs and spread over all cores. Spawning a thread per job costs more than the job. Keep a pool of workers and submit tasks that return std::future."
 keyIdeas:
   - "Workers loop: wait on a condition variable, pop a std::function<void()>, run it."
   - "submit() wraps the callable in std::packaged_task and returns its future. Exceptions propagate through the future."
   - "Shutdown: set a stop flag under the lock, notify_all, then let the jthreads join."
 ---
 
-## Costs
+## The feature: the job system
 
+The profiler showed AI eating most of the frame. Each slime's decision is independent of the others, so the frame splits AI into jobs and runs them on every core. Engines call this the **job system**.
 
+## The careless version: a new thread for every job
+
+```cpp
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <cstdio>
+#include <functional>
+#include <mutex>
+#include <queue>
+#include <thread>
+#include <vector>
+
+std::atomic<long> decisions{0};
+void think(int slime) { decisions.fetch_add(slime % 3, std::memory_order_relaxed); }   // a small AI job
+
+int main() {
+    const int frames = 100, jobs = 400, workers = 8;
+    auto ms = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };
+
+    auto t0 = std::chrono::steady_clock::now();
+    for (int f = 0; f < frames; ++f)
+        for (int base = 0; base < jobs; base += workers) {        // a new thread per job, 8 at a time
+            std::vector<std::jthread> ts;
+            for (int k = 0; k < workers; ++k) ts.emplace_back(think, base + k);
+        }
+    auto t1 = std::chrono::steady_clock::now();
+
+    std::mutex m; std::condition_variable cv, done_cv;
+    std::queue<int> q; int pending = 0; bool stop = false;
+    {
+        std::vector<std::jthread> pool;
+        for (int k = 0; k < workers; ++k) pool.emplace_back([&] {
+            for (;;) {
+                std::unique_lock lk(m);
+                cv.wait(lk, [&] { return stop || !q.empty(); });
+                if (q.empty()) return;
+                int job = q.front(); q.pop();
+                lk.unlock();
+                think(job);
+                lk.lock();
+                if (--pending == 0) done_cv.notify_one();
+            }
+        });
+        for (int f = 0; f < frames; ++f) {
+            std::unique_lock lk(m);
+            for (int j = 0; j < jobs; ++j) q.push(j);
+            pending = jobs;
+            cv.notify_all();
+            done_cv.wait(lk, [&] { return pending == 0; });       // the frame waits for its AI
+        }
+        { std::scoped_lock lk(m); stop = true; }
+        cv.notify_all();
+    }
+    auto t2 = std::chrono::steady_clock::now();
+    std::printf("thread per job: %6.1f ms\n", ms(t1 - t0));
+    std::printf("thread pool:    %6.1f ms   (decisions %ld)\n", ms(t2 - t1), decisions.load());
+}
+```
+```text
+thread per job:  820.6 ms
+thread pool:      17.5 ms   (decisions 79800)
+```
+
+(One run at `-O2`, 100 frames of 400 small AI jobs, 8 threads at a time in both versions.) The jobs are the same. In the first version almost all the time goes into creating and joining threads: each one costs tens of microseconds, and a job here takes far less.
+
+## The concept: create workers once, feed them jobs
+
+A **thread pool** starts N worker threads when the game starts and keeps them until it quits. Between jobs they sleep on a condition variable, so idle workers cost nothing.
+
+- **Queue**: `std::queue<std::function<void()>>` protected by a mutex.
+- **Worker loop**: wait until there is a job or `stop` is set; pop one; unlock; run it.
+- **submit(f)**: wrap `f` in a `std::packaged_task`, push it, `notify_one()`, and return the task's `std::future`. The caller calls `get()` when it needs the result. If the job threw, `get()` rethrows the exception.
+- **Shutdown**: set `stop` under the lock, `notify_all()`, join. Workers finish the queue first.
 
 ![Task queue feeding a fixed set of worker threads, each returning results through futures](/diagrams/cpp-systems/12-building-blocks/03-thread-pool.png)
 
 <Predict
   id="spawn-cost"
-  prompt="Thread creation takes ~10 µs and the task ~1 µs. Using a fresh thread per task for 100,000 tasks, roughly how much time goes to creation, in ms?"
+  prompt="Thread creation takes ~10 µs and one slime's AI job ~1 µs. Using a fresh thread per job for 100,000 jobs, roughly how much time goes to creation, in ms?"
   answer={1000}
   tolerance={{"mode": "relative", "value": 0.02}}
   unit="ms"
@@ -29,26 +104,52 @@ keyIdeas:
 
 <MCQ
   id="future-ex"
-  prompt="A task submitted via packaged_task throws. What happens?"
+  prompt="A pathfinding job submitted to the job system via packaged_task throws. What happens?"
   options={["The worker thread dies", "std::terminate", "The exception is stored and rethrown by future.get()", "It's silently swallowed"]}
   answer={2}
   explanation="That's the promise/future contract."
   devices={["phone", "desktop"]}
 />
 
-## Build it
+## When to use it, and when not
+
+- Use it for many independent jobs per frame: AI decisions, animation blending, particle batches, decoding.
+- Make jobs big enough. A job that takes less time than a queue push and a wake-up (around a microsecond) is cheaper to run inline. Batch slimes, for example 64 per job.
+- Use about as many workers as hardware threads, minus the ones the main and audio threads need. More workers than cores add switching without adding speed.
+- Do not block inside a job waiting for another job in the same pool: with every worker waiting, nobody runs the job they wait for.
 
 Sources: [cppreference: std::packaged_task](https://en.cppreference.com/w/cpp/thread/packaged_task), Williams ch. 9 (thread pools), Sean Parent, [Better Code: Concurrency](https://www.youtube.com/watch?v=zULU6Hhp42w)
+
+## Coding task: the job system
+
+Build the pool the AI, animation and decoding jobs are submitted to.
 
 <Code
   id="thread-pool"
   devices={["desktop"]}
   language="cpp"
-  prompt="Implement `class ThreadPool` with ctor(unsigned n) starting n std::jthread workers, `template<class F> auto submit(F f) -> std::future<decltype(f())>` and a destructor that drains the queue and stops cleanly. Use std::mutex, std::condition_variable and a std::queue<std::function<void()>>. Wrap tasks in std::shared_ptr<std::packaged_task<R()>> (std::function needs copyable callables)."
+  prompt="Implement the job system: `class ThreadPool` with ctor(unsigned n) starting n std::jthread workers, `template<class F> auto submit(F f) -> std::future<decltype(f())>` and a destructor that drains the queue and stops cleanly. Use std::mutex, std::condition_variable and a std::queue<std::function<void()>>. Wrap tasks in std::shared_ptr<std::packaged_task<R()>> (std::function needs copyable callables)."
   starter={"#include <future>\n#include <functional>\n#include <queue>\n#include <thread>\n#include <vector>\n#include <mutex>\n#include <condition_variable>\n#include <type_traits>\nclass ThreadPool {\npublic:\n    explicit ThreadPool(unsigned) {}\n    template<class F> auto submit(F f) -> std::future<decltype(f())> {\n        using R = decltype(f());\n        std::promise<R> p;\n        if constexpr (std::is_void_v<R>) p.set_value();\n        else p.set_value(R{});\n        return p.get_future();\n    }\n};\n"}
   visibleTests={"#include \"check.h\"\n\nint main() { ThreadPool p(2); auto f = p.submit([] { return 6 * 7; }); CHECK(f.get() == 42); return 0; }\n"}
   tests={"#include \"check.h\"\n\n#include <atomic>\n#include <stdexcept>\nint main() {\n    { ThreadPool p(2); auto f = p.submit([] { return 6 * 7; }); CHECK(f.get() == 42); }\n    std::atomic<int> ran{0};\n    { ThreadPool p(4); std::vector<std::future<int>> fs;\n      for (int i = 0; i < 1000; ++i) fs.push_back(p.submit([i, &ran] { ++ran; return i * 2; }));\n      long s = 0; for (auto& f : fs) s += f.get(); CHECK(s == 999L * 1000); }\n    CHECK(ran == 1000);\n    { ThreadPool p(1); auto f = p.submit([]() -> int { throw std::runtime_error(\"boom\"); });\n      bool caught = false; try { f.get(); } catch (const std::runtime_error&) { caught = true; } CHECK(caught); }\n    std::atomic<int> drained{0};\n    { ThreadPool p(1); for (int i = 0; i < 50; ++i) p.submit([&] { ++drained; }); }\n    CHECK(drained == 50);\n    { ThreadPool p(2); auto v = p.submit([] {}); v.get(); }\n    return 0;\n}\n"}
   solution={"#include <future>\n#include <functional>\n#include <queue>\n#include <thread>\n#include <vector>\n#include <mutex>\n#include <condition_variable>\n#include <memory>\nclass ThreadPool {\n    std::mutex m_; std::condition_variable cv_; std::queue<std::function<void()>> q_; bool stop_ = false;\n    std::vector<std::jthread> workers_;\npublic:\n    explicit ThreadPool(unsigned n) {\n        for (unsigned i = 0; i < n; ++i) workers_.emplace_back([this] {\n            for (;;) {\n                std::function<void()> job;\n                { std::unique_lock lk(m_); cv_.wait(lk, [&] { return stop_ || !q_.empty(); });\n                  if (q_.empty()) return; job = std::move(q_.front()); q_.pop(); }\n                job();\n            }\n        });\n    }\n    ~ThreadPool() { { std::scoped_lock lk(m_); stop_ = true; } cv_.notify_all(); }\n    template<class F> auto submit(F f) -> std::future<decltype(f())> {\n        using R = decltype(f());\n        auto task = std::make_shared<std::packaged_task<R()>>(std::move(f));\n        auto fut = task->get_future();\n        { std::scoped_lock lk(m_); q_.push([task] { (*task)(); }); }\n        cv_.notify_one(); return fut;\n    }\n};\n"}
   hints={["Workers exit only when stop_ is set and the queue is empty, so the destructor drains it.", "Declare workers_ last so they're destroyed (joined) first."]}
   explanation="Member order matters: jthreads must join before the mutex and queue they use are destroyed."
+/>
+
+## Coding task: parallel AI over slime ranges
+
+The simplest use of many cores: split the slime array into one contiguous range per worker. Each slime is handled exactly once, and neighbouring slimes stay on the same core's cache.
+
+<Code
+  id="ai-parallel-for"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `template<class F> void parallel_for(int n, unsigned workers, F f)` that calls f(i) exactly once for every i in [0, n), using up to `workers` std::jthread threads (workers ≥ 1). Give each thread one contiguous range: with chunk = (n + workers - 1) / workers, thread t handles [t * chunk, min(n, (t + 1) * chunk)). Start no thread for an empty range. Return only after every call has finished."
+  starter={"#include <algorithm>\n#include <thread>\n#include <vector>\ntemplate <class F>\nvoid parallel_for(int n, unsigned workers, F f) {}\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    std::vector<int> hp(10, 0);\n    parallel_for(10, 2, [&](int i) { hp[i] += i; });\n    CHECK(hp[0] == 0 && hp[3] == 3 && hp[9] == 9);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <mutex>\n#include <set>\nint main() {\n    std::vector<int> hp(10, 0);\n    parallel_for(10, 2, [&](int i) { hp[i] += i; });\n    CHECK(hp[0] == 0 && hp[3] == 3 && hp[9] == 9);\n    std::vector<int> hits(1000, 0);\n    std::mutex m;\n    std::set<std::thread::id> ids;\n    parallel_for(1000, 4, [&](int i) {\n        ++hits[i];\n        std::scoped_lock lk(m);\n        ids.insert(std::this_thread::get_id());\n    });\n    for (int h : hits) CHECK(h == 1);\n    CHECK(ids.size() == 4);\n    CHECK(ids.count(std::this_thread::get_id()) == 0);\n    std::vector<int> few(3, 0);\n    ids.clear();\n    parallel_for(3, 8, [&](int i) { few[i] = 7; std::scoped_lock lk(m); ids.insert(std::this_thread::get_id()); });\n    CHECK(few[0] == 7 && few[1] == 7 && few[2] == 7 && ids.size() == 3);\n    int calls = 0;\n    parallel_for(0, 4, [&](int) { ++calls; });\n    CHECK(calls == 0);\n    std::vector<int> one(5, 0);\n    parallel_for(5, 1, [&](int i) { one[i] = i * 2; });\n    CHECK(one[4] == 8 && one[0] == 0);\n    return 0;\n}\n"}
+  solution={"#include <algorithm>\n#include <thread>\n#include <vector>\ntemplate <class F>\nvoid parallel_for(int n, unsigned workers, F f) {\n    if (n <= 0) return;\n    int chunk = (n + (int)workers - 1) / (int)workers;\n    std::vector<std::jthread> ts;\n    for (unsigned t = 0; t < workers; ++t) {\n        int begin = (int)t * chunk, end = std::min(n, begin + chunk);\n        if (begin >= end) break;\n        ts.emplace_back([=, &f] { for (int i = begin; i < end; ++i) f(i); });\n    }\n}\n"}
+  hints={["Keep the threads in a std::vector<std::jthread>; leaving the function joins them all.", "Capture the range bounds by value in each thread's lambda: [=, &f] { for (int i = begin; i < end; ++i) f(i); }"]}
+  explanation="Contiguous ranges mean each thread walks its own part of the arrays, with no shared counter and no false sharing between neighbours (as long as f writes only slime i). The jthreads join when the vector is destroyed, so the frame continues only after all AI is done."
 />

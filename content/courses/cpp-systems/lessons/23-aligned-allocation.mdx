@@ -1,53 +1,147 @@
 ---
 id: cpp-systems/06-layout/03-aligned-allocation
 title: "Aligned Allocation"
-estMinutes: 7
+estMinutes: 12
 xp: 90
 fun: 5
-missionIntro: "malloc gives you 16-byte alignment. SIMD wants 32 or 64. Here's how to get it, and how to round pointers yourself."
+missionIntro: "The SIMD particle step crashes on one machine and not another, because a buffer carved out of a byte pool was not 16-byte aligned. malloc gives you 16; SIMD wants 16, 32 or 64. Here's how to get it, and how to round pointers yourself."
 keyIdeas:
   - "`new` respects alignas on types since C++17 (it calls operator new with std::align_val_t)."
   - "std::aligned_alloc(align, size) needs size to be a multiple of align. Free it with std::free."
   - "Round up to a power-of-two alignment with `(x + a - 1) & ~(a - 1)`."
 ---
 
-## The bit trick
+## The feature: particle buffers for SIMD
 
-For a power-of-two `a`, `a - 1` is a mask of the low bits. Adding `a - 1` and clearing those bits rounds up.
+The SIMD module will update four particle positions with one instruction. The aligned load instructions it uses (`_mm_load_ps`, four floats at once) require the address to be a multiple of 16. The particle buffers are carved out of one big byte pool that the level allocates up front.
+
+## The careless version: carve at any offset
+
+```cpp
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <xmmintrin.h>
+
+// the SIMD step: move 4 particles at once with aligned loads
+__attribute__((noipa)) void step4(float* x, const float* vx) {
+    _mm_store_ps(x, _mm_add_ps(_mm_load_ps(x), _mm_load_ps(vx)));
+}
+
+int main() {
+    char* pool = static_cast<char*>(std::malloc(1 << 20));   // the level's memory pool
+    std::size_t used = 0;
+    auto carve = [&](std::size_t bytes) { char* p = pool + used; used += bytes; return p; };
+
+    carve(13);                                               // 13 bytes of enemy names
+    float* xs  = reinterpret_cast<float*>(carve(4096));      // particle x positions
+    float* vxs = reinterpret_cast<float*>(carve(4096));      // particle x velocities
+    for (int i = 0; i < 1024; ++i) { xs[i] = float(i); vxs[i] = 1.0f; }
+    std::printf("xs at address %% 16 = %zu\n", reinterpret_cast<std::uintptr_t>(xs) % 16);
+    std::fflush(stdout);
+    step4(xs, vxs);
+    std::printf("moved: x[0] = %.1f\n", xs[0]);
+    std::free(pool);
+}
+```
+```text
+xs at address % 16 = 13
+Segmentation fault
+[exit code 139]
+```
+
+## What went wrong
+
+`malloc` returns 16-byte aligned memory, but `pool + 13` is not. `_mm_load_ps` on an address that is not a multiple of 16 raises a general protection fault, and the process dies with a segmentation fault (exit code 139 is 128 + signal 11). With a different order of `carve` calls, the offset happens to be a multiple of 16 and the game runs fine, which is why this kind of crash appears on "some levels" only.
+
+## The fix: round the offset up
+
+For a power-of-two alignment `a`, `a - 1` is a mask of the low bits. Adding `a - 1` and clearing those bits rounds up to the next multiple:
+
+```cpp
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <xmmintrin.h>
+
+__attribute__((noipa)) void step4(float* x, const float* vx) {
+    _mm_store_ps(x, _mm_add_ps(_mm_load_ps(x), _mm_load_ps(vx)));
+}
+
+constexpr std::size_t align_up(std::size_t x, std::size_t a) { return (x + a - 1) & ~(a - 1); }
+
+int main() {
+    char* pool = static_cast<char*>(std::malloc(1 << 20));
+    std::size_t used = 0;
+    auto carve = [&](std::size_t bytes, std::size_t align) {
+        used = align_up(used, align);                        // round the offset up first
+        char* p = pool + used; used += bytes; return p;
+    };
+    carve(13, 1);
+    float* xs  = reinterpret_cast<float*>(carve(4096, 16));
+    float* vxs = reinterpret_cast<float*>(carve(4096, 16));
+    for (int i = 0; i < 1024; ++i) { xs[i] = float(i); vxs[i] = 1.0f; }
+    std::printf("xs at address %% 16 = %zu, offset in pool %td\n",
+                reinterpret_cast<std::uintptr_t>(xs) % 16, reinterpret_cast<char*>(xs) - pool);
+    step4(xs, vxs);
+    std::printf("moved: x[0] = %.1f\n", xs[0]);
+    std::free(pool);
+}
+```
+```text
+xs at address % 16 = 0, offset in pool 16
+moved: x[0] = 1.0
+```
+
+`align_up(13, 16)` is `(13 + 15) & ~15` = 28 & ~15 = 16. This only works because the pool itself is 16-aligned; for 64-byte alignment the pool must come from `std::aligned_alloc(64, ...)`.
 
 ![Address line with 64-byte boundaries; 1000 rounded up to 1024 with the bit mask](/diagrams/cpp-systems/06-layout/03-aligned-allocation.png)
 
 <Predict
   id="align-up"
-  prompt="Round address 1000 up to a multiple of 64."
+  prompt="The pool has used 1000 bytes. Round the offset up to a multiple of 64 for the next particle buffer."
   answer={1024}
   tolerance={{"mode": "absolute", "value": 0}}
   explanation="(1000 + 63) & ~63 = 1063 & ~63 = 1024."
   devices={["phone", "desktop"]}
 />
 
+## The standard tools
+
+- `alignas(N)` on a type or variable: `struct alignas(16) Vec4 { float v[4]; };`. Since C++17, `new Vec4[n]` and `std::vector<Vec4>` respect it.
+- `std::aligned_alloc(align, size)`: size must be a multiple of align; free with `std::free`.
+- For SIMD you can also use the unaligned loads (`_mm_loadu_ps`), which accept any address. On modern CPUs they cost the same as aligned loads when the data happens to be aligned, and a little more when a load spans two cache lines.
+
 <CodeBlanks
   id="aligned-new"
-  prompt="Allocate 1,024 floats on a 64-byte boundary with C++17 aligned new."
+  prompt="Allocate 1,024 particle floats on a 64-byte boundary with C++17 aligned new."
   code={"struct alignas({{0}}) Block { float v[16]; };\nBlock* p = new Block[64];\n// sizeof(Block) == {{1}}"}
   blanks={[{"answer": "64", "pattern": "^64$"}, {"answer": "64", "pattern": "^64$"}]}
   explanation="16 floats = 64 bytes, and alignas(64) keeps it at 64."
   devices={["phone", "desktop"]}
 />
 
-## Write align_up
+## When to use it, and when not
+
+- Align buffers that SIMD code reads with aligned loads, and per-thread data that must sit on its own cache line.
+- Every custom allocator (pools, arenas) must round offsets up to the alignment of what it hands out. Forgetting it is undefined behaviour even without SIMD.
+- Do not over-align everything to 64: it wastes memory between small objects.
+
+## Coding task: align_up and aligned buffers
 
 Sources: [cppreference: std::aligned_alloc](https://en.cppreference.com/w/cpp/memory/c/aligned_alloc), [operator new with align_val_t](https://en.cppreference.com/w/cpp/memory/new/operator_new)
+
+The pool needs a rounding helper, an alignment check for debug builds, and a way to get an aligned float buffer.
 
 <Code
   id="align-up-fn"
   devices={["desktop"]}
   language="cpp"
-  prompt="Write `constexpr std::uintptr_t align_up(std::uintptr_t x, std::size_t a)` (a is a power of two) and `bool is_aligned(const void* p, std::size_t a)`. Then write `float* alloc_floats_aligned(std::size_t n, std::size_t a)` using std::aligned_alloc, rounding the byte size up to a multiple of a."
+  prompt="Write `constexpr std::uintptr_t align_up(std::uintptr_t x, std::size_t a)` (a is a power of two) and `bool is_aligned(const void* p, std::size_t a)`. Then write `float* alloc_floats_aligned(std::size_t n, std::size_t a)` using std::aligned_alloc, rounding the byte size up to a multiple of a. The particle system will use it for its position buffers."
   starter={"#include <cstdint>\n#include <cstddef>\n#include <cstdlib>\nconstexpr std::uintptr_t align_up(std::uintptr_t x, std::size_t a) { return x; }\nbool is_aligned(const void* p, std::size_t a) { return false; }\nfloat* alloc_floats_aligned(std::size_t n, std::size_t a) { return nullptr; }\n"}
   visibleTests={"#include \"check.h\"\n\nint main() {\n    static_assert(align_up(1000, 64) == 1024);\n    return 0;\n}\n"}
   tests={"#include \"check.h\"\n\n#include <initializer_list>\nint main() {\n    static_assert(align_up(1000, 64) == 1024 && align_up(1024, 64) == 1024 && align_up(0, 16) == 0 && align_up(1, 8) == 8);\n    for (std::size_t a : {16, 32, 64, 4096}) {\n        float* p = alloc_floats_aligned(1000, a);\n        CHECK(p && is_aligned(p, a));\n        for (int i = 0; i < 1000; ++i) p[i] = i;\n        CHECK(p[999] == 999);\n        std::free(p);\n    }\n    char buf[8]; CHECK(is_aligned(buf + 0, 1));\n    return 0;\n}\n"}
   solution={"#include <cstdint>\n#include <cstddef>\n#include <cstdlib>\nconstexpr std::uintptr_t align_up(std::uintptr_t x, std::size_t a) { return (x + a - 1) & ~(std::uintptr_t)(a - 1); }\nbool is_aligned(const void* p, std::size_t a) { return (reinterpret_cast<std::uintptr_t>(p) & (a - 1)) == 0; }\nfloat* alloc_floats_aligned(std::size_t n, std::size_t a) {\n    std::size_t bytes = align_up(n * sizeof(float), a);\n    return static_cast<float*>(std::aligned_alloc(a, bytes ? bytes : a));\n}\n"}
   hints={["~(a - 1) clears the low bits.", "aligned_alloc requires size % align == 0."]}
-  explanation="Arena allocators (module 12) use align_up on every allocation."
+  explanation="The frame arena in the building-blocks module uses align_up on every allocation."
 />

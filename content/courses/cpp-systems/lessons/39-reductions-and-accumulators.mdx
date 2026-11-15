@@ -1,25 +1,81 @@
 ---
 id: cpp-systems/10-simd/03-reductions-and-accumulators
 title: "Reductions and Multiple Accumulators"
-estMinutes: 8
+estMinutes: 10
 xp: 100
 fun: 5
-missionIntro: "One accumulator chains every add behind the previous one. Several accumulators let the CPU overlap them, often for a 4x or larger gain."
+missionIntro: "The effects system adds up the energy of every particle each frame to decide when an explosion has faded. One accumulator chains every add behind the previous one. Several accumulators let the CPU overlap them, often for a 4x or larger gain."
 keyIdeas:
   - "FP add latency is ~4 cycles on modern x86, and throughput is ~2 per cycle. One chain uses a fraction of that."
   - "K independent accumulators hide latency: you need about latency × throughput of them (4 × 2 = 8)."
-  - "This changes the rounding order. That's fine for ML, but document it."
+  - "This changes the rounding order. That's fine for game statistics, but document it."
 ---
 
-## Latency maths
+## The feature: when has the explosion faded?
 
+An explosion stays "active" (keeps its light, sound and screen shake) until the total kinetic energy of its particles drops below a threshold. That means summing one float per particle, every frame, for every explosion on screen.
 
+## The careless version: one running total
+
+```cpp
+#include <chrono>
+#include <cstdio>
+#include <vector>
+
+__attribute__((noipa)) float total_1(const float* e, int n) {
+    float s = 0;
+    for (int i = 0; i < n; ++i) s += e[i];
+    return s;
+}
+__attribute__((noipa)) float total_8(const float* e, int n) {
+    float s[8] = {};
+    int i = 0;
+    for (; i + 8 <= n; i += 8)
+        for (int k = 0; k < 8; ++k) s[k] += e[i + k];
+    float t = ((s[0] + s[1]) + (s[2] + s[3])) + ((s[4] + s[5]) + (s[6] + s[7]));
+    for (; i < n; ++i) t += e[i];
+    return t;
+}
+
+int main() {
+    const int n = 65536;                                  // particles across all explosions
+    std::vector<float> energy(n);
+    for (int i = 0; i < n; ++i) energy[i] = 0.001f * (i % 1000);
+    auto ms = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };
+    float a = 0, b = 0;
+    auto t0 = std::chrono::steady_clock::now();
+    for (int f = 0; f < 2000; ++f) a = total_1(energy.data(), n);
+    auto t1 = std::chrono::steady_clock::now();
+    for (int f = 0; f < 2000; ++f) b = total_8(energy.data(), n);
+    auto t2 = std::chrono::steady_clock::now();
+    std::printf("1 accumulator:  %6.1f ms  total %.3f\n", ms(t1 - t0), a);
+    std::printf("8 accumulators: %6.1f ms  total %.3f\n", ms(t2 - t1), b);
+}
+```
+```text
+1 accumulator:    66.2 ms  total 32610.875
+8 accumulators:    8.3 ms  total 32610.883
+```
+
+(One run on the course machine at `-O2`.) Same data, same adds. Note the totals differ in the last digits: the order of float additions changed.
+
+## What went wrong
+
+In `total_1`, every `s += e[i]` needs the `s` from the previous iteration. A float add takes about 4 cycles to produce its result, so the CPU starts one add every 4 cycles, even though it could start two per cycle. The adder sits mostly idle, waiting on one long chain.
+
+The compiler will not split the chain for you. Float addition is not associative: `(a + b) + c` can round differently from `a + (b + c)`, and the compiler must keep your exact result unless you allow otherwise with `-ffast-math` or `-fassociative-math`.
+
+## The concept: independent accumulators
+
+Keep K running totals that do not depend on each other and combine them once at the end. The CPU overlaps the K chains. With 8 of them, GCC also packs them into two SSE registers, so the loop above is both overlapped and vectorized.
+
+How many do you need? About latency × throughput: 4 cycles × 2 adds per cycle = 8.
 
 ![Single dependency chain of adds versus four interleaved accumulator chains overlapping in time](/diagrams/cpp-systems/10-simd/03-reductions-and-accumulators.png)
 
 <Predict
   id="chain"
-  prompt="Summing 1,000,000 floats with one scalar accumulator, at FP add latency of 4 cycles. Minimum cycles?"
+  prompt="The effects system sums the energy of 1,000,000 particles with one scalar accumulator, at an FP add latency of 4 cycles. What is the minimum number of cycles?"
   answer={4000000}
   tolerance={{"mode": "relative", "value": 0.01}}
   unit="cycles"
@@ -29,26 +85,52 @@ keyIdeas:
 
 <Predict
   id="accs-needed"
-  prompt="Add latency 4 cycles, throughput 2 adds/cycle. How many independent accumulators saturate the adder?"
+  prompt="Add latency 4 cycles, throughput 2 adds/cycle. How many independent energy accumulators saturate the adder?"
   answer={8}
   tolerance={{"mode": "absolute", "value": 0}}
   explanation="Latency × throughput (Little's law)."
   devices={["phone", "desktop"]}
 />
 
-## Split it
+## When to use it, and when not
+
+- Use it for big sums, maxima and dot products in hot loops: particle energy, audio levels, physics totals.
+- The result changes in the last bits. Fine for "has the explosion faded?". Not fine where two machines must agree bit for bit, such as a lockstep multiplayer simulation or a replay system: there, keep one fixed order everywhere.
+- Integer sums do not have this problem (integer addition is associative), and the compiler already vectorizes them.
+- Do not bother for a few dozen values: the combine step and the tail cost more than they save.
 
 Sources: Agner Fog, [instruction tables](https://www.agner.org/optimize/instruction_tables.pdf), Travis Downs, [performance blog](https://travisdowns.github.io/)
+
+## Coding task: total energy and the brightest spark
+
+The effects system needs two numbers per explosion each frame: the total energy (to decide if it has faded) and the largest single value (to set the flash brightness).
 
 <Code
   id="multi-acc"
   devices={["desktop"]}
   language="cpp"
-  prompt="Write `float sum4(const float* a, std::size_t n)` using 4 independent scalar accumulators (a[i], a[i+1], a[i+2], a[i+3] into s0..s3), combining them as (s0+s1)+(s2+s3) and then adding the tail. Also write `float max_reduce(const float* a, std::size_t n)` (n ≥ 1) the same way."
+  prompt="Write `float sum4(const float* a, std::size_t n)` (total energy) using 4 independent scalar accumulators (a[i], a[i+1], a[i+2], a[i+3] into s0..s3), combining them as (s0+s1)+(s2+s3) and then adding the tail. Also write `float max_reduce(const float* a, std::size_t n)` (n ≥ 1, the brightest spark) the same way."
   starter={"#include <cstddef>\nfloat sum4(const float* a, std::size_t n) { return 0; }\nfloat max_reduce(const float* a, std::size_t n) { return a[0]; }\n"}
   visibleTests={"#include \"check.h\"\n\nint main() { float a[6] = {1, 2, 3, 4, 5, 6}; CHECK(sum4(a, 6) == 21 && max_reduce(a, 6) == 6); return 0; }\n"}
   tests={"#include \"check.h\"\n\n#include <vector>\nint main() {\n    float a[6] = {1, 2, 3, 4, 5, 6}; CHECK(sum4(a, 6) == 21 && max_reduce(a, 6) == 6);\n    CHECK(sum4(a, 0) == 0 && max_reduce(a, 1) == 1);\n    float b[7] = {-5, -1, -9, -2, -8, -3, -0.5f}; CHECK(max_reduce(b, 7) == -0.5f && max_reduce(b, 4) == -1);\n    std::vector<float> v(1001, 0.25f); CHECK(sum4(v.data(), v.size()) == 250.25f);\n    return 0;\n}\n"}
   solution={"#include <cstddef>\n#include <algorithm>\nfloat sum4(const float* a, std::size_t n) {\n    float s0 = 0, s1 = 0, s2 = 0, s3 = 0; std::size_t i = 0;\n    for (; i + 4 <= n; i += 4) { s0 += a[i]; s1 += a[i + 1]; s2 += a[i + 2]; s3 += a[i + 3]; }\n    float s = (s0 + s1) + (s2 + s3);\n    for (; i < n; ++i) s += a[i];\n    return s;\n}\nfloat max_reduce(const float* a, std::size_t n) {\n    float m0 = a[0], m1 = a[0], m2 = a[0], m3 = a[0]; std::size_t i = 0;\n    for (; i + 4 <= n; i += 4) { m0 = std::max(m0, a[i]); m1 = std::max(m1, a[i + 1]); m2 = std::max(m2, a[i + 2]); m3 = std::max(m3, a[i + 3]); }\n    float m = std::max(std::max(m0, m1), std::max(m2, m3));\n    for (; i < n; ++i) m = std::max(m, a[i]);\n    return m;\n}\n"}
   hints={["Each accumulator only depends on itself.", "Max needs a start value from the data (a[0]), not 0."]}
-  explanation="Softmax needs exactly these two reductions: max, then sum of exps."
+  explanation="Max and sum are the two reductions behind most game statistics, and also behind softmax, which the capstone's NPC brain needs."
+/>
+
+## Coding task: kinetic energy from velocities
+
+The particle arrays store velocities, not energies. Compute the total straight from them, without a temporary array.
+
+<Code
+  id="energy-total"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `float kinetic_total(const float* vx, const float* vy, std::size_t n)` returning the sum over particles of 0.5f * (vx[i]*vx[i] + vy[i]*vy[i]). Use 4 independent accumulators (e0..e3) in the main loop, combine them as (e0+e1)+(e2+e3), then add the tail. Return 0 for n == 0."
+  starter={"#include <cstddef>\nfloat kinetic_total(const float* vx, const float* vy, std::size_t n) { return -1; }\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    float vx[3] = {2, 0, 3}, vy[3] = {0, 4, 4};\n    CHECK(kinetic_total(vx, vy, 3) == 22.5f);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <vector>\nint main() {\n    float vx[3] = {2, 0, 3}, vy[3] = {0, 4, 4};\n    CHECK(kinetic_total(vx, vy, 3) == 22.5f);\n    CHECK(kinetic_total(vx, vy, 0) == 0);\n    CHECK(kinetic_total(vx, vy, 1) == 2);\n    std::vector<float> a(1003, 1.0f), b(1003, 1.0f);\n    CHECK(kinetic_total(a.data(), b.data(), a.size()) == 1003.0f);\n    float c[8] = {1, 1, 1, 1, 1, 1, 1, 2}, z[8] = {};\n    CHECK(kinetic_total(c, z, 8) == 5.5f);\n    return 0;\n}\n"}
+  solution={"#include <cstddef>\nfloat kinetic_total(const float* vx, const float* vy, std::size_t n) {\n    auto ke = [&](std::size_t i) { return 0.5f * (vx[i] * vx[i] + vy[i] * vy[i]); };\n    float e0 = 0, e1 = 0, e2 = 0, e3 = 0;\n    std::size_t i = 0;\n    for (; i + 4 <= n; i += 4) { e0 += ke(i); e1 += ke(i + 1); e2 += ke(i + 2); e3 += ke(i + 3); }\n    float e = (e0 + e1) + (e2 + e3);\n    for (; i < n; ++i) e += ke(i);\n    return e;\n}\n"}
+  hints={["Body: for (; i + 4 <= n; i += 4) { e0 += ke(i); e1 += ke(i + 1); e2 += ke(i + 2); e3 += ke(i + 3); }", "Multiply by 0.5f per term, or once at the end; with these test values both give the same result."]}
+  explanation="Each accumulator depends only on itself, so the four chains overlap. Computing the energy inside the loop reads the two velocity arrays once instead of writing and re-reading a temporary."
 />

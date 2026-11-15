@@ -1,10 +1,10 @@
 ---
 id: cpp-systems/01-lifetime/04-boss-lifetime-lane
 title: "Module test: Lifetime and RAII"
-estMinutes: 10
+estMinutes: 12
 xp: 200
 fun: 5
-missionIntro: "RAII, the rule of 0/3/5 and dangling views, in a timed test. Then build a move-only handle."
+missionIntro: "RAII, the rule of 0/3/5, dangling views and exceptions, in a timed test. Then build the move-only GPU texture handle the renderer will use for the rest of the course."
 kind: boss
 keyIdeas:
   - "RAII ties cleanup to scope exit, on every path."
@@ -14,7 +14,7 @@ keyIdeas:
 
 ## Module test
 
-Six timed questions on Lifetime and RAII. 3 wrong answers end the test. Then a coding task: a move-only handle.
+Milestone 2 check: can the engine load and free resources without leaks, double frees or dangling views? Six timed questions on lifetime and RAII. 3 wrong answers end the test. Then a coding task: a move-only handle.
 
 <Boss
   id="lane"
@@ -27,19 +27,19 @@ Six timed questions on Lifetime and RAII. 3 wrong answers end the test. Then a c
   devices={["phone", "desktop"]}
 />
 
-## Coding task: a move-only handle
+## Coding task: a move-only texture handle
 
-Write it like `std::unique_ptr`, but for an integer handle.
+The GPU gives out integer texture ids. The renderer needs a handle that frees the id exactly once, can be handed from the loader to the renderer (moved), and can never be duplicated (copied). It works like `std::unique_ptr`, but for an integer.
 
 <Code
   id="unique-handle"
   devices={["desktop"]}
   language="cpp"
-  prompt="Implement `UniqueHandle`. It owns an `int` handle (-1 = empty) and calls the global `close_handle(int)` in its destructor if non-empty. It's move-only, moves leave the source at -1, and `release()` returns the handle and empties the object. `reset(int h = -1)` closes the current handle and takes h."
+  prompt="Implement `UniqueHandle` for GPU texture ids. It owns an `int` handle (-1 = empty) and calls the global `close_handle(int)` in its destructor if non-empty (that is our gpu_destroy_texture). It is move-only, moves leave the source at -1, and `release()` returns the handle and empties the object (the caller takes over freeing it). `reset(int h = -1)` frees the current handle and takes h (used when a texture is hot-reloaded)."
   starter={"#include <utility>\nvoid close_handle(int h);\nclass UniqueHandle {\npublic:\n    explicit UniqueHandle(int h = -1) : h_(h) {}\n    int get() const { return h_; }\n    // TODO\nprivate:\n    int h_;\n};\n"}
   visibleTests={"#include \"check.h\"\n\nint closes = 0, last = 0;\nvoid close_handle(int h) { ++closes; last = h; }\nint main() {\n    { UniqueHandle a(5); }\n    CHECK(closes == 1 && last == 5);\n    return 0;\n}\n"}
   tests={"#include \"check.h\"\n\n#include <type_traits>\nint closes = 0, last = 0;\nvoid close_handle(int h) { ++closes; last = h; }\nint main() {\n    { UniqueHandle a(5); }\n    CHECK(closes == 1 && last == 5);\n    { UniqueHandle a(6); UniqueHandle b = std::move(a); CHECK(a.get() == -1 && b.get() == 6); }\n    CHECK(closes == 2 && last == 6);\n    { UniqueHandle a(7); int h = a.release(); CHECK(h == 7 && a.get() == -1); }\n    CHECK(closes == 2);\n    { UniqueHandle a(8), b(9); a = std::move(b); CHECK(closes == 3 && last == 8 && a.get() == 9); }\n    CHECK(closes == 4 && last == 9);\n    { UniqueHandle a(10); a.reset(11); CHECK(closes == 5 && last == 10); }\n    CHECK(closes == 6 && last == 11);\n    static_assert(!std::is_copy_constructible_v<UniqueHandle>);\n    static_assert(std::is_nothrow_move_assignable_v<UniqueHandle>);\n    return 0;\n}\n"}
   solution={"#include <utility>\nvoid close_handle(int h);\nclass UniqueHandle {\npublic:\n    explicit UniqueHandle(int h = -1) : h_(h) {}\n    ~UniqueHandle() { if (h_ != -1) close_handle(h_); }\n    UniqueHandle(const UniqueHandle&) = delete;\n    UniqueHandle& operator=(const UniqueHandle&) = delete;\n    UniqueHandle(UniqueHandle&& o) noexcept : h_(std::exchange(o.h_, -1)) {}\n    UniqueHandle& operator=(UniqueHandle&& o) noexcept { if (this != &o) reset(o.release()); return *this; }\n    int get() const { return h_; }\n    int release() noexcept { return std::exchange(h_, -1); }\n    void reset(int h = -1) noexcept { int old = std::exchange(h_, h); if (old != -1) close_handle(old); }\nprivate:\n    int h_;\n};\n"}
   hints={["Implement release() and reset() first, then build the moves from them."]}
-  explanation="That's the same shape as std::unique_ptr, std::jthread and file descriptors in every serious codebase."
+  explanation="That is the same shape as std::unique_ptr, std::jthread and file-descriptor wrappers in every serious engine. The renderer can now keep textures in a std::vector<UniqueHandle> and never think about freeing them."
 />

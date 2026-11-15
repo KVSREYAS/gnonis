@@ -1,25 +1,87 @@
 ---
 id: cpp-systems/05-stl/01-containers-and-invalidation
 title: "Containers, Growth and Invalidation"
-estMinutes: 8
+estMinutes: 14
 xp: 90
-fun: 3
-missionIntro: "Pick containers by access pattern, reserve when you know the size, and never hold an iterator across a reallocation."
+fun: 5
+missionIntro: "Removing dead enemies inside the loop that walks the list skips the enemy after each one. How vectors grow, what erase does to iterators, erase_if, reserve, and when a node container is worth it."
 keyIdeas:
   - "std::vector is the default: contiguous, cache-friendly, amortised O(1) push_back (libstdc++ doubles capacity)."
   - "Reallocation invalidates all iterators, pointers and references into the vector. reserve() avoids it."
   - "Node-based containers (std::map, std::list, std::unordered_map nodes) keep element addresses stable but chase pointers."
 ---
 
-## Growth
+## The feature: removing dead enemies
 
+After the damage step, the frame removes every enemy with `hp <= 0` from the list, so later systems (AI, drawing) only see live ones. A fireball just killed two slimes standing next to each other.
 
+## The careless version: erase in an index loop
+
+```cpp
+#include <cstdio>
+#include <vector>
+
+struct Enemy { int id; int hp; };
+
+int main() {
+    std::vector<Enemy> enemies{{1, 20}, {2, 0}, {3, 0}, {4, 15}};
+    for (std::size_t i = 0; i < enemies.size(); ++i)
+        if (enemies[i].hp <= 0) enemies.erase(enemies.begin() + i);
+    for (const auto& e : enemies) std::printf("enemy %d hp %d\n", e.id, e.hp);
+}
+```
+```text
+enemy 1 hp 20
+enemy 3 hp 0
+enemy 4 hp 15
+```
+
+## What went wrong
+
+Enemy 3 is dead but still in the list. When `erase` removed enemy 2 at index 1, every later element shifted down one place: enemy 3 moved to index 1. Then `++i` moved on to index 2, which is now enemy 4. Enemy 3 was never checked.
+
+The game symptom: a dead slime with 0 hp keeps walking and attacking for a frame, or forever if the next fireball kills its neighbour again. With iterators instead of indices it is worse: `erase` invalidates the iterator you are holding, and the loop's `++it` is undefined behaviour.
+
+Also, each `erase` in the middle moves every later element. Removing k enemies from n this way costs O(n·k).
+
+## The fix: std::erase_if
+
+C++20's `std::erase_if` removes every matching element in one pass. It moves the survivors forward once and shrinks the vector at the end:
+
+```cpp
+#include <cstdio>
+#include <vector>
+
+struct Enemy { int id; int hp; };
+
+int main() {
+    std::vector<Enemy> enemies{{1, 20}, {2, 0}, {3, 0}, {4, 15}};
+    auto removed = std::erase_if(enemies, [](const Enemy& e) { return e.hp <= 0; });
+    std::printf("removed %zu\n", removed);
+    for (const auto& e : enemies) std::printf("enemy %d hp %d\n", e.id, e.hp);
+}
+```
+```text
+removed 2
+enemy 1 hp 20
+enemy 4 hp 15
+```
+
+Before C++20 the same thing was written as the **erase-remove idiom**: `v.erase(std::remove_if(v.begin(), v.end(), pred), v.end());`. `remove_if` moves survivors to the front and returns the new end; `erase` cuts off the rest.
+
+If order does not matter (it usually does not for enemies), there is an even cheaper trick: swap the dead enemy with the last one and `pop_back`. That is O(1) per removal.
+
+## How a vector grows
+
+When `push_back` finds the vector full, it allocates a bigger buffer (libstdc++ doubles it), moves every element across, and frees the old one. Doubling makes the average cost per `push_back` constant, but each growth invalidates every pointer, reference and iterator into the vector.
 
 ![Vector capacity doubling 1→2→4→8 with old buffers freed; an iterator left pointing at the freed block](/diagrams/cpp-systems/05-stl/01-containers-and-invalidation.png)
 
+If you know how many enemies a wave spawns, `reserve(n)` allocates once up front.
+
 <Trace
   id="realloc-count"
-  prompt="Count reallocations while pushing 1,000 ints (libstdc++)."
+  prompt="A wave spawns 1,000 particles one push_back at a time. Count reallocations (libstdc++)."
   code={"#include <cstdio>\n#include <vector>\nint main() {\n    std::vector<int> v;\n    std::size_t cap = v.capacity();\n    int reallocs = 0;\n    for (int i = 0; i < 1000; ++i) {\n        v.push_back(i);\n        if (v.capacity() != cap) { ++reallocs; cap = v.capacity(); }\n    }\n    std::printf(\"%d %zu\", reallocs, v.capacity());\n}"}
   steps={[{"line": 5, "note": "capacity starts at 0"}, {"line": 9, "note": "capacities go 1, 2, 4, …, 1024"}, {"line": 11, "note": "11 growths, final capacity 1024"}]}
   question="What does it print?"
@@ -30,22 +92,44 @@ keyIdeas:
 
 <SpotBug
   id="iter-invalid"
-  prompt="Which line is undefined behaviour?"
+  prompt="The turret code again, shorter. Which line is undefined behaviour?"
   code={"#include <vector>\nint main() {\n    std::vector<int> v{1, 2, 3};\n    int& first = v[0];\n    v.push_back(4);\n    first = 10;\n}"}
   bugLine={6}
   explanation="push_back may reallocate (capacity 3 → 6 here), so `first` refers to freed memory."
   devices={["phone", "desktop"]}
 />
 
-## Choosing
+## Choosing a container
 
 Sources: [cppreference: containers library, iterator invalidation](https://en.cppreference.com/w/cpp/container), Bjarne Stroustrup, [Why you should avoid linked lists (GoingNative 2012)](https://www.youtube.com/watch?v=YQs6IC-vgmo)
 
+- Use `std::vector` for anything iterated every frame: enemies, particles, bullets.
+- Use `std::unordered_map` or `std::map` for lookup by key: inventory by item name, entity id to index.
+- Use a node container (`std::list`, `std::map`) only when you need element addresses that never change and cannot use ids. You pay a cache miss per element when iterating.
+- Never keep a pointer into a vector across anything that may push or erase.
+
 <MCQ
   id="list-vs-vector"
-  prompt="Insert 100k random ints into sorted position, searching linearly. In practice, which is fastest on modern CPUs?"
+  prompt="Insert 100k random enemy ids into a sorted list, searching linearly for the position. In practice, which is fastest on modern CPUs?"
   options={["std::list, because insertion is O(1)", "std::vector, because the linear search dominates and is cache-friendly", "std::deque", "All equal"]}
   answer={1}
   explanation="Stroustrup's demo: finding the position is O(n) for both, and pointer-chasing a list misses cache constantly. Vector wins by a wide margin."
   devices={["phone", "desktop"]}
+/>
+
+## Coding task: the cleanup step
+
+The end-of-frame cleanup removes dead enemies and reports kills for the score.
+
+<Code
+  id="cull-dead"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `int cull_dead(std::vector<Enemy>& enemies, std::vector<int>& killed_ids)`. It removes every enemy with hp <= 0, appends the ids of the removed enemies to killed_ids in their original order, keeps the survivors in their original order, and returns how many were removed."
+  starter={"#include <vector>\nstruct Enemy { int id; int hp; };\nint cull_dead(std::vector<Enemy>& enemies, std::vector<int>& killed_ids) {\n    int removed = 0;\n    for (std::size_t i = 0; i < enemies.size(); ++i) {\n        if (enemies[i].hp <= 0) {\n            killed_ids.push_back(enemies[i].id);\n            enemies.erase(enemies.begin() + i);\n            ++removed;\n        }\n    }\n    return removed;\n}\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    std::vector<Enemy> e{{1, 20}, {2, 0}, {3, 0}, {4, 15}};\n    std::vector<int> k;\n    CHECK(cull_dead(e, k) == 2 && e.size() == 2);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\nint main() {\n    std::vector<Enemy> e{{1, 20}, {2, 0}, {3, 0}, {4, 15}, {5, -3}, {6, -1}};\n    std::vector<int> k{99};\n    CHECK(cull_dead(e, k) == 4);\n    CHECK(e.size() == 2 && e[0].id == 1 && e[1].id == 4);\n    CHECK(k.size() == 5 && k[0] == 99 && k[1] == 2 && k[2] == 3 && k[3] == 5 && k[4] == 6);\n    CHECK(cull_dead(e, k) == 0 && e.size() == 2 && k.size() == 5);\n    std::vector<Enemy> all_dead{{7, 0}, {8, 0}};\n    CHECK(cull_dead(all_dead, k) == 2 && all_dead.empty() && k.back() == 8);\n    std::vector<Enemy> none;\n    CHECK(cull_dead(none, k) == 0);\n    return 0;\n}\n"}
+  solution={"#include <vector>\nstruct Enemy { int id; int hp; };\nint cull_dead(std::vector<Enemy>& enemies, std::vector<int>& killed_ids) {\n    auto dead = [](const Enemy& e) { return e.hp <= 0; };\n    for (const auto& e : enemies)\n        if (dead(e)) killed_ids.push_back(e.id);\n    return static_cast<int>(std::erase_if(enemies, dead));\n}\n"}
+  hints={["First loop over enemies and push the dead ids.", "Then std::erase_if with the same condition; it returns the count removed."]}
+  explanation="Collecting the ids first and then removing in one pass is O(n), keeps order, and never touches an invalidated iterator."
 />

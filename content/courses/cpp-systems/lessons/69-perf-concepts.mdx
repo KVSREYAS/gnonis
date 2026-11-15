@@ -1,46 +1,71 @@
 ---
 id: cpp-systems/11-perf/00-concepts
 title: "Concepts: Measuring Performance"
-estMinutes: 8
+estMinutes: 10
 xp: 40
-fun: 1
-missionIntro: "How to time code correctly, how profilers find where time goes, and how to read the assembly the compiler produced."
+fun: 2
+missionIntro: "Milestone 12 of Slime Siege: a steady 60 FPS with 2,000 slimes on screen. How to time code correctly, how profilers find where time goes, and how to read the assembly the compiler produced."
 keyIdeas:
   - "Measure before optimizing. Intuition about hot spots is often wrong."
   - "Benchmarks must stop the compiler deleting work and must warm up and repeat."
   - "A sampling profiler interrupts the program often and records where it was."
   - "Reading assembly confirms what the compiler actually did."
 ---
-## Benchmarking correctly
+## Milestone 12: a steady 60 FPS
 
-A **benchmark** times a piece of code. Common errors:
+**What we build this module:** the tools that keep the game inside its frame budget. A frame-time report with median and worst-1% numbers, benchmarks that measure what they claim to, a zone profiler built into the game loop, and the habit of checking the compiler's assembly for hot loops.
 
-- **Dead code elimination**: if the result is unused, `-O2` may delete the computation, and you time nothing. Use the result, or use `benchmark::DoNotOptimize`.
-- **Constant folding**: if inputs are known at compile time, the answer may be computed during compilation.
-- **Cold start**: the first run pays for page faults and cold caches. Run warm-up iterations first.
-- **Noise**: other processes, CPU frequency changes. Repeat many times and report the median.
-- **Wrong clock**: use `std::chrono::steady_clock`, which never jumps backwards.
+**Why the game needs it:** at 60 FPS each frame gets 16.7 ms for input, AI, physics, audio and drawing together. The late waves put 2,000 slimes on screen and the game stutters. Every earlier module gave us a way to make code faster; this one tells us which code to make faster, and whether the change worked. Optimizing without measuring usually speeds up the wrong thing.
+
+## The careless version: a benchmark that measures nothing
+
+The pathfinding team wants to know what one distance check costs:
 
 ```cpp
-auto t0 = std::chrono::steady_clock::now();
-for (int r = 0; r < reps; ++r) sink += work(data);
-auto t1 = std::chrono::steady_clock::now();
+#include <chrono>
+#include <cmath>
+#include <cstdio>
+
+template <class T> void do_not_optimize(T const& v) { asm volatile("" : : "r,m"(v) : "memory"); }
+
+float dist(float ax, float ay, float bx, float by) {
+    return std::sqrt((ax - bx) * (ax - bx) + (ay - by) * (ay - by));
+}
+
+int main() {
+    const int n = 10'000'000;
+    auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < n; ++i) { float d = dist(i, 0, 5, 5); (void)d; }                // result thrown away
+    auto t1 = std::chrono::steady_clock::now();
+    for (int i = 0; i < n; ++i) { float d = dist(i, 0, 5, 5); do_not_optimize(d); }     // result "used"
+    auto t2 = std::chrono::steady_clock::now();
+    auto ns = [&](auto d) { return std::chrono::duration<double, std::nano>(d).count() / n; };
+    std::printf("result discarded: %.2f ns per check\n", ns(t1 - t0));
+    std::printf("result kept:      %.2f ns per check\n", ns(t2 - t1));
+}
+```
+```text
+result discarded: 0.00 ns per check
+result kept:      0.82 ns per check
 ```
 
-Always build benchmarks with the same flags as production.
+(One run at `-O2`.) The first loop's result is never used, so the compiler deleted the loop. The benchmark timed an empty loop and reported a distance check as free.
+
+## Benchmarking correctly
+
+- **Dead code elimination**: if the result is unused, `-O2` may delete the computation. Use the result, or pass it to `do_not_optimize` (Google Benchmark's `DoNotOptimize` does the same thing).
+- **Constant folding**: if inputs are known at compile time, the answer may be computed during compilation.
+- **Cold start**: the first run pays for page faults and cold caches. Warm up first.
+- **Noise**: other processes, CPU frequency changes. Repeat many times and report the median, not one run.
+- **Wrong clock**: use `std::chrono::steady_clock`, which never jumps backwards.
+
+Build benchmarks with the same flags as the shipped game.
 
 ## Profilers
 
 A **profiler** tells you where time is spent across the whole program.
 
-A **sampling profiler** such as Linux `perf` interrupts the program thousands of times a second and records the current instruction and call stack. Functions that appear in many samples are where the time goes.
-
-```bash
-perf record -g ./app      # sample with call stacks
-perf report               # table of hottest functions
-```
-
-A **flame graph** draws those stacks: width is the share of samples, vertical stacking is the call chain. Look for the widest boxes near the top.
+A **sampling profiler** such as Linux `perf` interrupts the program thousands of times a second and records the current instruction and call stack. Functions that appear in many samples are where the time goes. A **flame graph** draws those stacks: width is the share of samples, vertical stacking is the call chain.
 
 `perf stat` reports hardware counters: cycles, instructions, cache misses, branch misses. **IPC** (instructions per cycle) below about 1 usually means the CPU is waiting on memory.
 
@@ -50,22 +75,24 @@ A **flame graph** draws those stacks: width is the share of samples, vertical st
 
 The compiler's output shows what it really did. Use `g++ -O2 -S file.cpp` or Compiler Explorer (godbolt.org).
 
-x86-64 basics:
-
-- registers: `rax`, `rdi`, `rsi`... (64-bit), `eax` (32-bit low half), `xmm0`... (SIMD)
-- arguments arrive in `rdi`, `rsi`, `rdx`, `rcx`; floats in `xmm0`, `xmm1`; return value in `rax` or `xmm0`
-- `mov` copies, `add`/`imul` do arithmetic, `cmp` + `jl` compare and jump, `call`/`ret` call and return
-
-What to look for:
-
-- `addps`/`mulps` (packed) means vectorized; `addss` (scalar single) means not
-- a `call` inside a hot loop means something was not inlined
-- unexpected `div` instructions, which are slow (20-40 cycles)
+- Arguments arrive in `rdi`, `rsi`, `rdx`, `rcx`; floats in `xmm0`, `xmm1`; the return value in `rax` or `xmm0`.
+- `mov` copies, `add`/`imul` do arithmetic, `cmp` + `jne` compare and jump, `call`/`ret` call and return.
+- `addps`/`mulps` (packed) mean vectorized; `addss` (scalar single) means not.
+- A `call` inside a hot loop means something was not inlined. A `div` or `idiv` costs 20 to 40 cycles.
 
 <MCQ
   id="concept-check"
-  prompt="Your benchmark loop computes `work(x)` and discards the result. It reports 0.3 ns per call. What is likely?"
+  prompt="The pathfinding benchmark computes `dist(a, b)` in a loop and discards the result. It reports 0.3 ns per call. What is likely?"
   options={["work is extremely fast", "The compiler removed the unused computation", "The clock is wrong", "The CPU cached the answer"]}
   answer={1}
   explanation="Dead code elimination: use the result or DoNotOptimize so the work is kept."
+/>
+
+<MCQ
+  id="concept-frame-budget"
+  prompt="The game targets 60 FPS. A profile of one frame shows AI 9 ms, physics 4 ms, drawing 3 ms, audio 1 ms. Which statement is right?"
+  options={["The frame fits: 17 ms is under the 16.7 ms budget", "The frame misses the budget; speeding up AI gives the most room", "The frame misses the budget; drawing is always the thing to optimize first", "Frame time does not matter if the average FPS is 60"]}
+  answer={1}
+  explanation="9 + 4 + 3 + 1 = 17 ms, over 1000/60 ≈ 16.7 ms. AI is more than half the frame, so halving it saves 4.5 ms; halving drawing saves only 1.5 ms."
+  devices={["phone", "desktop"]}
 />

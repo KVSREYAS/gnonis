@@ -1,25 +1,103 @@
 ---
 id: cpp-systems/11-perf/02-profilers-and-flamegraphs
 title: "Profilers and Flame Graphs"
-estMinutes: 8
+estMinutes: 11
 xp: 100
-fun: 3
-missionIntro: "Don't guess where time goes. perf record samples the stack about 1,000 times a second, and a flame graph shows which functions take the most time."
+fun: 5
+missionIntro: "The team spent a week making drawing twice as fast and the frame time did not move. Don't guess where time goes: zone timers and a sampling profiler point at the function that actually eats the frame."
 keyIdeas:
   - "`perf stat` gives counters (cycles, instructions, IPC, cache-misses, branch-misses). `perf record -g` plus `perf report` samples call stacks."
   - "Flame graphs: width is time on CPU, and the y-axis is stack depth. Look for wide plateaus."
-  - "IPC well below 1 usually means memory stalls. Near 3–4 means you're compute-bound."
+  - "Games also build zone timers into the loop, so every frame reports where its milliseconds went."
 ---
 
-## Read the counters
+## The feature: finding the stutter
 
+Wave 9 puts 2,000 slimes on screen and the frame rate drops. The team's guess: "drawing 2,000 sprites is slow". So they optimize drawing.
 
+## The careless version: optimize the guess
+
+```cpp
+#include <chrono>
+#include <cmath>
+#include <cstdio>
+#include <vector>
+
+struct Slime { float x, y; int target; };
+std::vector<Slime> slimes(2000);
+float checksum = 0;
+
+__attribute__((noinline)) void update_ai() {           // each slime follows its nearest neighbour
+    for (auto& a : slimes) {
+        float best = 1e30f;
+        for (int j = 0; j < (int)slimes.size(); ++j) {
+            float dx = slimes[j].x - a.x, dy = slimes[j].y - a.y, d = dx * dx + dy * dy;
+            if (d > 0 && d < best) { best = d; a.target = j; }
+        }
+    }
+}
+__attribute__((noinline)) void update_physics() {
+    for (auto& s : slimes) { s.x += 0.01f; s.y = std::fmod(s.y + 0.02f, 100.f); }
+}
+__attribute__((noinline)) void draw_old() {            // pretend each sprite costs two passes
+    for (int pass = 0; pass < 2; ++pass) for (auto& s : slimes) checksum += s.x * 0.5f + s.y;
+}
+__attribute__((noinline)) void draw_new() {            // a week of work: twice as fast
+    for (auto& s : slimes) checksum += s.x * 0.5f + s.y;
+}
+
+template <class Draw> double frame_ms(Draw draw) {
+    auto t0 = std::chrono::steady_clock::now();
+    for (int f = 0; f < 100; ++f) { update_ai(); update_physics(); draw(); }
+    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / 100;
+}
+
+int main() {
+    for (int i = 0; i < (int)slimes.size(); ++i) slimes[i] = {float(i % 50), float(i / 50), 0};
+    std::printf("frame with old draw: %.2f ms\n", frame_ms(draw_old));
+    std::printf("frame with new draw: %.2f ms\n", frame_ms(draw_new));
+    std::printf("(checksum %g)\n", checksum);
+}
+```
+```text
+frame with old draw: 3.32 ms
+frame with new draw: 3.30 ms
+(checksum 2.03066e+07)
+```
+
+Drawing really did get twice as fast. The frame did not notice, because drawing was never where the time went.
+
+## The concept: measure where the time goes
+
+There are two common ways, and real games use both.
+
+**Zone timers in the game loop.** Wrap each phase of the frame in a small RAII object that adds its elapsed time to a named total. Every frame then reports its own breakdown, in the real game, on the real level. (Engines ship tools for this, such as Tracy or Unreal Insights.)
+
+**A sampling profiler.** Linux `perf record -g ./game` interrupts the program about a thousand times a second and records the call stack. Here is a real flat profile of the same game loop (300 frames, one draw function), made with the older `gprof` (compile with `-pg`, run, then `gprof -b -p ./game`):
+
+```text
+  %   cumulative   self              self     total
+ time   seconds   seconds    calls  ms/call  ms/call  name
+ 98.06      0.94     0.94      300     3.14     3.14  update_ai()
+  2.09      0.96     0.02      300     0.07     0.07  update_physics()
+  0.00      0.96     0.00      300     0.00     0.00  draw()
+```
+
+AI is 98% of the time. Each slime scans all 2,000 others: 4 million distance checks per frame. The fix is an algorithm change (the spatial grid from the containers module), not faster drawing.
+
+## Flame graphs
+
+A **flame graph** draws the sampled stacks: width is the share of samples, height is call depth. A wide box with nothing on top is a function spending its own time.
 
 ![Example flame graph with a wide plateau at matmul and narrow towers elsewhere](/diagrams/cpp-systems/11-perf/02-profilers-and-flamegraphs.png)
 
+## Hardware counters
+
+`perf stat ./game` prints counts such as instructions and cycles. Their ratio, **IPC**, says what kind of slow it is: well below 1 usually means waiting for memory (cache misses); near 3 to 4 means the CPU is busy computing, so do less work or use SIMD.
+
 <Predict
   id="ipc"
-  prompt="perf stat: 12e9 instructions, 30e9 cycles. IPC?"
+  prompt="perf stat on the wave 9 build: 12e9 instructions, 30e9 cycles. IPC?"
   answer={0.4}
   tolerance={{"mode": "absolute", "value": 0.01}}
   explanation="12/30 = 0.4, so it's stalling, probably on memory."
@@ -28,7 +106,7 @@ keyIdeas:
 
 <Predict
   id="samples"
-  prompt="perf record at 999 Hz on one busy thread for 10 s. Roughly how many samples?"
+  prompt="perf record at 999 Hz on the busy game thread for a 10 s play session. Roughly how many samples?"
   answer={9990}
   tolerance={{"mode": "relative", "value": 0.02}}
   explanation="999 × 10."
@@ -37,13 +115,35 @@ keyIdeas:
 
 <MCQ
   id="flame"
-  prompt="In a flame graph, a function that's wide but has nothing stacked on top…"
+  prompt="In the game's flame graph, a function that's wide but has nothing stacked on top…"
   options={["Is cheap", "Spends its time in itself (self time). Optimise it", "Is a leaf that never runs", "Is a recursion bug"]}
   answer={1}
   explanation="A wide plateau is hot self-time."
   devices={["phone", "desktop"]}
 />
 
-## Sources
+## When to use which, and when not
 
-Brendan Gregg, [CPU Flame Graphs](https://www.brendangregg.com/FlameGraphs/cpuflamegraphs.html), [perf wiki](https://perf.wiki.kernel.org/index.php/Tutorial), Denis Bakhvalov, [*Performance Analysis and Tuning on Modern CPUs*](https://book.easyperf.net/perf_book)
+- Use a sampling profiler first when you do not know where to look. It needs no code changes and sees everything, including library calls.
+- Use zone timers to watch known phases every frame, and to catch rare spikes that a whole-run profile averages away.
+- Profile optimized builds with debug symbols (`-O2 -g`). A `-O0` profile shows costs that do not exist in the shipped game.
+- Do not leave fine-grained zones in tight inner loops: reading the clock millions of times per frame costs time itself.
+
+Sources: Brendan Gregg, [CPU Flame Graphs](https://www.brendangregg.com/FlameGraphs/cpuflamegraphs.html), [perf wiki](https://perf.wiki.kernel.org/index.php/Tutorial), Denis Bakhvalov, [*Performance Analysis and Tuning on Modern CPUs*](https://book.easyperf.net/perf_book)
+
+## Coding task: a zone timer
+
+Build the game loop's zone profiler: one line per zone, wrapped around each phase of the frame.
+
+<Code
+  id="zone-timer"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `class Zone` with a constructor `Zone(std::map<std::string, double>& totals, std::string name)` that records the start time with std::chrono::steady_clock, and a destructor that adds the elapsed milliseconds to `totals[name]`. Zones with the same name add up. Zone must not be copyable."
+  starter={"#include <chrono>\n#include <map>\n#include <string>\nclass Zone {\npublic:\n    Zone(std::map<std::string, double>& totals, std::string name) : totals_(totals) {}\nprivate:\n    std::map<std::string, double>& totals_;\n};\n"}
+  visibleTests={"#include \"check.h\"\n#include <thread>\nint main() {\n    std::map<std::string, double> t;\n    {\n        Zone z(t, \"ai\");\n        std::this_thread::sleep_for(std::chrono::milliseconds(20));\n    }\n    CHECK(t[\"ai\"] >= 15 && t[\"ai\"] < 1000);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <thread>\n#include <type_traits>\nint main() {\n    std::map<std::string, double> t;\n    {\n        Zone z(t, \"ai\");\n        std::this_thread::sleep_for(std::chrono::milliseconds(20));\n    }\n    CHECK(t[\"ai\"] >= 15 && t[\"ai\"] < 1000);\n    for (int frame = 0; frame < 3; ++frame) {\n        Zone z(t, \"draw\");\n        std::this_thread::sleep_for(std::chrono::milliseconds(5));\n    }\n    CHECK(t[\"draw\"] >= 12 && t[\"draw\"] < 1000);\n    double ai = t[\"ai\"];\n    { Zone z(t, \"audio\"); }\n    CHECK(t.count(\"audio\") == 1 && t[\"audio\"] >= 0 && t[\"audio\"] < 5);\n    CHECK(t[\"ai\"] == ai);\n    CHECK(!std::is_copy_constructible_v<Zone>);\n    return 0;\n}\n"}
+  solution={"#include <chrono>\n#include <map>\n#include <string>\nclass Zone {\npublic:\n    Zone(std::map<std::string, double>& totals, std::string name)\n        : totals_(totals), name_(std::move(name)), start_(std::chrono::steady_clock::now()) {}\n    ~Zone() {\n        totals_[name_] += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start_).count();\n    }\n    Zone(const Zone&) = delete;\n    Zone& operator=(const Zone&) = delete;\nprivate:\n    std::map<std::string, double>& totals_;\n    std::string name_;\n    std::chrono::steady_clock::time_point start_;\n};\n"}
+  hints={["Store a reference to the map, the name, and a steady_clock::time_point.", "In the destructor: totals_[name_] += std::chrono::duration<double, std::milli>(steady_clock::now() - start_).count();", "Zone(const Zone&) = delete; Zone& operator=(const Zone&) = delete;"]}
+  explanation="RAII makes the zone end at the closing brace on every path, including early returns and exceptions, so no phase is ever left \"running\". Deleting the copy stops a copied zone from adding its time twice."
+/>

@@ -1,25 +1,71 @@
 ---
 id: cpp-systems/09-concurrency/03-false-sharing
 title: "False Sharing"
-estMinutes: 8
+estMinutes: 13
 xp: 100
 fun: 5
-missionIntro: "Two threads writing different variables on the same cache line force the cores to pass that line back and forth on every write."
+missionIntro: "Four worker threads each count their own work in their own slot, and adding workers makes it slower. Two threads writing different variables on the same cache line force the cores to pass that line back and forth on every write."
 keyIdeas:
   - "Coherence works per cache line (64 B). Writes by different cores to one line bounce it between them."
   - "Pad hot per-thread data to its own line: alignas(std::hardware_destructive_interference_size) or alignas(64)."
   - "The symptom: adding threads makes the loop slower."
 ---
 
-## The numbers
+## The feature: per-worker statistics
 
+The debug overlay shows how many entities each worker thread processed this frame. Each worker has its own counter slot, so there is no sharing and no lock. Or so it seems.
 
+## The careless version: counters side by side
+
+```cpp
+#include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <thread>
+#include <vector>
+
+struct Plain  { std::atomic<long> n{0}; };                 // 8 bytes: 8 per cache line
+struct alignas(64) Padded { std::atomic<long> n{0}; };     // 64 bytes: one per line
+
+template <class Slot>
+double run(int workers) {
+    std::vector<Slot> stats(workers);
+    auto t0 = std::chrono::steady_clock::now();
+    {
+        std::vector<std::jthread> ts;
+        for (int w = 0; w < workers; ++w)
+            ts.emplace_back([&stats, w] {
+                for (int i = 0; i < 5'000'000; ++i) stats[w].n.fetch_add(1, std::memory_order_relaxed);
+            });
+    }
+    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+}
+
+int main() {
+    std::printf("1 worker:                %6.1f ms\n", run<Plain>(1));
+    std::printf("4 workers, side by side: %6.1f ms\n", run<Plain>(4));
+    std::printf("4 workers, padded:       %6.1f ms\n", run<Padded>(4));
+}
+```
+```text
+1 worker:                  23.3 ms
+4 workers, side by side:  290.1 ms
+4 workers, padded:         23.3 ms
+```
+
+(One run on the course machine, which has 8 cores. Each worker does the same amount of work in every case.)
+
+## What went wrong
+
+The four `Plain` counters are 8 bytes each, so all four sit in one 64-byte cache line. Caches stay coherent per line: when worker 0 writes its counter, the copies of that line in the other cores' caches are invalidated, and the next write by worker 1 must fetch the line back. The line bounces between cores on nearly every increment. The workers share no data, yet they take turns.
+
+That is **false sharing**. Padding each counter to its own line removes the bouncing, and four workers finish in about the time one worker takes.
 
 ![Two cores ping-ponging one 64-byte line holding both counters versus padded counters on separate lines](/diagrams/cpp-systems/09-concurrency/03-false-sharing.png)
 
 <Predict
   id="fs-slots"
-  prompt="Eight threads each increment their own `long counter[8]` slot (8 bytes each). How many cache lines do the 8 counters occupy, assuming a 64-byte-aligned array?"
+  prompt="Eight worker threads each increment their own `long counter[8]` slot (8 bytes each). How many cache lines do the 8 counters occupy, assuming a 64-byte-aligned array?"
   answer={1}
   tolerance={{"mode": "absolute", "value": 0}}
   explanation="64 bytes, so one line, and all eight cores fight over it."
@@ -28,7 +74,7 @@ keyIdeas:
 
 <Predict
   id="pad-size"
-  prompt={"Padding each counter to its own line: sizeof(struct alignas(64) Slot { long v; })?"}
+  prompt="Padding each worker's counter to its own line: sizeof(struct alignas(64) Slot { long v; })?"
   answer={64}
   tolerance={{"mode": "absolute", "value": 0}}
   unit="bytes"
@@ -36,24 +82,38 @@ keyIdeas:
   devices={["phone", "desktop"]}
 />
 
-## Fix it
+## Two fixes
+
+1. **Pad**: `struct alignas(64) Padded { ... };`, or `alignas(std::hardware_destructive_interference_size)`, the portable name for the line size.
+2. **Accumulate locally**: count in a local variable inside the worker and write the slot once at the end. This is usually simpler and faster still, since a local lives in a register.
 
 Sources: [cppreference: hardware_destructive_interference_size](https://en.cppreference.com/w/cpp/thread/hardware_destructive_interference_size), Herb Sutter, [Eliminate False Sharing (Dr. Dobb's)](https://www.drdobbs.com/parallel/eliminate-false-sharing/217500206)
 
 <MCQ
   id="fs-fix"
-  prompt="Which change removes false sharing in per-thread counters?"
+  prompt="Which change removes false sharing in the per-worker counters?"
   options={["Make counters atomic", "alignas(64) per counter, or accumulate in a local and write once at the end", "Use more threads", "Use volatile"]}
   answer={1}
   explanation="Both work. A local accumulator is often simplest."
   devices={["phone", "desktop"]}
 />
 
+## When to care, and when not
+
+- The symptom: adding threads makes a loop slower, or no faster, even though the threads share no data.
+- Care for data written often by different threads: counters, per-thread queues' head and tail indices, job system state.
+- Data that is only read by several threads is fine on one line: reading does not invalidate other cores' copies.
+- Do not pad everything: padding a million-element array to 64 bytes per element wastes memory and cache.
+
+## Coding task: padded counters
+
+The job system's debug counters, one per worker, without false sharing.
+
 <Code
   id="padded-counters"
   devices={["desktop"]}
   language="cpp"
-  prompt={"Write `struct alignas(64) PaddedCounter { std::atomic<long> v{0}; };` and `long count_parallel(unsigned nthreads, long per_thread)`. Each thread increments its own PaddedCounter (relaxed) per_thread times, then sum. static_assert that sizeof(PaddedCounter) == 64."}
+  prompt="Write `struct alignas(64) PaddedCounter { std::atomic<long> v{0}; };` (one per worker) and `long count_parallel(unsigned nthreads, long per_thread)`. Each thread increments its own PaddedCounter (relaxed) per_thread times, then sum. static_assert that sizeof(PaddedCounter) == 64."
   starter={"#include <atomic>\nstruct PaddedCounter { std::atomic<long> v{0}; };\nlong count_parallel(unsigned nthreads, long per_thread) { return 0; }\n"}
   visibleTests={"#include \"check.h\"\n\nint main() { CHECK(count_parallel(2, 10) == 20); return 0; }\n"}
   tests={"#include \"check.h\"\n\nint main() {\n    static_assert(sizeof(PaddedCounter) == 64 && alignof(PaddedCounter) == 64);\n    CHECK(count_parallel(2, 10) == 20);\n    CHECK(count_parallel(8, 50000) == 400000);\n    CHECK(count_parallel(0, 5) == 0);\n    return 0;\n}\n"}

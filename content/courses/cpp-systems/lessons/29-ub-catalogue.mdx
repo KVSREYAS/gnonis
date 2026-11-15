@@ -1,25 +1,76 @@
 ---
 id: cpp-systems/08-ub/01-ub-catalogue
 title: "The UB Catalogue"
-estMinutes: 8
+estMinutes: 14
 xp: 100
-fun: 3
-missionIntro: "Undefined behaviour isn't \"probably crashes\". The optimiser assumes it never happens and rewrites your code on that basis."
+fun: 5
+missionIntro: "The auto-tiler reads one tile past the map edge, and the level's corner walls come out different on every machine. Undefined behaviour isn't \"probably crashes\": the optimiser assumes it never happens and rewrites your code on that basis."
 keyIdeas:
   - "Common UB: signed overflow, out-of-bounds access, use after free, null dereference, reading uninitialised values, data races, misaligned or type-punned access."
   - "Compilers assume UB can't occur. `x + 1 > x` for signed int folds to true, and checks after a dereference can be deleted."
   - "UB anywhere in an execution makes the whole execution meaningless, even \"before\" the UB (time travel)."
 ---
 
-## Spot it
+## The feature: wall auto-tiling
 
+Walls connect to their neighbours: a wall tile picks its sprite from which of its 8 neighbours are also walls. The map editor runs this for every wall tile.
 
+## The careless version: no edge check
+
+```cpp
+#include <cstdio>
+#include <vector>
+
+struct Map {
+    int w, h;
+    std::vector<int> tiles;                   // 1 = wall
+    int at(int x, int y) const { return tiles[y * w + x]; }
+};
+
+int wall_neighbours(const Map& m, int x, int y) {
+    int n = 0;
+    for (int dy = -1; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 1; ++dx)
+            if ((dx || dy) && m.at(x + dx, y + dy) == 1) ++n;
+    return n;
+}
+
+int main() {
+    Map m{4, 4, std::vector<int>(16, 1)};
+    std::printf("centre tile: %d wall neighbours\n", wall_neighbours(m, 1, 1));
+    std::printf("corner tile: %d wall neighbours\n", wall_neighbours(m, 0, 0));
+}
+```
+```text
+==1==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x50600000000c at pc 0x561da76cc44b bp 0x7fff69f730d0 sp 0x7fff69f730c8
+SUMMARY: AddressSanitizer: heap-buffer-overflow game.cpp:7 in Map::at(int, int) const
+```
+
+## What went wrong
+
+For the corner tile at (0, 0), the loop reads (-1, -1), which is index -5: before the start of the vector's buffer. ASan reports a heap buffer overflow at the first bad read.
+
+Without ASan, nothing reports anything. The read returns whatever bytes sit before the buffer (allocator bookkeeping, another object), so the corner's sprite depends on the heap layout: different on different machines, different between debug and release. Tiles at the left edge also read the previous row's last tile (x = -1 wraps into row y - 1), which is a valid index and gives a quietly wrong answer that no tool will catch.
+
+The fix is a bounds check in `at`, treating outside-the-map as a wall (or as empty, whichever looks right). The coding task below asks for exactly that.
+
+## The catalogue
+
+These are the kinds testers find in release builds:
+
+- **Out of bounds**: reading or writing past an array, as above.
+- **Use after free / dangling**: the lifetime and STL modules.
+- **Signed overflow**: score, timers, coordinates. The optimizer deletes overflow checks written after the fact.
+- **Null dereference**: and the optimizer deletes null checks placed after the dereference.
+- **Uninitialized reads**: `int hp;` with no initializer, read before assignment.
+- **Data races**: the concurrency module.
+- **Bad shifts**: `1 << 32` for a 32-bit `int`, or shifting a negative number left.
 
 ![Compiler reasoning chain: deref p, therefore p non-null, therefore null check deleted](/diagrams/cpp-systems/08-ub/01-ub-catalogue.png)
 
 <SpotBug
   id="signed-ovf"
-  prompt="Which line has undefined behaviour?"
+  prompt="The frame counter and the score both pass their limit. Which line has undefined behaviour?"
   code={"#include <climits>\n#include <cstdio>\nint main() {\n    unsigned u = UINT_MAX;\n    u = u + 1;\n    int i = INT_MAX;\n    i = i + 1;\n    std::printf(\"%u %d\", u, i);\n}"}
   bugLine={7}
   explanation="Unsigned arithmetic wraps by definition. Signed overflow is UB."
@@ -28,7 +79,7 @@ keyIdeas:
 
 <MCQ
   id="fold"
-  prompt={"With optimisation on, `bool f(int x) { return x + 1 > x; }` typically compiles to…"}
+  prompt="With optimisation on, the old score check `bool f(int x) { return x + 1 > x; }` typically compiles to…"
   options={["A real comparison", "`return true;`", "A trap", "A call to abort"]}
   answer={1}
   explanation="Since signed overflow can't happen (by assumption), x + 1 > x is always true."
@@ -37,12 +88,37 @@ keyIdeas:
 
 <SpotBug
   id="null-check"
-  prompt="Which line does the optimiser make pointless?"
+  prompt="The enemy lookup reads first and checks later. Which line does the optimiser make pointless?"
   code={"int read(int* p) {\n    int v = *p;\n    if (p == nullptr) return -1;\n    return v;\n}"}
   bugLine={3}
   explanation="*p on line 2 lets the compiler assume p != nullptr, so the check on line 3 can be deleted. Check first, then dereference."
   devices={["phone", "desktop"]}
 />
+
+## Uninitialized values
+
+An uninitialized local holds whatever was in that memory before. It can change between runs, with optimization level, and when you add a line of logging:
+
+```cpp
+#include <cstdio>
+
+struct Enemy { int hp; bool stunned; };   // no initializers
+
+int main() {
+    Enemy e;                              // hp and stunned are indeterminate
+    e.hp = 30;                            // forgot stunned
+    if (e.stunned) std::printf("enemy skips its turn\n");
+    else           std::printf("enemy attacks\n");
+}
+```
+```text
+$ g++ -std=c++20 -O2 -Wall game.cpp
+game.cpp:8: warning: 'e.Enemy::stunned' is used uninitialized [-Wuninitialized]
+$ ./game
+enemy attacks
+```
+
+The output above is whatever this build happened to produce, which is the problem: the language does not say what it prints. `-Wall` caught it here, but not every case. The fix is default member initializers: `struct Enemy { int hp = 0; bool stunned = false; };`.
 
 ## Further reading
 
@@ -50,9 +126,32 @@ Sources: John Regehr, [A Guide to Undefined Behavior in C and C++](https://blog.
 
 <MCQ
   id="time-travel"
-  prompt="A program has UB on its last line. Is the output printed before that line guaranteed?"
+  prompt="A program has UB on its last line, after printing the high score. Is the output printed before that line guaranteed?"
   options={["Yes, always", "No: the standard places no requirements on any execution containing UB", "Only at -O0", "Only if stdout is flushed"]}
   answer={1}
   explanation="In practice output usually appears, but the standard guarantees nothing, and optimisers have reordered code across UB."
   devices={["phone", "desktop"]}
+/>
+
+## When to worry
+
+- Treat every UB kind as a real bug even if the program "works". It works with this compiler, these flags, this heap layout.
+- Turn on warnings (`-Wall -Wextra`) and fix them: many UB cases are caught at compile time.
+- Run tests under ASan + UBSan. The next lessons cover aliasing and the sanitizers in detail.
+
+## Coding task: safe auto-tiling
+
+Fix the auto-tiler so edge and corner tiles get the same answer on every machine.
+
+<Code
+  id="safe-neighbours"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `int wall_neighbours(const std::vector<int>& tiles, int w, int h, int x, int y)` counting how many of the 8 neighbours of (x, y) are walls (value 1) in a w×h row-major map. A neighbour outside the map counts as a wall. Never read outside the vector, and do not let x = -1 wrap into the previous row."
+  starter={"#include <vector>\nint wall_neighbours(const std::vector<int>& tiles, int w, int h, int x, int y) {\n    return 0;\n}\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    std::vector<int> all(16, 1);\n    CHECK(wall_neighbours(all, 4, 4, 1, 1) == 8);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\nint main() {\n    std::vector<int> all(16, 1);\n    CHECK(wall_neighbours(all, 4, 4, 1, 1) == 8);\n    CHECK(wall_neighbours(all, 4, 4, 0, 0) == 8);\n    std::vector<int> none(16, 0);\n    CHECK(wall_neighbours(none, 4, 4, 1, 1) == 0);\n    CHECK(wall_neighbours(none, 4, 4, 0, 0) == 5);\n    CHECK(wall_neighbours(none, 4, 4, 0, 2) == 3);\n    CHECK(wall_neighbours(none, 4, 4, 3, 3) == 5);\n    std::vector<int> m = {\n        0, 0, 0, 1,\n        1, 0, 0, 0,\n        0, 0, 0, 0 };\n    CHECK(wall_neighbours(m, 4, 3, 0, 2) == 6);\n    CHECK(wall_neighbours(m, 4, 3, 0, 1) == 3);\n    CHECK(wall_neighbours(m, 4, 3, 2, 1) == 1);\n    std::vector<int> one{0};\n    CHECK(wall_neighbours(one, 1, 1, 0, 0) == 8);\n    return 0;\n}\n"}
+  solution={"#include <vector>\nint wall_neighbours(const std::vector<int>& tiles, int w, int h, int x, int y) {\n    int n = 0;\n    for (int dy = -1; dy <= 1; ++dy)\n        for (int dx = -1; dx <= 1; ++dx) {\n            if (!dx && !dy) continue;\n            int nx = x + dx, ny = y + dy;\n            if (nx < 0 || nx >= w || ny < 0 || ny >= h) { ++n; continue; }\n            if (tiles[ny * w + nx] == 1) ++n;\n        }\n    return n;\n}\n"}
+  hints={["Check nx >= 0 && nx < w && ny >= 0 && ny < h before reading tiles[ny * w + nx].", "Outside the map: ++count and continue."]}
+  explanation="Checking x and y separately (not just the flat index) is what stops the left-edge wrap, which is a valid index and would never trip a sanitizer."
 />

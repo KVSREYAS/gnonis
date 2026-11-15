@@ -1,45 +1,45 @@
 ---
 id: cpp-systems/oop/05-boss-class-act-garage
 title: "Module test: Object-oriented programming"
-estMinutes: 12
+estMinutes: 14
 xp: 200
 fun: 5
-missionIntro: "Classes, constructors, operators and virtual functions, all at once. Then build a vehicle roster."
+missionIntro: "Classes, constructors, pointers, references, operators and virtual functions, all at once. Then build the enemy wave that Slime Siege spawns every round."
 kind: boss
 keyIdeas:
   - "class is private by default, struct is public."
-  - "Init lists, const methods and destructors."
-  - "virtual + override, abstract bases, virtual destructors."
+  - "Init lists, const methods, references and destructors."
+  - "virtual + override, abstract bases, virtual destructors, no slicing."
 ---
 
 ## Module test
 
-Six timed questions on Object-oriented programming. 3 wrong answers end the test. Then a coding task: the vehicle roster.
+Milestone 1 check: can you build Slime Siege's entities? Eight timed questions on classes, pointers, references and virtual functions. 3 wrong answers end the test. Then a coding task: the enemy wave.
 
 <Boss
   id="garage"
   title="Module test: Object-oriented programming"
-  briefing="Six questions, 3 minutes. 3 wrong answers end the test."
-  timeLimit={180}
+  briefing="Eight questions, 4 minutes. 3 wrong answers end the test."
+  timeLimit={240}
   playerHp={3}
-  parts={[{"type": "mcq", "prompt": "Default access in a struct?", "options": ["private", "public", "protected", "none"], "answer": 1, "explanation": "class is private."}, {"type": "mcq", "prompt": "Which members can a derived class use?", "options": ["private only", "public and protected", "only static", "all, including private"], "answer": 1, "explanation": "private stays private, even from children."}, {"type": "mcq", "prompt": "A static data member is…", "options": ["copied into each object", "shared by all objects of the class", "only usable in static methods", "stored on the stack"], "answer": 1, "explanation": "One per class."}, {"type": "fill", "text": "Mark a method {{0}} when it only reads members, and add {{1}} to an overrider.", "chips": ["const", "override", "static", "friend"], "answers": ["const", "override"], "explanation": "Both are free compile-time safety."}, {"type": "mcq", "prompt": "`struct A { virtual void f() = 0; };` then `A a;`…", "options": ["works", "compile error: A is abstract", "runtime crash", "calls nothing"], "answer": 1, "explanation": "Pure virtual makes it abstract."}, {"type": "mcq", "prompt": "You delete a Derived through a Base*. Base needs…", "options": ["a static member", "a virtual destructor", "a friend", "nothing"], "answer": 1, "explanation": "Otherwise UB."}]}
+  parts={[{"type": "mcq", "prompt": "Default access in a struct?", "options": ["private", "public", "protected", "none"], "answer": 1, "explanation": "class is private."}, {"type": "mcq", "prompt": "Which members of Enemy can a derived Slime use?", "options": ["private only", "public and protected", "only static", "all, including private"], "answer": 1, "explanation": "private stays private, even from derived classes."}, {"type": "mcq", "prompt": "`Entity::next_id` is a static data member. It is…", "options": ["copied into each entity", "shared by all entities of the class", "only usable in static methods", "stored on the stack"], "answer": 1, "explanation": "One per class, which is why it works as an id counter."}, {"type": "fill", "text": "Mark a method {{0}} when it only reads members, and add {{1}} to an overrider.", "chips": ["const", "override", "static", "friend"], "answers": ["const", "override"], "explanation": "Both are free compile-time safety."}, {"type": "mcq", "prompt": "`for (auto e : enemies) e.hp -= 10;` What happens to the enemies?", "options": ["Each loses 10 hp", "Nothing: e is a copy of each enemy", "Compile error", "Only the first is hit"], "answer": 1, "explanation": "Plain auto copies. Use auto& to change the real enemies."}, {"type": "mcq", "prompt": "`std::vector<Enemy> v; v.push_back(Bat{});` where Bat derives from a non-abstract Enemy. What does v[0] hold?", "options": ["A Bat", "Only the Enemy part of the bat (sliced)", "A pointer to the bat", "Nothing, it fails to compile"], "answer": 1, "explanation": "Object slicing. Store polymorphic objects by pointer."}, {"type": "mcq", "prompt": "A function returns `&local` where local is a Fireball on its stack. The caller reads it. This is…", "options": ["fine", "a leak", "a dangling pointer: undefined behaviour", "a double delete"], "answer": 2, "explanation": "The local died at the return."}, {"type": "mcq", "prompt": "You delete a Boss through an Enemy*. Enemy needs…", "options": ["a static member", "a virtual destructor", "a friend", "nothing"], "answer": 1, "explanation": "Otherwise undefined behaviour, and ~Boss never runs."}]}
   explanation="Module test passed: Object-oriented programming."
   devices={["phone", "desktop"]}
 />
 
-## Coding task: the vehicle roster
+## Coding task: the enemy wave
 
-Build a small class hierarchy and a roster that owns vehicles through base pointers.
+Each round, Slime Siege spawns a wave of mixed enemies. The HUD shows how many are in the wave and how much damage they deal together if they all reach you.
 
 <Code
   id="roster"
   devices={["desktop"]}
   language="cpp"
-  prompt="Write an abstract `class Vehicle` with constructor `Vehicle(std::string name)`, `const std::string& name() const`, a pure virtual `int wheels() const` and a virtual destructor. Add `Bike` (2 wheels) and `Car` (4 wheels), each with a constructor taking the name. Then write `class Roster` with `void add(std::unique_ptr<Vehicle> v)`, `int total_wheels() const` and `std::size_t size() const`."
-  starter={"#include <string>\n#include <memory>\n#include <vector>\nclass Vehicle {\npublic:\n    Vehicle(std::string name) {}\n    const std::string& name() const { static std::string s; return s; }\n    virtual int wheels() const { return 0; }\n    virtual ~Vehicle() = default;\n};\nclass Bike : public Vehicle { public: Bike(std::string n) : Vehicle(n) {} };\nclass Car : public Vehicle { public: Car(std::string n) : Vehicle(n) {} };\nclass Roster {\npublic:\n    void add(std::unique_ptr<Vehicle> v) {}\n    int total_wheels() const { return 0; }\n    std::size_t size() const { return 0; }\n};\n"}
-  visibleTests={"#include \"check.h\"\nint main() {\n    Roster r;\n    r.add(std::make_unique<Bike>(\"BMX\"));\n    CHECK(r.size() == 1 && r.total_wheels() == 2);\n    return 0;\n}\n"}
-  tests={"#include \"check.h\"\nint main() {\n    Roster r; CHECK(r.size() == 0 && r.total_wheels() == 0);\n    r.add(std::make_unique<Bike>(\"BMX\"));\n    r.add(std::make_unique<Car>(\"Sedan\"));\n    r.add(std::make_unique<Car>(\"Savanna\"));\n    CHECK(r.size() == 3 && r.total_wheels() == 10);\n    Car c(\"Admiral\"); const Vehicle& v = c;\n    CHECK(v.name() == \"Admiral\" && v.wheels() == 4);\n    return 0;\n}\n"}
-  solution={"#include <string>\n#include <memory>\n#include <vector>\n#include <utility>\nclass Vehicle {\n    std::string name_;\npublic:\n    Vehicle(std::string name) : name_(std::move(name)) {}\n    const std::string& name() const { return name_; }\n    virtual int wheels() const = 0;\n    virtual ~Vehicle() = default;\n};\nclass Bike : public Vehicle {\npublic:\n    Bike(std::string n) : Vehicle(std::move(n)) {}\n    int wheels() const override { return 2; }\n};\nclass Car : public Vehicle {\npublic:\n    Car(std::string n) : Vehicle(std::move(n)) {}\n    int wheels() const override { return 4; }\n};\nclass Roster {\n    std::vector<std::unique_ptr<Vehicle>> v_;\npublic:\n    void add(std::unique_ptr<Vehicle> v) { v_.push_back(std::move(v)); }\n    int total_wheels() const { int t = 0; for (const auto& v : v_) t += v->wheels(); return t; }\n    std::size_t size() const { return v_.size(); }\n};\n"}
-  hints={["Vehicle stores the name. Derived constructors pass it up with `: Vehicle(n)`.", "Roster holds a std::vector<std::unique_ptr<Vehicle>>."]}
-  explanation="Abstract base, overrides, a virtual destructor and ownership through unique_ptr: that's the core of everyday OOP in C++."
+  prompt="Write an abstract `class Enemy` with constructor `Enemy(std::string name)`, `const std::string& name() const`, a pure virtual `int damage() const` and a virtual destructor. Add `Slime` (damage 5) and `Bat` (damage 3), each with a constructor taking the name. Then write `class Wave` with `void add(std::unique_ptr<Enemy> e)`, `int total_damage() const` and `std::size_t size() const`."
+  starter={"#include <string>\n#include <memory>\n#include <vector>\nclass Enemy {\npublic:\n    Enemy(std::string name) {}\n    const std::string& name() const { static std::string s; return s; }\n    virtual int damage() const { return 0; }\n    virtual ~Enemy() = default;\n};\nclass Slime : public Enemy { public: Slime(std::string n) : Enemy(n) {} };\nclass Bat : public Enemy { public: Bat(std::string n) : Enemy(n) {} };\nclass Wave {\npublic:\n    void add(std::unique_ptr<Enemy> e) {}\n    int total_damage() const { return 0; }\n    std::size_t size() const { return 0; }\n};\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    Wave w;\n    w.add(std::make_unique<Bat>(\"bat\"));\n    CHECK(w.size() == 1 && w.total_damage() == 3);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\nint main() {\n    Wave w; CHECK(w.size() == 0 && w.total_damage() == 0);\n    w.add(std::make_unique<Bat>(\"bat\"));\n    w.add(std::make_unique<Slime>(\"green slime\"));\n    w.add(std::make_unique<Slime>(\"blue slime\"));\n    CHECK(w.size() == 3 && w.total_damage() == 13);\n    Slime s(\"king slime\"); const Enemy& e = s;\n    CHECK(e.name() == \"king slime\" && e.damage() == 5);\n    return 0;\n}\n"}
+  solution={"#include <string>\n#include <memory>\n#include <vector>\n#include <utility>\nclass Enemy {\n    std::string name_;\npublic:\n    Enemy(std::string name) : name_(std::move(name)) {}\n    const std::string& name() const { return name_; }\n    virtual int damage() const = 0;\n    virtual ~Enemy() = default;\n};\nclass Slime : public Enemy {\npublic:\n    Slime(std::string n) : Enemy(std::move(n)) {}\n    int damage() const override { return 5; }\n};\nclass Bat : public Enemy {\npublic:\n    Bat(std::string n) : Enemy(std::move(n)) {}\n    int damage() const override { return 3; }\n};\nclass Wave {\n    std::vector<std::unique_ptr<Enemy>> v_;\npublic:\n    void add(std::unique_ptr<Enemy> e) { v_.push_back(std::move(e)); }\n    int total_damage() const { int t = 0; for (const auto& e : v_) t += e->damage(); return t; }\n    std::size_t size() const { return v_.size(); }\n};\n"}
+  hints={["Enemy stores the name. Derived constructors pass it up with `: Enemy(n)`.", "Wave holds a std::vector<std::unique_ptr<Enemy>>, which avoids slicing and deletes the enemies for you."]}
+  explanation="Abstract base, overrides, a virtual destructor and ownership through unique_ptr: that is the core of everyday OOP in a game. Adding a Ghost later touches nothing in Wave."
 />

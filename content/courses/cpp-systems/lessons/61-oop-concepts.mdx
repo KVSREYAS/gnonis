@@ -1,151 +1,266 @@
 ---
 id: cpp-systems/oop/00-concepts
 title: "Concepts: Classes and Objects from Scratch"
-estMinutes: 8
+estMinutes: 14
 xp: 40
-fun: 1
-missionIntro: "The basic syntax of object-oriented C++: classes, members, access, constructors, operators and inheritance."
+fun: 2
+missionIntro: "Milestone 1 of Slime Siege: the Player and enemy types. The plain explanation of classes, members, access, constructors, operators and inheritance, all used on real game code."
 keyIdeas:
   - "A class groups data members and member functions into one type. An object is one value of that type."
   - "public members are usable from outside, private ones only inside the class."
   - "Constructors set up an object. The member initializer list runs before the constructor body."
   - "A virtual function is chosen at runtime by the object's real type, through a base pointer or reference."
 ---
+## The project: Slime Siege
+
+This whole course builds one program: **Slime Siege**, a small 2D top-down game written in C++. The player walks around a tile map, slimes and bats chase them, projectiles fly, particles burst, and the game saves and loads. Every module adds one feature to the game, and every C++ idea in the course is introduced because that feature needs it.
+
+![Slime Siege engine map: each module adds one part of the engine](/diagrams/cpp-systems/oop/00-slime-siege-map.png)
+
+## Course map, part 1
+
+| Module | Feature we build | C++ it needs |
+| --- | --- | --- |
+| Object-oriented programming | Player, enemies, Vec2 maths | classes, constructors, operators, pointers, references, const, inheritance |
+| Lifetime and RAII | Windows, textures, level files that clean up after themselves | destructors, RAII, rule of 0/3/5, exceptions |
+| Move semantics | Loading and swapping big levels without copying | std::move, noexcept, perfect forwarding |
+| Smart-pointer ownership | The enemy spawner and shared textures | unique_ptr, shared_ptr, weak_ptr |
+| Templates | Generic engine parts: `Vec2<T>`, asset caches | templates, concepts, constexpr |
+| Containers, algorithms and views | Inventory, entity lists, events | vector, map, iterators, lambdas, optional, variant |
+| Memory layout | Components that fit in cache | sizeof, padding, cache lines, alignment |
+
+## Course map, part 2
+
+| Module | Feature we build | C++ it needs |
+| --- | --- | --- |
+| Data-oriented design | A 100,000-particle system and an ECS | SoA, hot/cold split, branchless code |
+| Undefined behaviour | Hunting crashes that only happen in release | UB catalogue, bit_cast, sanitizers |
+| Concurrency | Loading assets on a background thread | threads, mutexes, atomics, false sharing |
+| SIMD | Fast particle physics | SSE intrinsics, reductions |
+| Profiling | Hitting 60 frames per second | benchmarks, profilers, assembly |
+| Building blocks | Frame arena, audio queue, job system | allocators, lock-free ring, thread pool |
+| Capstone | A tiny neural-net brain for enemies | tensors, matmul, softmax |
+
+## Milestone 1: entities
+
+**What we build this module:** the things that live in the game world. A `Player` with health, a position and a score. Enemies (`Slime`, `Bat`) that each move and attack in their own way. A `Vec2` type for positions and velocities.
+
+**Why the game needs it:** a game has hundreds of objects that each carry data (position, health) and behaviour (move, take damage). Keeping the data and the functions that change it together in one type stops bugs like "health went to -40" or "the bat moved like a slime". Classes are the C++ tool for that.
+
+This module is the one place in the course that starts from basic syntax. Later modules assume you know it.
+
 ## Class, object, member
 
-A **class** is a user-defined type. It lists **data members** (variables each object holds) and **member functions** (functions that operate on an object).
+A **class** is a type you define. It lists **data members** (the variables each object holds) and **member functions** (functions that work on one object).
 
-An **object** is one instance of the class, with its own copy of the data members.
+An **object** is one value of that class, with its own copy of every data member. Two slimes are two objects of class `Slime`: same code, separate health.
 
 ```cpp
-class Counter {
+#include <cstdio>
+
+class Slime {
 public:
-    void add() { count_ += 1; }
-    int value() const { return count_; }
+    void take_hit(int dmg) { hp_ -= dmg; }
+    int hp() const { return hp_; }
 private:
-    int count_ = 0;   // default member initializer
+    int hp_ = 30;   // default member initializer: every new slime starts at 30
 };
 
-Counter a, b;
-a.add(); a.add();
-b.add();
-// a.value() == 2, b.value() == 1
+int main() {
+    Slime a, b;
+    a.take_hit(10);
+    a.take_hit(5);
+    b.take_hit(1);
+    std::printf("a=%d b=%d\n", a.hp(), b.hp());
+}
+```
+```text
+a=15 b=29
 ```
 
-Inside a member function, `count_` means "this object's `count_`". The hidden pointer `this` holds the address of the object the function was called on. `a.add()` runs `add` with `this == &a`.
+Inside a member function, `hp_` means "this object's `hp_`". The hidden pointer `this` holds the address of the object the function was called on: `a.take_hit(10)` runs `take_hit` with `this == &a`.
 
-`struct` and `class` are the same, except members of a `struct` are public by default.
+`struct` and `class` are the same thing except for one detail: members of a `struct` are public by default, members of a `class` are private by default.
 
-## Access control and const
+## Access control and invariants
 
-**Access specifiers** decide who may use a member:
+**Access specifiers** decide which code may use a member:
 
 - `public`: any code
-- `private`: only member functions (and friends) of this class
-- `protected`: this class and classes derived from it
+- `private`: only the class's own member functions (and friends)
+- `protected`: the class and classes derived from it
 
-Keeping data private lets the class enforce an **invariant**: a rule that is always true for valid objects, such as "balance is never negative". Outside code must go through public functions, which check the rule.
-
-A member function marked `const` after its parameter list promises not to modify the object. You can only call `const` functions on a `const` object:
+The point of `private` is an **invariant**: a rule that is always true for a valid object. For the player, "hp is between 0 and max_hp". If `hp` were public, any line in a 50,000-line game could write `player.hp -= 999` and the rule is gone. With `hp` private, every change goes through `take_damage`, which clamps it.
 
 ```cpp
-const Counter c;
-c.value();  // fine
-c.add();    // compile error: add is not const
+#include <cstdio>
+
+class Player {
+public:
+    void take_damage(int d) {
+        hp_ -= d;
+        if (hp_ < 0) hp_ = 0;          // the invariant lives in one place
+    }
+    bool alive() const { return hp_ > 0; }
+    int hp() const { return hp_; }
+private:
+    int hp_ = 100;
+};
+
+int main() {
+    Player p;
+    p.take_damage(70);
+    p.take_damage(70);                 // overkill
+    std::printf("hp=%d alive=%d\n", p.hp(), p.alive());
+    // p.hp_ = -40;                    // compile error: hp_ is private
+}
 ```
+```text
+hp=0 alive=0
+```
+
+A member function marked `const` after its parameter list promises not to change the object. You can call only `const` functions on a `const` object, so a function that receives `const Player&` can read the player but not hurt it.
 
 ![Class box with public and private sections](/diagrams/cpp-systems/oop/01-classes-and-access.png)
 
 ## Constructors and destructors
 
-A **constructor** has the class name and no return type. It runs when an object is created. A **destructor** is `~Name()` and runs when the object is destroyed.
+A **constructor** has the class name and no return type. It runs when an object is created and makes it valid. A **destructor** is `~Name()` and runs when the object is destroyed.
 
-```cpp
-class Account {
-    std::string owner_;
-    long cents_;
-public:
-    Account(std::string o, long c)
-        : owner_(std::move(o)), cents_(c) {   // initializer list
-        if (cents_ < 0) cents_ = 0;            // body
-    }
-    ~Account() {}
-};
-```
-
-Order of events:
+Order of events in a constructor:
 
 1. Members are initialized in the order they are **declared** in the class, using the **member initializer list** (after the `:`).
 2. Then the constructor body runs.
 
-Prefer the initializer list. Members that are `const` or references can only be set there. Mark one-argument constructors `explicit` so the compiler does not use them for silent conversions.
+```cpp
+#include <cstdio>
+#include <string>
+#include <utility>
+
+class Enemy {
+public:
+    Enemy(std::string name, int hp) : name_(std::move(name)), hp_(hp) {
+        if (hp_ <= 0) hp_ = 1;        // body runs after the members exist
+        std::printf("spawn %s (%d hp)\n", name_.c_str(), hp_);
+    }
+    ~Enemy() { std::printf("despawn %s\n", name_.c_str()); }
+private:
+    std::string name_;
+    int hp_;
+};
+
+int main() {
+    Enemy a("slime", 30);
+    {
+        Enemy b("bat", 0);            // fixed up to 1 hp
+    }                                  // b is destroyed here
+    std::printf("wave over\n");
+}                                      // a is destroyed here
+```
+```text
+spawn slime (30 hp)
+spawn bat (1 hp)
+despawn bat
+wave over
+despawn slime
+```
+
+Prefer the initializer list: members that are `const` or references can only be set there. Mark one-argument constructors `explicit` so the compiler does not use them for silent conversions (an `int` quietly turning into an `Enemy`).
 
 ## static members, operators, friends
 
-A **static** data member belongs to the class, not to each object. There is one copy shared by all objects. A static member function has no `this`, so it can only touch static members.
+A **static** data member belongs to the class, not to each object: one copy shared by all of them. The game uses one to count live enemies. A static member function has no `this`, so it can only touch static members.
+
+**Operator overloading** lets `a + b` call a function you write. Positions are the classic case: `pos + vel * dt` reads like the maths it is.
 
 ```cpp
-struct Id { static int next; int v = next++; };
-int Id::next = 0;
-```
+#include <cstdio>
 
-**Operator overloading** lets `a + b` call a function you write:
-
-```cpp
-struct Money {
-    long cents;
-    Money operator+(Money o) const { return {cents + o.cents}; }
-    bool operator==(const Money&) const = default;
+struct Vec2 {
+    float x = 0, y = 0;
+    Vec2 operator+(Vec2 o) const { return {x + o.x, y + o.y}; }
+    Vec2 operator*(float s) const { return {x * s, y * s}; }
+    bool operator==(const Vec2&) const = default;   // compares x and y
 };
+
+int main() {
+    Vec2 pos{10, 5}, vel{2, -1};
+    float dt = 0.5f;                  // half a second
+    pos = pos + vel * dt;
+    std::printf("(%.1f, %.1f) %d\n", pos.x, pos.y, pos == Vec2{11, 4.5f});
+}
+```
+```text
+(11.0, 4.5) 1
 ```
 
-A **friend** function is declared inside the class with `friend`. It is not a member, but it may read private members. It is used when the left operand is not your class, such as `operator<<` for printing to `std::ostream`.
+A **friend** function is declared inside the class with `friend`. It is not a member, but it may read private members. You need one for `operator<<`, because its left operand is `std::ostream`, not your class.
+
+## Pointers, references and the heap (short version)
+
+Two more pieces of basic syntax appear in every later module, and this module teaches each in its own lesson:
+
+- A **pointer** `Enemy* p` holds the address of an object. `p->hp()` calls through it. It can be `nullptr` and can be changed to point elsewhere.
+- A **reference** `Enemy& r` is another name for an existing object. It cannot be null and cannot be re-seated.
+- A local variable lives on the **stack** and dies at the end of its scope. `new Enemy(...)` creates an object on the **heap**; it lives until someone calls `delete`. Forgetting `delete` leaks; calling it twice crashes.
+
+`const` can be applied to all of them: `const Enemy&` means "read only".
 
 ## Inheritance and virtual functions
 
-**Inheritance** creates a **derived** class that contains everything in a **base** class plus its own members: `class Circle : public Shape`.
+**Inheritance** builds a **derived** class from a **base** class: `class Slime : public Enemy` gets everything `Enemy` has, plus its own members.
 
-A **virtual** function can be replaced (**overridden**) in a derived class. When you call it through a base pointer or reference, the program checks the object's actual type at runtime and calls that type's version. This is **dynamic dispatch**.
+A **virtual** function can be replaced (**overridden**) in a derived class. When you call it through a base pointer or reference, the program checks the object's real type at runtime and calls that type's version. This is **dynamic dispatch**. It lets the game keep every enemy in one list and call `update()` on each, while slimes hop and bats swoop.
 
 ```cpp
+#include <cstdio>
 #include <memory>
+#include <vector>
 
-struct Shape {
-    virtual double area() const = 0;  // pure virtual
-    virtual ~Shape() = default;       // needed!
+struct Enemy {
+    virtual void update() const = 0;  // pure virtual: every enemy must say how it moves
+    virtual ~Enemy() = default;       // needed for delete through Enemy*
 };
-struct Sq : Shape {
-    double s;
-    explicit Sq(double side) : s(side) {}
-    double area() const override { return s * s; }
-};
+struct Slime : Enemy { void update() const override { std::printf("slime hops\n"); } };
+struct Bat : Enemy   { void update() const override { std::printf("bat swoops\n"); } };
 
-double shown() {
-    std::unique_ptr<Shape> p = std::make_unique<Sq>(2);
-    return p->area();   // 4, Sq's version
+int main() {
+    std::vector<std::unique_ptr<Enemy>> wave;
+    wave.push_back(std::make_unique<Slime>());
+    wave.push_back(std::make_unique<Bat>());
+    wave.push_back(std::make_unique<Slime>());
+    for (const auto& e : wave) e->update();   // one loop, three behaviours
 }
 ```
+```text
+slime hops
+bat swoops
+slime hops
+```
 
-`= 0` makes the class **abstract**: you cannot create a plain `Shape`. `override` asks the compiler to check that you really override something. The base destructor must be virtual so deleting through a base pointer runs the derived destructor.
+`= 0` makes the class **abstract**: you cannot create a plain `Enemy`. `override` asks the compiler to check that you really override something. (`std::unique_ptr` is a pointer that deletes its object automatically; the ownership module explains it fully.)
 
 ## How virtual calls work: vtables and slicing
 
-Compilers implement virtual functions with a **vtable**: one table per class holding addresses of its virtual functions. Each object of a class with virtual functions has a hidden pointer, the **vptr**, to its class's table. That adds 8 bytes to the object on x86-64.
+Compilers implement virtual functions with a **vtable**: one table per class holding the addresses of its virtual functions. Each object of such a class has a hidden pointer, the **vptr**, to its class's table. That adds 8 bytes to every object on x86-64.
 
-A call `p->area()` becomes: load the vptr from the object, load the function address from the table slot for `area`, call it. That indirect call usually cannot be inlined, which is the runtime cost of dynamic dispatch.
+A call `e->update()` becomes: load the vptr from the object, load the function address from the `update` slot, call it. That indirect call usually cannot be inlined, which is the runtime cost of dynamic dispatch. For 300 enemies per frame it does not matter. For 100,000 particles it does, which is why the data-oriented design module stores particles differently.
 
-**Object slicing** happens when you copy a derived object into a base **value**:
-
-```cpp
-Sq s; Shape copy = s;   // only the Shape part is copied
-```
-
-The derived members and the derived vptr are lost. Use pointers or references to the base to keep the real type. (Our abstract `Shape` cannot be copied this way at all, which prevents the mistake.)
+**Object slicing** happens when you copy a derived object into a base **value**: only the base part is copied, and the derived data and vptr are lost. Store enemies by pointer or reference to keep their real type. The inheritance lesson shows the slicing bug happening in the spawner.
 
 <MCQ
   id="concept-check"
   prompt="Why should a base class with virtual functions have a virtual destructor?"
   options={["So the class can be copied", "So that deleting a derived object through a base pointer runs the derived destructor", "So static members are shared", "It makes calls faster"]}
   answer={1}
-  explanation="Without it, delete through Shape* only runs ~Shape, which is undefined behaviour for the derived object."
+  explanation="Without it, delete through Enemy* only runs ~Enemy, which is undefined behaviour for the derived object, and the derived members are never cleaned up."
+/>
+
+<Predict
+  id="concept-hp"
+  prompt="`Player p;` starts at 100 hp. The game calls `p.take_damage(30)`, then `p.take_damage(90)`, using the clamping version above. What does `p.hp()` return?"
+  answer={0}
+  tolerance={{"mode": "absolute", "value": 0}}
+  explanation="100 - 30 = 70, then 70 - 90 = -20, which take_damage clamps to 0. The invariant holds because hp_ is private."
+  devices={["phone", "desktop"]}
 />

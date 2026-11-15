@@ -1,53 +1,226 @@
 ---
 id: cpp-systems/01-lifetime/02-rule-of-zero-three-five
 title: "The Rule of 0/3/5"
-estMinutes: 8
+estMinutes: 15
 xp: 90
-fun: 4
-missionIntro: "Own resources in exactly one place. Everyone else gets zero special members."
+fun: 5
+missionIntro: "A sprite sheet owns a raw pixel buffer. Copy it once, carelessly, and the game crashes on level exit. Own resources in exactly one place, write all five special members there, and zero everywhere else."
 keyIdeas:
   - "Rule of zero: classes that hold only RAII members declare no special members (Core Guidelines C.20)."
+  - "Rule of three: a class that frees something in its destructor needs a correct copy constructor and copy assignment too."
   - "Rule of five: if you define or delete one of destructor, copy ctor/assign, move ctor/assign, consider all five (C.21)."
   - "Declaring a destructor or copy operation suppresses the implicit move operations, so moves silently become copies."
 ---
 
-## Zero is the goal
+## The feature: sprite sheets
 
-Make members `std::vector`, `std::string`, `std::unique_ptr`. The compiler generates correct copy, move and destroy, and you write nothing. Only a dedicated resource-owning class should hand-write the five.
+A sprite sheet is one image with every animation frame of a character packed in a grid. The image decoder hands us a raw `new[]`-allocated pixel buffer, and our `SpriteSheet` class owns it. Enemies of the same kind each get their own copy so they can be tinted (red slime, blue slime).
 
-![Shallow copy: two Buffer objects pointing at the same heap block, versus deep copy and move](/diagrams/cpp-systems/01-lifetime/02-rule-of-zero-three-five.png)
+The first version has a destructor, because the buffer must be freed. It does not have anything else.
+
+## The careless version: destructor only
+
+```cpp
+#include <cstdio>
+
+class SpriteSheet {
+public:
+    explicit SpriteSheet(int bytes) : bytes_(bytes), pixels_(new unsigned char[bytes]{}) {}
+    ~SpriteSheet() { delete[] pixels_; }
+    void tint_red() { pixels_[0] = 255; }
+private:
+    int bytes_;
+    unsigned char* pixels_;
+};
+
+int main() {
+    SpriteSheet slime(64 * 64 * 4);
+    SpriteSheet red_slime = slime;     // compiler-written copy: copies the pointer
+    red_slime.tint_red();              // also tints the original
+    std::printf("level exit\n");
+}                                      // both destructors delete[] the same buffer
+```
+```text
+==1==ERROR: AddressSanitizer: attempting double-free on 0x529000000200 in thread T0:
+SUMMARY: AddressSanitizer: double-free ../../../../src/libsanitizer/asan/asan_new_delete.cpp:155 in operator delete[](void*)
+```
+
+## What went wrong
+
+The compiler wrote a copy constructor for us. It copies each member: `bytes_`, and the pointer `pixels_`. So `red_slime.pixels_` and `slime.pixels_` hold the **same address**. This is a **shallow copy**.
+
+Two bugs follow:
+
+1. Tinting the copy also tints the original, because there is only one buffer.
+2. At the end of `main`, both destructors run `delete[]` on the same buffer. That is a double free: undefined behaviour, here caught by AddressSanitizer, in a normal build often a crash on level exit.
+
+The destructor was right. The problem is that a class whose destructor frees something **cannot use the generated copy**.
+
+![Shallow copy: two objects pointing at the same heap block, versus deep copy and move](/diagrams/cpp-systems/01-lifetime/02-rule-of-zero-three-five.png)
+
+## The fix, part 1: rule of three
+
+If a class needs a destructor to free something, it also needs a **copy constructor** and **copy assignment** that make a **deep copy**: a new buffer with the same contents.
+
+```cpp
+#include <algorithm>
+#include <cstdio>
+
+class SpriteSheet {
+public:
+    explicit SpriteSheet(int bytes) : bytes_(bytes), pixels_(new unsigned char[bytes]{}) {}
+    ~SpriteSheet() { delete[] pixels_; }
+    SpriteSheet(const SpriteSheet& o) : bytes_(o.bytes_), pixels_(new unsigned char[o.bytes_]) {
+        std::copy(o.pixels_, o.pixels_ + bytes_, pixels_);
+    }
+    SpriteSheet& operator=(const SpriteSheet& o) {
+        if (this != &o) {
+            unsigned char* fresh = new unsigned char[o.bytes_];
+            std::copy(o.pixels_, o.pixels_ + o.bytes_, fresh);
+            delete[] pixels_;
+            pixels_ = fresh;
+            bytes_ = o.bytes_;
+        }
+        return *this;
+    }
+    void tint_red() { pixels_[0] = 255; }
+    int first() const { return pixels_[0]; }
+private:
+    int bytes_;
+    unsigned char* pixels_;
+};
+
+int main() {
+    SpriteSheet slime(64 * 64 * 4);
+    SpriteSheet red_slime = slime;
+    red_slime.tint_red();
+    std::printf("slime %d, red slime %d\n", slime.first(), red_slime.first());
+}
+```
+```text
+slime 0, red slime 255
+```
+
+The ASan build is now clean: each object frees its own buffer once.
 
 <SpotBug
   id="double-free"
-  prompt="Tap the line where things go wrong."
+  prompt="This pixel buffer has the destructor-only bug. Tap the line where things go wrong."
   code={"struct Buffer {\n    int* data;\n    explicit Buffer(int n) : data(new int[n]) {}\n    ~Buffer() { delete[] data; }\n};\nvoid f() {\n    Buffer a(16);\n    Buffer b = a;\n}"}
   bugLine={8}
   explanation="The implicit copy constructor copies the pointer. Both destructors delete[] the same block. Rule of three/five violated."
   devices={["phone", "desktop"]}
 />
 
+## The fix, part 2: rule of five
+
+Deep copies are correct but slow: 16 KB copied each time. When the level loader builds a sheet and hands it to the renderer, nobody needs the old one. A **move** steals the pointer instead and leaves the source empty. But there is a catch: declaring a destructor or a copy operation **removes the compiler-generated moves**, so a "move" silently copies:
+
+```cpp
+#include <cstdio>
+#include <utility>
+#include <vector>
+
+int g_copies = 0;
+struct Sheet {
+    std::vector<unsigned char> px = std::vector<unsigned char>(16384);
+    Sheet() = default;
+    Sheet(const Sheet& o) : px(o.px) { ++g_copies; }   // user-declared copy...
+    ~Sheet() {}                                        // ...and destructor
+};
+
+int main() {
+    Sheet loaded;
+    Sheet for_renderer = std::move(loaded);            // wants a move
+    std::printf("copies: %d, loaded still has %zu bytes\n", g_copies, loaded.px.size());
+}
+```
+```text
+copies: 1, loaded still has 16384 bytes
+```
+
+So a resource-owning class writes all five: destructor, copy constructor, copy assignment, **move constructor** and **move assignment**. The move module explains moves in detail.
+
 <MCQ
   id="suppressed-move"
-  prompt="You add only a user-declared destructor to a class that has a `std::vector` member. What happens to `T x = std::move(y);`?"
+  prompt="You add only a user-declared destructor (to log \"sheet freed\") to a SpriteSheet that has a `std::vector` member. What happens to `SpriteSheet x = std::move(y);`?"
   options={["It moves as before", "It copies: the implicit move constructor is no longer declared, so overload resolution picks the copy constructor", "It fails to compile", "It's undefined behaviour"]}
   answer={1}
-  explanation="A user-declared destructor suppresses the implicit move ctor and move assignment. The (deprecated) implicit copy still exists, so moves quietly degrade to copies."
+  explanation="A user-declared destructor suppresses the implicit move constructor and move assignment. The (deprecated) implicit copy still exists, so moves quietly degrade to copies."
   devices={["phone", "desktop"]}
 />
 
-## Write the five
+## Rule of zero: the real goal
 
-Source: [C++ Core Guidelines C.20/C.21](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rc-zero), [cppreference: rule of three/five/zero](https://en.cppreference.com/w/cpp/language/rule_of_three)
+The best fix is to not own the raw buffer at all. `std::vector<unsigned char>` already owns a buffer correctly, with deep copies and cheap moves. Build `SpriteSheet` out of it and write **none** of the five:
+
+```cpp
+#include <cstdio>
+#include <utility>
+#include <vector>
+
+class SpriteSheet {
+public:
+    explicit SpriteSheet(int bytes) : pixels_(bytes) {}
+    void tint_red() { pixels_[0] = 255; }
+    int first() const { return pixels_[0]; }
+    std::size_t bytes() const { return pixels_.size(); }
+private:
+    std::vector<unsigned char> pixels_;   // owns, copies and moves itself
+};
+
+int main() {
+    SpriteSheet slime(64 * 64 * 4);
+    SpriteSheet red_slime = slime;               // deep copy, generated
+    red_slime.tint_red();
+    SpriteSheet moved = std::move(red_slime);    // cheap move, generated
+    std::printf("slime %d, moved %d, %zu bytes, source now %zu\n",
+                slime.first(), moved.first(), moved.bytes(), red_slime.bytes());
+}
+```
+```text
+slime 0, moved 255, 16384 bytes, source now 0
+```
+
+Even under AddressSanitizer: no leaks, no double free, and no special members written.
+
+## When to use it, and when not
+
+- **Rule of zero** for almost every class: `Player`, `Level`, `Inventory`, `SpriteSheet`. Members are `std::vector`, `std::string`, `std::unique_ptr`, other rule-of-zero classes.
+- **Rule of five** only in the one small class whose whole job is owning a raw resource that no standard type covers: a GPU texture id, a file descriptor, a buffer from a C library. Keep that class tiny.
+- If a resource cannot sensibly be copied (a GPU texture, a window), `= delete` the copies and write only the moves. That is still "thinking about all five".
+- If you see a destructor in a class review, look for the other four.
+
+## Coding task: write the five
+
+The one class in the engine that is allowed to own a raw buffer.
 
 <Code
   id="buffer-five"
   devices={["desktop"]}
   language="cpp"
-  prompt="Implement `Buffer`, an owning `int` array with `size()`, `operator[]`, deep copy, and noexcept moves that leave the source empty (size 0, null data). Use copy-and-swap or write each one."
+  prompt="The engine's raw resource class: implement `Buffer`, an owning `int` array (the tile map stores tile ids in one) with `size()`, `operator[]`, deep copy, and noexcept moves that leave the source empty (size 0, null data). Use copy-and-swap or write each one."
   starter={"#include <cstddef>\n#include <utility>\nclass Buffer {\npublic:\n    explicit Buffer(std::size_t n = 0) : n_(n), p_(n ? new int[n]() : nullptr) {}\n    ~Buffer() { delete[] p_; }\n    // TODO: copy ctor, copy assign, move ctor, move assign\n    std::size_t size() const { return n_; }\n    int& operator[](std::size_t i) { return p_[i]; }\n    const int* data() const { return p_; }\nprivate:\n    std::size_t n_;\n    int* p_;\n};\n"}
   visibleTests={"#include \"check.h\"\n\nint main() {\n    Buffer a(3); a[0] = 7;\n    Buffer b = a; b[0] = 9;\n    CHECK(a[0] == 7);\n    return 0;\n}\n"}
   tests={"#include \"check.h\"\n\n#include <type_traits>\nint main() {\n    Buffer a(3); a[0] = 7;\n    Buffer b = a; b[0] = 9;\n    CHECK(a[0] == 7 && b[0] == 9 && b.data() != a.data());\n    Buffer c = std::move(b);\n    CHECK(c.size() == 3 && c[0] == 9 && b.size() == 0 && b.data() == nullptr);\n    Buffer d; d = a; CHECK(d.size() == 3 && d[0] == 7 && d.data() != a.data());\n    d = std::move(c); CHECK(d[0] == 9);\n    d = d; CHECK(d[0] == 9);\n    static_assert(std::is_nothrow_move_constructible_v<Buffer>);\n    return 0;\n}\n"}
   solution={"#include <cstddef>\n#include <utility>\n#include <algorithm>\nclass Buffer {\npublic:\n    explicit Buffer(std::size_t n = 0) : n_(n), p_(n ? new int[n]() : nullptr) {}\n    ~Buffer() { delete[] p_; }\n    Buffer(const Buffer& o) : n_(o.n_), p_(o.n_ ? new int[o.n_] : nullptr) { std::copy(o.p_, o.p_ + o.n_, p_); }\n    Buffer(Buffer&& o) noexcept : n_(std::exchange(o.n_, 0)), p_(std::exchange(o.p_, nullptr)) {}\n    Buffer& operator=(Buffer o) noexcept { swap(o); return *this; }\n    void swap(Buffer& o) noexcept { std::swap(n_, o.n_); std::swap(p_, o.p_); }\n    std::size_t size() const { return n_; }\n    int& operator[](std::size_t i) { return p_[i]; }\n    const int* data() const { return p_; }\nprivate:\n    std::size_t n_;\n    int* p_;\n};\n"}
   hints={["std::exchange makes moves one-liners.", "Copy-and-swap handles self-assignment for free."]}
-  explanation="The by-value operator= serves as both copy and move assignment."
+  explanation="The by-value operator= serves as both copy and move assignment. This is the one class that writes all five so that Level, Chunk and friends can follow the rule of zero."
+/>
+
+## Coding task: fix the live-enemy count
+
+The OOP module's enemy counter had a hole: copying an enemy did not count the copy, but the copy's destructor still subtracted one.
+
+<Code
+  id="enemy-rule-of-three"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="`g_live` must always equal the number of Enemy objects alive. Write `class Enemy` with `explicit Enemy(int hp)`, `int hp() const`, and the special members needed so that construction, copying and destruction all keep `g_live` right. Copy assignment must copy hp but must not change the count (no new object is created)."
+  starter={"extern int g_live;\nclass Enemy {\npublic:\n    explicit Enemy(int hp) : hp_(hp) { ++g_live; }\n    ~Enemy() { --g_live; }\n    int hp() const { return hp_; }\nprivate:\n    int hp_;\n};\n"}
+  visibleTests={"#include \"check.h\"\nint g_live = 0;\nint main() {\n    {\n        Enemy a(30);\n        Enemy b = a;\n        CHECK(g_live == 2);\n    }\n    CHECK(g_live == 0);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <vector>\nint g_live = 0;\nint main() {\n    {\n        Enemy a(30);\n        CHECK(g_live == 1);\n        Enemy b = a;\n        CHECK(g_live == 2 && b.hp() == 30);\n        Enemy c(5);\n        c = a;\n        CHECK(g_live == 3 && c.hp() == 30);\n        std::vector<Enemy> wave(4, Enemy(12));\n        CHECK(g_live == 7 && wave[3].hp() == 12);\n        wave.push_back(a);\n        CHECK(g_live == 8);\n    }\n    CHECK(g_live == 0);\n    return 0;\n}\n"}
+  solution={"extern int g_live;\nclass Enemy {\npublic:\n    explicit Enemy(int hp) : hp_(hp) { ++g_live; }\n    Enemy(const Enemy& o) : hp_(o.hp_) { ++g_live; }\n    Enemy& operator=(const Enemy& o) { hp_ = o.hp_; return *this; }\n    ~Enemy() { --g_live; }\n    int hp() const { return hp_; }\nprivate:\n    int hp_;\n};\n"}
+  hints={["The destructor does --g_live, so every constructor, including the copy constructor, must do ++g_live.", "Copy assignment overwrites an existing object: copy hp_, leave g_live alone, return *this."]}
+  explanation="Rule of three: once the destructor does something, the copy constructor and copy assignment must cooperate with it. The compiler-generated copy constructor copied hp_ and skipped the ++."
 />

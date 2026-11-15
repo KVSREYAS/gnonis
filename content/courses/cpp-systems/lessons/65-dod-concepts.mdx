@@ -1,89 +1,127 @@
 ---
 id: cpp-systems/07-dod/00-concepts
 title: "Concepts: Data-Oriented Design"
-estMinutes: 8
+estMinutes: 13
 xp: 40
-fun: 1
-missionIntro: "Organise data by how it is processed, so the CPU loads only bytes it uses and branches predictably."
+fun: 2
+missionIntro: "Milestone 8 of Slime Siege: the particle system and the entity-component-system. Organise data by how it is processed, so the CPU loads only bytes it uses and branches predictably."
 keyIdeas:
   - "Data-oriented design picks a memory layout based on which fields each loop reads."
   - "AoS stores whole objects together. SoA stores each field in its own array."
   - "Hot/cold splitting moves rarely used fields out of the frequently scanned data."
   - "A mispredicted branch costs about 15-20 cycles. Predictable or branchless code avoids it."
 ---
+## Milestone 8: particles and ECS
+
+**What we build this module:** a particle system that runs 1,000,000 particles (explosions, rain, slime splatter) inside the frame budget, and an **entity-component-system** (ECS): the way most modern engines store game objects, as ids plus arrays of components.
+
+**Why the game needs it:** the OOP module gave every game object a class, a virtual `update()`, and a heap allocation. That is fine for the 50 objects of a menu screen. For a million particles it is the bottleneck: the CPU spends its time fetching scattered objects and jumping through vtables rather than doing the two additions per particle we actually asked for.
+
+## The careless version: one object per particle
+
+```cpp
+#include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <memory>
+#include <random>
+#include <vector>
+
+struct Particle {                        // the OOP way: a class per particle
+    virtual ~Particle() = default;
+    virtual void update(float dt) = 0;
+};
+struct Spark : Particle {
+    float x = 0, y = 0, vx = 1, vy = 2, life = 5; char debug_name[32] = "spark";
+    void update(float dt) override { x += vx * dt; y += vy * dt; life -= dt; }
+};
+
+int main() {
+    const int N = 1'000'000;
+    std::vector<std::unique_ptr<Particle>> oop;
+    std::vector<std::unique_ptr<char[]>> other;          // other allocations in between, as in a real game
+    std::mt19937 rng(3);
+    for (int i = 0; i < N; ++i) { oop.push_back(std::make_unique<Spark>()); other.push_back(std::make_unique<char[]>(rng() % 200)); }
+    std::shuffle(oop.begin(), oop.end(), rng);           // spawn and death order mixes them up
+
+    std::vector<float> x(N), y(N), vx(N, 1), vy(N, 2), life(N, 5);   // the data-oriented way
+
+    auto t0 = std::chrono::steady_clock::now();
+    for (auto& p : oop) p->update(0.016f);
+    auto t1 = std::chrono::steady_clock::now();
+    for (int i = 0; i < N; ++i) { x[i] += vx[i] * 0.016f; y[i] += vy[i] * 0.016f; life[i] -= 0.016f; }
+    auto t2 = std::chrono::steady_clock::now();
+    auto ms = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };
+    std::printf("objects + virtual update: %.2f ms\n", ms(t1 - t0));
+    std::printf("plain arrays:             %.2f ms\n", ms(t2 - t1));
+    std::printf("(check: %.3f)\n", x[N / 2]);
+}
+```
+```text
+objects + virtual update: 16.42 ms
+plain arrays:             1.44 ms
+(check: 0.016)
+```
+
+(One run on the course machine. The ratio is what matters, and it grows with N.)
+
+## What went wrong
+
+Same arithmetic, very different time. In the object version, each particle is a separate heap block of 64 bytes, at a scattered address. For each one the CPU loads the pointer, then the object (usually a cache miss), then the vtable pointer, then makes an indirect call. Of the 64 bytes loaded, the update uses 20.
+
+The array version walks five arrays front to back. Every byte loaded is used, the prefetcher keeps up, and the compiler turns the loop into SIMD instructions that process 4 or 8 particles at a time.
+
 ## The idea
 
 Object-oriented code groups data by what it **is**: one `Particle` object with every field. **Data-oriented design** groups data by what the code **does** with it.
 
-The reason is the cache line. When a loop reads only `x` from each particle, every other field in the line is loaded too and then ignored. Those bytes still cost memory bandwidth.
-
-The method:
-
-1. List the hot loops (where time goes).
+1. List the hot loops (where frame time goes).
 2. For each, list the fields it reads and writes.
-3. Lay out memory so that those fields are packed together and nothing else is in between.
+3. Lay out memory so those fields are packed together with nothing in between.
+
+"Where there is one, there are many": design for the loop over all particles, not for one particle.
 
 ## AoS and SoA
 
-**Array of Structures (AoS)**:
+**Array of Structures (AoS)**: `std::vector<Particle>`, each element with all fields. A loop that reads only `x` still loads every other field.
 
-```cpp
-struct P { float x, y, z, mass; int id; char name[44]; };  // 64 bytes
-std::vector<P> ps;
-for (auto& p : ps) p.x += 1.0f;  // uses 4 of every 64 bytes
-```
+**Structure of Arrays (SoA)**: one array per field, `std::vector<float> x, y, vx, vy`. A loop over `x` uses every byte it loads, and is easy to turn into SIMD.
 
-**Structure of Arrays (SoA)**:
-
-```cpp
-struct Ps { std::vector<float> x, y, z, mass; std::vector<int> id; };
-Ps ps;
-for (float& x : ps.x) x += 1.0f;  // uses 64 of every 64 bytes
-```
-
-The SoA loop reads 16 times less memory for this update and is easy for the compiler to turn into SIMD instructions.
-
-AoS is still better when every access needs all fields of one item, such as looking up one record by index.
+AoS is still better when every access needs all fields of one item, such as looking up one enemy by index for the inspector panel.
 
 ![AoS vs SoA memory layout](/diagrams/cpp-systems/07-dod/01-aos-vs-soa.png)
 
 ## Hot and cold fields
 
-A **hot** field is read in the frequent loop. A **cold** field is read rarely, such as a debug name or creation time.
-
-**Hot/cold splitting** keeps hot fields in a compact struct and moves cold ones to a separate array, linked by index:
-
-```cpp
-struct OrderHot  { uint32_t price; uint32_t qty; };   // 8 bytes
-struct OrderCold { std::string client; std::string note; };
-std::vector<OrderHot>  hot;   // scanned every tick
-std::vector<OrderCold> cold;  // cold[i] matches hot[i]
-```
-
-Now eight orders fit in one cache line instead of perhaps one.
+A **hot** field is read every frame (position, hp). A **cold** field is read rarely (the enemy's display name, its loot table, debug info). **Hot/cold splitting** keeps the hot fields in a compact array and moves the cold ones to a parallel array, linked by index. More enemies fit per cache line, and the hot loop stops loading names it never reads.
 
 ## Branches and prediction
 
-A CPU runs many instructions ahead before it knows which way an `if` goes. The **branch predictor** guesses from past behaviour. A correct guess is free. A wrong guess throws away the speculative work, costing roughly 15-20 cycles.
+A CPU runs many instructions ahead before it knows which way an `if` goes. The **branch predictor** guesses from past behaviour. A correct guess is free; a wrong one throws away the speculative work, roughly 15-20 cycles. A branch on random data (`if (particle.alive)` with alive particles scattered randomly) is mispredicted about half the time. Fixes: keep the data sorted or partitioned (all live particles first), or compute without a branch.
 
-- A branch that is almost always the same way is predicted well.
-- A branch on random data (50/50) is mispredicted about half the time.
+## Entity-component-system
 
-Classic example: summing values above 128 is much faster on sorted input than on shuffled input, though the arithmetic is identical.
+An **ECS** applies all of this to game objects:
 
-Fixes:
+- An **entity** is just an id (an integer).
+- A **component** is plain data: `Position`, `Velocity`, `Health`, `Sprite`. Each component type is stored in its own dense array.
+- A **system** is a loop over every entity that has a given set of components: the movement system reads Position and Velocity.
 
-```cpp
-sum += (v >= 128) ? v : 0;     // often becomes a conditional move
-sum += v & -(v >= 128);        // explicit branchless mask
-```
-
-Or sort or partition the data first so the branch becomes predictable.
+A "flying, shooting slime" is not a class; it is an entity with Position, Velocity, Flying and Weapon components. The ECS lesson in this module builds the core of one.
 
 <MCQ
   id="concept-check"
-  prompt="A loop reads only `x` from a 64-byte AoS struct. Roughly how much of each loaded cache line is used?"
+  prompt="A particle loop reads only `x` from a 64-byte AoS struct. Roughly how much of each loaded cache line is used?"
   options={["All of it", "Half", "About 1/16 (4 of 64 bytes)", "None"]}
   answer={2}
   explanation="One 4-byte float per 64-byte line. SoA would use the whole line."
+/>
+
+<MCQ
+  id="concept-ecs"
+  prompt="In an ECS, the designers want a new enemy: a turret that can also fly. What do you add?"
+  options={["A FlyingTurret class inheriting from Turret and Flyer", "Nothing new: an entity with the Turret, Weapon and Flying components", "A virtual canFly() to the Enemy base class", "A new system written just for flying turrets"]}
+  answer={1}
+  explanation="In an ECS, behaviour comes from which components an entity has. The existing flying system and turret system both pick it up automatically."
+  devices={["phone", "desktop"]}
 />

@@ -1,20 +1,31 @@
 id: cpp-systems
 title: C++ for Systems & Performance
-description: Intermediate C++ for systems and performance work, aimed at LLM inference.
-  RAII and move semantics, ownership, templates and constexpr, memory layout, data-oriented
-  design, undefined behaviour, the memory model, SIMD, profiling and the building
-  blocks of an inference engine, ending with a forward pass in plain C++.
+description: 'Intermediate C++ taught by building one game, Slime Siege, a 2D top-down game engine. Each
+  module adds a feature (entities, resource handles, the spawner, inventory, a particle system, background
+  loading, a job system, an NPC brain) and teaches the C++ that feature needs: classes, RAII and move
+  semantics, smart pointers, templates, the STL, memory layout, data-oriented design, undefined behaviour,
+  concurrency, SIMD and profiling. Every concept comes with the careless version, what breaks, the fix,
+  and a worked example.'
 order: 3
 cover: tower
 prerequisites: []
-tagline: From RAII to a forward pass.
+tagline: Build a game engine, one C++ feature at a time.
 level: intermediate
 category: cs
 lessons:
+- oop-concepts
+- classes-and-access
+- constructors-and-destructors
+- static-operators-and-friends
+- stack-heap-and-pointers
+- references-and-const
+- inheritance-and-polymorphism
+- boss-class-act-garage
 - lifetime-concepts
 - raii-scope-guards
 - rule-of-zero-three-five
 - lifetime-and-dangling
+- exceptions-and-error-handling
 - boss-lifetime-lane
 - move-concepts
 - value-categories
@@ -26,12 +37,6 @@ lessons:
 - shared-ptr-control-block
 - weak-ptr-and-cycles
 - boss-pointer-projects
-- oop-concepts
-- classes-and-access
-- constructors-and-destructors
-- static-operators-and-friends
-- inheritance-and-polymorphism
-- boss-class-act-garage
 - templates-concepts
 - templates-and-deduction
 - concepts-and-constraints
@@ -41,6 +46,9 @@ lessons:
 - containers-and-invalidation
 - algorithms-and-ranges
 - views-span-and-string-view
+- lambdas-and-callbacks
+- optional-and-variant
+- maps-and-hashing
 - boss-stl-strip
 - layout-concepts
 - sizeof-padding-alignment
@@ -51,6 +59,7 @@ lessons:
 - aos-vs-soa
 - hot-cold-splitting
 - branches-and-predictability
+- entity-component-system
 - boss-dod-docks
 - ub-concepts
 - ub-catalogue
@@ -61,6 +70,7 @@ lessons:
 - threads-and-jthread
 - atomics-and-memory-order
 - false-sharing
+- mutexes-and-condition-variables
 - boss-concurrency-casino
 - simd-concepts
 - auto-vectorization
@@ -83,11 +93,29 @@ lessons:
 - softmax-and-sampling
 - boss-capstone-heist
 districts:
+- id: oop
+  title: Object-oriented programming
+  district: Object-oriented programming
+  summary: 'Milestone 1: entities. Slimes, the player and pickups as classes: access, constructors and
+    destructors, static members and operators, stack vs heap, references and const, then inheritance and
+    virtual functions for every kind of enemy.'
+  tip: 'TIP: Data private, methods public, destructors virtual in base classes.'
+  art: docks
+  status: ready
+  lessons:
+  - oop-concepts
+  - classes-and-access
+  - constructors-and-destructors
+  - static-operators-and-friends
+  - stack-heap-and-pointers
+  - references-and-const
+  - inheritance-and-polymorphism
+  - boss-class-act-garage
 - id: 01-lifetime
   title: Lifetime and RAII
   district: Lifetime and RAII
-  summary: Destructors run on every path out of scope. Make cleanup automatic, then
-    never write delete again.
+  summary: 'Milestone 2: engine resources. Textures, sound handles and files that clean up after themselves
+    on every path, dangling references, and exceptions that don''t leak.'
   tip: 'TIP: If you write a destructor, you probably need the other four. Or none of them.'
   art: skyline
   status: ready
@@ -96,12 +124,13 @@ districts:
   - raii-scope-guards
   - rule-of-zero-three-five
   - lifetime-and-dangling
+  - exceptions-and-error-handling
   - boss-lifetime-lane
 - id: 02-move
   title: Move semantics
   district: Move semantics
-  summary: 'Value categories, std::move, noexcept, and perfect forwarding: transferring
-    resources instead of copying them.'
+  summary: 'Milestone 3: loading levels fast. Move tile maps and asset buffers instead of copying them:
+    value categories, std::move, noexcept and perfect forwarding.'
   tip: 'TIP: std::move doesn''t move. It casts.'
   art: docks
   status: ready
@@ -114,8 +143,8 @@ districts:
 - id: 03-ownership
   title: Smart-pointer ownership
   district: Smart-pointer ownership
-  summary: 'unique_ptr, shared_ptr and weak_ptr: who owns what, what it costs, and
-    how cycles leak.'
+  summary: 'Milestone 4: the spawner and shared assets. Who owns each slime, each texture and each target
+    lock: unique_ptr, shared_ptr, weak_ptr and the cycles that leak.'
   tip: 'TIP: Default to unique_ptr. Share only when ownership really is shared.'
   art: grid
   status: ready
@@ -125,25 +154,11 @@ districts:
   - shared-ptr-control-block
   - weak-ptr-and-cycles
   - boss-pointer-projects
-- id: oop
-  title: Object-oriented programming
-  district: Object-oriented programming
-  summary: Classes and access, constructors and destructors, static members, operators and friends, then inheritance and virtual functions.
-  tip: 'TIP: Data private, methods public, destructors virtual in base classes.'
-  art: docks
-  status: ready
-  lessons:
-  - oop-concepts
-  - classes-and-access
-  - constructors-and-destructors
-  - static-operators-and-friends
-  - inheritance-and-polymorphism
-  - boss-class-act-garage
 - id: 04-templates
   title: Templates and compile time
   district: Templates and compile time
-  summary: Deduction, concepts and constexpr. Make the compiler do the work and the
-    error messages readable.
+  summary: 'Milestone 5: generic engine parts. One lerp, one area-of-effect query and one XP table for
+    every type, with concepts for readable errors and constexpr for work done at compile time.'
   tip: 'TIP: Constrain templates with concepts. The error messages get much shorter.'
   art: tower
   status: ready
@@ -156,8 +171,8 @@ districts:
 - id: 05-stl
   title: Containers, algorithms and views
   district: Containers, algorithms and views
-  summary: Pick containers by access pattern, use algorithms and ranges, and pass
-    span and string_view.
+  summary: 'Milestone 6: entity lists, inventory and events. Containers and invalidation, algorithms,
+    spans, lambdas as callbacks, optional and variant events, and hash maps for the spatial grid.'
   tip: 'TIP: reserve() before a known-size push_back loop.'
   art: pier
   status: ready
@@ -166,11 +181,15 @@ districts:
   - containers-and-invalidation
   - algorithms-and-ranges
   - views-span-and-string-view
+  - lambdas-and-callbacks
+  - optional-and-variant
+  - maps-and-hashing
   - boss-stl-strip
 - id: 06-layout
   title: Memory layout
   district: Memory layout
-  summary: 'Padding, alignment and cache lines: where your bytes really live.'
+  summary: 'Milestone 7: component layout. Where an enemy''s bytes really live: padding, alignment, cache
+    lines and a flat tile map.'
   tip: 'TIP: Order members largest alignment first.'
   art: bridge
   status: ready
@@ -183,7 +202,8 @@ districts:
 - id: 07-dod
   title: Data-oriented design
   district: Data-oriented design
-  summary: AoS vs SoA, hot/cold splitting and branchless code. Design for the batch.
+  summary: 'Milestone 8: particles and ECS. Thousands of particles as arrays of fields, hot/cold splitting,
+    predictable branches and an entity component system.'
   tip: 'TIP: Store fields that are processed together in their own arrays.'
   art: docks
   status: ready
@@ -192,12 +212,13 @@ districts:
   - aos-vs-soa
   - hot-cold-splitting
   - branches-and-predictability
+  - entity-component-system
   - boss-dod-docks
 - id: 08-ub
   title: Undefined behaviour
   district: Undefined behaviour
-  summary: The optimiser assumes UB never happens. Learn the catalogue, pun legally,
-    and run sanitizers.
+  summary: 'Milestone 9: crash hunting in release. Bugs that only appear with optimisation on: the UB
+    catalogue, aliasing and bit_cast for network packets, and sanitizers.'
   tip: 'TIP: -fsanitize=address,undefined in every test build.'
   art: desert
   status: ready
@@ -210,7 +231,8 @@ districts:
 - id: 09-concurrency
   title: Concurrency and the memory model
   district: Concurrency and the memory model
-  summary: jthread, mutexes, atomics, acquire/release and false sharing.
+  summary: 'Milestone 10: the asset loading thread. Load the next level without freezing frames: jthread,
+    atomics, mutexes and condition variables, and false sharing.'
   tip: 'TIP: Release publishes, acquire receives.'
   art: skyline
   status: ready
@@ -219,11 +241,13 @@ districts:
   - threads-and-jthread
   - atomics-and-memory-order
   - false-sharing
+  - mutexes-and-condition-variables
   - boss-concurrency-casino
 - id: 10-simd
   title: SIMD
   district: SIMD
-  summary: Auto-vectorisation, SSE intrinsics, and accumulators that hide latency.
+  summary: 'Milestone 11: particle physics for every explosion. Four particles per instruction: auto-vectorisation,
+    SSE intrinsics with a tail loop, and accumulators for energy totals.'
   tip: 'TIP: Vector body, scalar tail.'
   art: hills
   status: ready
@@ -236,7 +260,8 @@ districts:
 - id: 11-perf
   title: Profiling and benchmarking
   district: Profiling and benchmarking
-  summary: Benchmarks that don't lie, perf and flame graphs, and reading the assembly.
+  summary: 'Milestone 12: a steady 60 FPS. Frame-time reports, benchmarks that don''t lie, zone timers
+    and profilers, and reading the assembly of hot loops.'
   tip: 'TIP: Measure, explain, then optimise.'
   art: pier
   status: ready
@@ -249,8 +274,9 @@ districts:
 - id: 12-building-blocks
   title: Systems building blocks
   district: Systems building blocks
-  summary: Arena allocators, a lock-free SPSC ring, a thread pool and object pools.
-  tip: 'TIP: Bump-allocate per step, then reset.'
+  summary: 'Milestone 13: the engine core. A frame arena, a lock-free audio command queue, a job system
+    for AI and a projectile pool.'
+  tip: 'TIP: Bump-allocate per frame, then reset.'
   art: grid
   status: ready
   lessons:
@@ -262,8 +288,9 @@ districts:
 - id: 13-capstone
   title: 'Capstone: inference in C++'
   district: 'Capstone: inference in C++'
-  summary: Tensors and strides, tiled matmul, stable softmax and a full forward pass.
-  tip: 'TIP: Decode is bandwidth-bound. Count the bytes.'
+  summary: 'Milestone 14: the slime king''s brain. A tiny neural network picks the boss''s moves: tensors
+    and strides, tiled matmul, stable softmax and sampling. The same pieces run a language model.'
+  tip: 'TIP: Subtract the max before exp. Always.'
   art: tower
   status: ready
   lessons:

@@ -1,25 +1,89 @@
 ---
 id: cpp-systems/05-stl/03-views-span-and-string-view
 title: "span, string_view and Non-Owning Views"
-estMinutes: 7
+estMinutes: 13
 xp: 90
-fun: 4
-missionIntro: "Pass contiguous data as std::span and text as std::string_view: one signature for arrays, vectors and buffers, with no copies."
+fun: 5
+missionIntro: "A damage function that takes a pointer and a count gets called with the wrong count and writes past the boss's armour array. Pass contiguous data as std::span and text as std::string_view: one signature for arrays, vectors and buffers, with no copies."
 keyIdeas:
   - "std::span<T> is a pointer plus a size (16 bytes with dynamic extent). It views any contiguous range."
   - "std::string_view is the same idea for characters, 16 bytes on x86-64."
   - "Both are cheap to pass by value and must never outlive the data they view."
 ---
 
-## Sizes
+## The feature: one damage function for every hp array
 
+Slimes keep their hp in a `std::vector<int>`. The boss has a fixed `int armor[4]` (one per body part). The particle system has a raw buffer from the frame allocator. All of them need "subtract damage from these hp values".
 
+## The careless version: pointer plus count
+
+```cpp
+#include <cstdio>
+
+struct Boss { int armor[4] = {50, 50, 50, 50}; int hp = 500; };
+
+void apply_damage(int* hp, int count, int dmg) {
+    for (int i = 0; i < count; ++i) hp[i] -= dmg;
+}
+
+int main() {
+    Boss* boss = new Boss;
+    int slime_hp[8] = {20, 20, 20, 20, 20, 20, 20, 20};
+    apply_damage(slime_hp, 8, 5);
+    apply_damage(boss->armor, 8, 5);    // copy-pasted the 8 from the line above
+    std::printf("boss hp %d\n", boss->hp);
+    delete boss;
+}
+```
+```text
+==1==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x503000000054 at pc 0x55c869b44297 bp 0x7ffe7b1468d0 sp 0x7ffe7b1468c8
+SUMMARY: AddressSanitizer: heap-buffer-overflow game.cpp:6 in apply_damage(int*, int, int)
+```
+
+## What went wrong
+
+The function got a pointer and a separate count, and nothing connected the two. The second call passed 8 for a 4-element array. The fifth write landed on `hp`, right after `armor` in the same object: the boss lost 5 hp from an attack that should only hit armour. ASan cannot see that one, because it is still inside the `Boss` allocation. It caught the sixth write, past the end of the object. Without ASan, writes six to eight would silently corrupt whatever lives next on the heap.
+
+The count is information the compiler already had, for both the vector and the array. Passing it by hand is where the bug came in.
+
+## The fix: std::span
+
+`std::span<int>` is a pointer and a size **in one object**, built from the container itself:
+
+```cpp
+#include <cstdio>
+#include <span>
+#include <vector>
+
+struct Boss { int armor[4] = {50, 50, 50, 50}; int hp = 500; };
+
+void apply_damage(std::span<int> hp, int dmg) {
+    for (int& h : hp) h -= dmg;
+}
+
+int main() {
+    Boss boss;
+    std::vector<int> slime_hp(8, 20);
+    apply_damage(slime_hp, 5);           // size from the vector
+    apply_damage(boss.armor, 5);         // size from the array type: 4
+    apply_damage(std::span(slime_hp).first(2), 10);   // only the first two slimes
+    std::printf("armor[3] %d, boss hp %d, slime 0: %d, slime 7: %d\n",
+                boss.armor[3], boss.hp, slime_hp[0], slime_hp[7]);
+}
+```
+```text
+armor[3] 45, boss hp 500, slime 0: 5, slime 7: 15
+```
+
+No count to get wrong. `first(n)`, `last(n)` and `subspan(off, n)` make smaller views of the same data.
 
 ![A std::span as pointer+length windowing into part of a larger float buffer](/diagrams/cpp-systems/05-stl/03-views-span-and-string-view.png)
 
+`span<int>` lets the function write; `span<const int>` makes it read-only. A `span<int>` converts to `span<const int>`, not the other way.
+
 <Trace
   id="view-sizes"
-  prompt="x86-64 Linux, libstdc++."
+  prompt="x86-64 Linux, libstdc++. The sizes of the views the engine passes around."
   code={"#include <cstdio>\n#include <span>\n#include <string>\n#include <string_view>\nint main() {\n    std::printf(\"%zu %zu %zu %zu\", sizeof(std::span<float>), sizeof(std::span<float, 4>),\n                sizeof(std::string_view), sizeof(std::string));\n}"}
   steps={[{"line": 6, "note": "span: pointer + size; fixed-extent span: pointer only"}, {"line": 7, "note": "string_view: 16; std::string: 32 with small-string buffer"}]}
   question="What does it print?"
@@ -30,26 +94,58 @@ keyIdeas:
 
 <MCQ
   id="span-from"
-  prompt="Which can implicitly convert to `std::span<const float>`?"
+  prompt="Which can implicitly convert to `std::span<const float>` (the physics step's input)?"
   options={["std::vector<float>", "float[8]", "std::array<float, 8>", "All of them"]}
   answer={3}
   explanation="Any contiguous range of float with a known size."
   devices={["phone", "desktop"]}
 />
 
-## A span-based kernel
+## string_view for names
+
+`std::string_view` is the same idea for text: a `const char*` and a length. A function like `bool is_boss(std::string_view name)` accepts a `std::string`, a string literal, or part of a larger string, with no allocation.
+
+The danger is the same as every view: the text must outlive it. `std::string_view name = make_name();` (a function returning `std::string`) dangles at the semicolon. The lifetime module covered this bug in detail.
+
+## When to use it, and when not
+
+- Use `std::span<T>` / `std::span<const T>` for function parameters that read or write a contiguous sequence they do not own.
+- Use `std::string_view` for read-only text parameters.
+- Do not store a span or string_view in an object that may outlive the data (a member of a long-lived class, a lambda saved for later). Store a `std::vector` or `std::string` there.
+- A span cannot grow. If the function must add elements, take `std::vector<T>&`.
+
+## Coding task: physics kernels
 
 Sources: [cppreference: std::span](https://en.cppreference.com/w/cpp/container/span), Core Guidelines I.13 (don't pass an array as a single pointer)
+
+The physics step multiplies and adds arrays of floats: velocity times time, plus position.
 
 <Code
   id="span-dot"
   devices={["desktop"]}
   language="cpp"
-  prompt="Write `float dot(std::span<const float> a, std::span<const float> b)`. It returns the dot product and throws std::invalid_argument if the sizes differ. Also write `void axpy(float alpha, std::span<const float> x, std::span<float> y)` computing y += alpha·x (same size check)."
+  prompt="Write `float dot(std::span<const float> a, std::span<const float> b)`. It returns the dot product and throws std::invalid_argument if the sizes differ. Also write `void axpy(float alpha, std::span<const float> x, std::span<float> y)` computing y += alpha·x (same size check). The physics step calls axpy(dt, velocity, position)."
   starter={"#include <span>\n#include <stdexcept>\nfloat dot(std::span<const float> a, std::span<const float> b) { return 0; }\nvoid axpy(float alpha, std::span<const float> x, std::span<float> y) {}\n"}
   visibleTests={"#include \"check.h\"\n\n#include <vector>\nint main() {\n    std::vector<float> a{1, 2, 3};\n    float b[3] = {4, 5, 6};\n    CHECK(dot(a, b) == 32);\n    return 0;\n}\n"}
   tests={"#include \"check.h\"\n\n#include <vector>\n#include <array>\nint main() {\n    std::vector<float> a{1, 2, 3};\n    float b[3] = {4, 5, 6};\n    std::array<float, 3> c{1, 1, 1};\n    CHECK(dot(a, b) == 32 && dot(c, a) == 6);\n    axpy(2, a, c); CHECK(c[0] == 3 && c[2] == 7);\n    CHECK(dot(std::span<const float>(a).subspan(1), std::span<const float>(b, 2)) == 2 * 4 + 3 * 5);\n    bool threw = false; try { dot(a, std::span<const float>(b, 2)); } catch (const std::invalid_argument&) { threw = true; }\n    CHECK(threw);\n    return 0;\n}\n"}
   solution={"#include <span>\n#include <stdexcept>\nfloat dot(std::span<const float> a, std::span<const float> b) {\n    if (a.size() != b.size()) throw std::invalid_argument(\"size mismatch\");\n    float s = 0;\n    for (std::size_t i = 0; i < a.size(); ++i) s += a[i] * b[i];\n    return s;\n}\nvoid axpy(float alpha, std::span<const float> x, std::span<float> y) {\n    if (x.size() != y.size()) throw std::invalid_argument(\"size mismatch\");\n    for (std::size_t i = 0; i < x.size(); ++i) y[i] += alpha * x[i];\n}\n"}
   hints={["span<float> converts to span<const float>, but not the other way."]}
-  explanation="Every kernel in the capstone takes spans, so callers can pass vectors, arrays or slices of a big buffer."
+  explanation="Callers can pass vectors, arrays or slices of a big buffer. The capstone's neural network kernels take spans for the same reason."
+/>
+
+## Coding task: splash damage on a slice
+
+A ground slam hits the enemies standing near the impact point in a lane, and must not touch memory outside the lane.
+
+<Code
+  id="splash-span"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `int splash(std::span<int> hp, std::size_t center, std::size_t radius, int dmg)`. Enemies stand in a row; damage the enemies from index center - radius to center + radius inclusive, clamped to the array. Return how many of those were alive before and are dead (hp <= 0) after. Use subspan, and never index outside hp. If center is outside the array, do nothing and return 0."
+  starter={"#include <algorithm>\n#include <span>\nint splash(std::span<int> hp, std::size_t center, std::size_t radius, int dmg) {\n    return 0;\n}\n"}
+  visibleTests={"#include \"check.h\"\n#include <vector>\nint main() {\n    std::vector<int> row{10, 10, 10, 10, 10};\n    CHECK(splash(row, 2, 1, 10) == 3 && row[0] == 10 && row[4] == 10);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <vector>\nint main() {\n    std::vector<int> row{10, 10, 10, 10, 10};\n    CHECK(splash(row, 2, 1, 10) == 3);\n    CHECK(row[0] == 10 && row[1] == 0 && row[2] == 0 && row[3] == 0 && row[4] == 10);\n    CHECK(splash(row, 2, 1, 10) == 0 && row[2] == -10);\n    int boss[4] = {30, 5, 30, 5};\n    CHECK(splash(boss, 0, 2, 5) == 1 && boss[0] == 25 && boss[2] == 25 && boss[3] == 5);\n    CHECK(splash(boss, 3, 100, 5) == 1 && boss[0] == 20 && boss[3] == 0);\n    CHECK(splash(boss, 4, 1, 5) == 0 && boss[3] == 0);\n    CHECK(splash(boss, 99, 1000, 5) == 0 && boss[0] == 20);\n    std::vector<int> one{1};\n    CHECK(splash(one, 0, 0, 1) == 1 && one[0] == 0);\n    std::span<int> none;\n    CHECK(splash(none, 0, 3, 5) == 0);\n    return 0;\n}\n"}
+  solution={"#include <algorithm>\n#include <span>\nint splash(std::span<int> hp, std::size_t center, std::size_t radius, int dmg) {\n    if (center >= hp.size()) return 0;\n    std::size_t lo = center >= radius ? center - radius : 0;\n    std::size_t hi = std::min(hp.size() - 1, center + radius);\n    int kills = 0;\n    for (int& h : hp.subspan(lo, hi - lo + 1)) {\n        bool was = h > 0;\n        h -= dmg;\n        if (was && h <= 0) ++kills;\n    }\n    return kills;\n}\n"}
+  hints={["lo = center >= radius ? center - radius : 0; hi = std::min(hp.size() - 1, center + radius).", "auto hit = hp.subspan(lo, hi - lo + 1); then loop over hit."]}
+  explanation="subspan builds a smaller view with its own size, so the loop cannot run past the row. The clamping logic is the only place an off-by-one can live, and the tests hit both edges."
 />

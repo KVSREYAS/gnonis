@@ -1,25 +1,103 @@
 ---
 id: cpp-systems/10-simd/02-intrinsics-sse
 title: "SSE Intrinsics"
-estMinutes: 9
+estMinutes: 11
 xp: 110
 fun: 5
-missionIntro: "When the compiler won't, you can: _mm_loadu_ps, _mm_mul_ps, _mm_add_ps, four floats at a time."
+missionIntro: "When the compiler won't vectorize the particle step, you can: _mm_loadu_ps, _mm_mul_ps, _mm_add_ps, four particles at a time. Forget the tail and the last few particles freeze in mid-air."
 keyIdeas:
   - "`<immintrin.h>` intrinsics map ~1:1 to instructions. __m128 holds 4 floats."
   - "loadu tolerates any alignment. load needs 16-byte alignment and faults otherwise."
   - "Handle the tail: process n/4 vector iterations, then n%4 scalar ones."
 ---
 
-## Lanes in action
+## The feature: a hand-written particle step
 
+Some particle code is too tangled for the auto-vectorizer: a mix of loads from different arrays, clamps and conditional resets. For those loops we write the SIMD ourselves with intrinsics. The simplest case is the position update, four particles per instruction.
 
+## The careless version: groups of four, and nothing else
+
+```cpp
+#include <cstdio>
+#include <immintrin.h>
+#include <vector>
+
+void step_sse(float* x, const float* vx, std::size_t n, float dt) {
+    const __m128 vdt = _mm_set1_ps(dt);
+    for (std::size_t i = 0; i + 4 <= n; i += 4) {
+        __m128 px = _mm_loadu_ps(x + i);
+        __m128 pv = _mm_loadu_ps(vx + i);
+        _mm_storeu_ps(x + i, _mm_add_ps(px, _mm_mul_ps(pv, vdt)));
+    }
+}
+
+int main() {
+    const std::size_t alive = 1003;                 // an explosion leaves an odd count
+    std::vector<float> x(alive, 0.f), vx(alive, 60.f);
+    for (int frame = 0; frame < 60; ++frame) step_sse(x.data(), vx.data(), alive, 1.f / 60);
+    for (std::size_t i : {0u, 999u, 1000u, 1001u, 1002u}) std::printf("particle %4zu: x = %.2f\n", i, x[i]);
+}
+```
+```text
+particle    0: x = 60.00
+particle  999: x = 60.00
+particle 1000: x = 0.00
+particle 1001: x = 0.00
+particle 1002: x = 0.00
+```
+
+After one second at 60 units per second every particle should be at about 60. Particles 1000 to 1002 never moved: 1003 is not a multiple of 4, and the loop stopped at the last full group. On screen that is three sparks frozen in the air where the explosion started.
+
+## The concept: vector body plus scalar tail
+
+An intrinsic is a function the compiler turns into one specific instruction. The ones used here:
+
+- `_mm_set1_ps(v)`: all four lanes = v.
+- `_mm_loadu_ps(p)` / `_mm_storeu_ps(p, r)`: move 4 floats between memory and a register, any alignment.
+- `_mm_add_ps`, `_mm_mul_ps`, `_mm_max_ps`: lane-by-lane arithmetic.
+
+Every hand-written SIMD loop has two parts: the **body**, which handles groups of 4 while `i + 4 <= n`, and the **tail**, a plain loop that finishes the remaining 0 to 3 elements with the same formula.
 
 ![Four SSE lanes multiplying and accumulating, then a horizontal sum and scalar tail](/diagrams/cpp-systems/10-simd/02-intrinsics-sse.png)
 
+## The fixed version
+
+```cpp
+#include <cstdio>
+#include <immintrin.h>
+#include <vector>
+
+void step_sse(float* x, const float* vx, std::size_t n, float dt) {
+    const __m128 vdt = _mm_set1_ps(dt);
+    std::size_t i = 0;
+    for (; i + 4 <= n; i += 4) {
+        __m128 px = _mm_loadu_ps(x + i);
+        __m128 pv = _mm_loadu_ps(vx + i);
+        _mm_storeu_ps(x + i, _mm_add_ps(px, _mm_mul_ps(pv, vdt)));
+    }
+    for (; i < n; ++i) x[i] += vx[i] * dt;          // the tail: 0 to 3 particles
+}
+
+int main() {
+    const std::size_t alive = 1003;
+    std::vector<float> x(alive, 0.f), vx(alive, 60.f);
+    for (int frame = 0; frame < 60; ++frame) step_sse(x.data(), vx.data(), alive, 1.f / 60);
+    for (std::size_t i : {0u, 999u, 1000u, 1001u, 1002u}) std::printf("particle %4zu: x = %.2f\n", i, x[i]);
+}
+```
+```text
+particle    0: x = 60.00
+particle  999: x = 60.00
+particle 1000: x = 60.00
+particle 1001: x = 60.00
+particle 1002: x = 60.00
+```
+
+The `i` declared outside the body loop carries on into the tail, so each particle is handled exactly once.
+
 <Trace
   id="sse-trace"
-  prompt="SSE2, x86-64."
+  prompt="SSE2, x86-64. A test of the lane-wise math the particle step uses."
   code={"#include <cstdio>\n#include <immintrin.h>\nint main() {\n    float a[4] = {1, 2, 3, 4}, b[4] = {10, 20, 30, 40}, out[4];\n    __m128 va = _mm_loadu_ps(a);\n    __m128 vb = _mm_loadu_ps(b);\n    _mm_storeu_ps(out, _mm_add_ps(_mm_mul_ps(va, vb), va));\n    std::printf(\"%g %g %g %g\", out[0], out[1], out[2], out[3]);\n}"}
   steps={[{"line": 5, "note": "four floats in one register"}, {"line": 7, "note": "lane-wise a*b + a"}]}
   question="What does it print?"
@@ -30,26 +108,52 @@ keyIdeas:
 
 <Predict
   id="tail"
-  prompt="n = 1003 floats with 4-wide SSE. How many scalar tail iterations?"
+  prompt="An explosion leaves n = 1003 live particles, stepped 4 at a time with SSE. How many particles go through the scalar tail loop?"
   answer={3}
   tolerance={{"mode": "absolute", "value": 0}}
   explanation="1003 % 4."
   devices={["phone", "desktop"]}
 />
 
-## Write it
+## When to use intrinsics, and when not
 
-Note: this exercise needs an x86-64 runner (SSE2 is baseline there, no flags needed). Sources: [Intel Intrinsics Guide](https://www.intel.com/content/www/us/en/docs/intrinsics-guide/), Agner Fog, [Optimizing software in C++](https://www.agner.org/optimize/optimizing_cpp.pdf)
+- Use them for hot loops the compiler will not vectorize after you tried `__restrict`, flat arrays and simpler code, and only after a profiler shows the loop matters.
+- Use `loadu`/`storeu` unless you control the alignment. `_mm_load_ps` on an address that is not 16-byte aligned crashes (see the alignment lesson).
+- Do not use them for code that runs once per frame on a handful of values: the speed-up is invisible and the code is harder to read.
+- SSE intrinsics tie the code to x86. A console or phone build (ARM) needs a NEON version or a scalar fallback.
+
+Note: these exercises need an x86-64 runner (SSE2 is baseline there, no flags needed). Sources: [Intel Intrinsics Guide](https://www.intel.com/content/www/us/en/docs/intrinsics-guide/), Agner Fog, [Optimizing software in C++](https://www.agner.org/optimize/optimizing_cpp.pdf)
+
+## Coding task: the audio mixer's weighted sum
+
+The audio mixer combines one sample from each playing sound: the output is the sum of `volume[i] * sample[i]` over all voices. That is a dot product.
 
 <Code
   id="sse-dot"
   devices={["desktop"]}
   language="cpp"
-  prompt="Using SSE2 intrinsics (_mm_loadu_ps, _mm_mul_ps, _mm_add_ps, _mm_storeu_ps), write `float dot_sse(const float* a, const float* b, std::size_t n)`. Accumulate in one __m128, horizontally add the 4 lanes at the end, then add the scalar tail."
+  prompt="Using SSE2 intrinsics (_mm_loadu_ps, _mm_mul_ps, _mm_add_ps, _mm_storeu_ps), write the mixer's weighted sum `float dot_sse(const float* a, const float* b, std::size_t n)` (a = volumes, b = samples). Accumulate in one __m128, horizontally add the 4 lanes at the end, then add the scalar tail."
   starter={"#include <immintrin.h>\n#include <cstddef>\nfloat dot_sse(const float* a, const float* b, std::size_t n) { return 0; }\n"}
   visibleTests={"#include \"check.h\"\n\nint main() { float a[5] = {1, 2, 3, 4, 5}; CHECK(dot_sse(a, a, 5) == 55); return 0; }\n"}
   tests={"#include \"check.h\"\n\n#include <vector>\n#include <cmath>\nint main() {\n    float a[5] = {1, 2, 3, 4, 5}; CHECK(dot_sse(a, a, 5) == 55);\n    CHECK(dot_sse(a, a, 0) == 0 && dot_sse(a, a, 3) == 14);\n    std::vector<float> x(1003), y(1003); double ref = 0;\n    for (int i = 0; i < 1003; ++i) { x[i] = (i % 7) * 0.5f; y[i] = (i % 5) - 2.0f; ref += (double)x[i] * y[i]; }\n    CHECK(std::fabs(dot_sse(x.data() + 1, y.data() + 1, 1002) - (ref - x[0] * y[0])) < 1e-2);\n    return 0;\n}\n"}
   solution={"#include <immintrin.h>\n#include <cstddef>\nfloat dot_sse(const float* a, const float* b, std::size_t n) {\n    __m128 acc = _mm_setzero_ps();\n    std::size_t i = 0;\n    for (; i + 4 <= n; i += 4) acc = _mm_add_ps(acc, _mm_mul_ps(_mm_loadu_ps(a + i), _mm_loadu_ps(b + i)));\n    float t[4]; _mm_storeu_ps(t, acc);\n    float s = (t[0] + t[1]) + (t[2] + t[3]);\n    for (; i < n; ++i) s += a[i] * b[i];\n    return s;\n}\n"}
   hints={["Vector loop condition: i + 4 <= n.", "Store the accumulator to an array to sum the lanes."]}
   explanation="The hidden test starts at an unaligned offset (+1), so you must use loadu."
+/>
+
+## Coding task: the particle step with bounce
+
+The arena floor is at y = 0. Particles fall, and any that went below the floor are put back on it.
+
+<Code
+  id="sse-bounce-step"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `void step_y(float* y, const float* vy, std::size_t n, float dt)` with SSE2 intrinsics: y[i] = max(y[i] + vy[i] * dt, 0). Use _mm_loadu_ps, _mm_mul_ps, _mm_add_ps, _mm_max_ps with a zero vector, _mm_storeu_ps, and a scalar tail for the last n % 4 particles."
+  starter={"#include <cstddef>\n#include <immintrin.h>\nvoid step_y(float* y, const float* vy, std::size_t n, float dt) {}\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    float y[5] = {10, 1, 5, 0, 2}, vy[5] = {-2, -4, 0, 6, -10};\n    step_y(y, vy, 5, 0.5f);\n    CHECK(y[0] == 9 && y[1] == 0 && y[2] == 5 && y[3] == 3 && y[4] == 0);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <vector>\nint main() {\n    float y[5] = {10, 1, 5, 0, 2}, vy[5] = {-2, -4, 0, 6, -10};\n    step_y(y, vy, 5, 0.5f);\n    CHECK(y[0] == 9 && y[1] == 0 && y[2] == 5 && y[3] == 3 && y[4] == 0);\n    std::vector<float> h(1004, 1.0f), v(1004);\n    for (int i = 0; i < 1004; ++i) v[i] = (i % 2) ? -8.0f : 2.0f;\n    step_y(h.data() + 1, v.data() + 1, 1003, 0.25f);\n    CHECK(h[0] == 1.0f);\n    for (int i = 1; i < 1004; ++i) CHECK(h[i] == ((i % 2) ? 0.0f : 1.5f));\n    step_y(h.data(), v.data(), 0, 1.0f);\n    CHECK(h[0] == 1.0f);\n    return 0;\n}\n"}
+  solution={"#include <algorithm>\n#include <cstddef>\n#include <immintrin.h>\nvoid step_y(float* y, const float* vy, std::size_t n, float dt) {\n    const __m128 vdt = _mm_set1_ps(dt), zero = _mm_setzero_ps();\n    std::size_t i = 0;\n    for (; i + 4 <= n; i += 4) {\n        __m128 p = _mm_add_ps(_mm_loadu_ps(y + i), _mm_mul_ps(_mm_loadu_ps(vy + i), vdt));\n        _mm_storeu_ps(y + i, _mm_max_ps(p, zero));\n    }\n    for (; i < n; ++i) y[i] = std::max(y[i] + vy[i] * dt, 0.0f);\n}\n"}
+  hints={["const __m128 vdt = _mm_set1_ps(dt), zero = _mm_setzero_ps();", "Body: for (; i + 4 <= n; i += 4). Tail: for (; i < n; ++i) with the same formula and std::max."]}
+  explanation="_mm_max_ps does the floor clamp for four particles without a branch. The tests use 1003 particles starting at an odd offset, so a missing tail or an aligned load fails."
 />

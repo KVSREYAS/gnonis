@@ -1,54 +1,98 @@
 ---
 id: cpp-systems/12-building-blocks/00-concepts
 title: "Concepts: Arenas, Ring Buffers and Thread Pools"
-estMinutes: 8
+estMinutes: 10
 xp: 40
-fun: 1
-missionIntro: "The three infrastructure pieces inside fast servers, explained by how their memory and indices work."
+fun: 2
+missionIntro: "Milestone 13 of Slime Siege: the engine core. Three infrastructure pieces inside every game engine, explained by how their memory and indices work."
 keyIdeas:
   - "An arena allocates by bumping an offset and frees everything at once."
   - "An SPSC ring buffer passes items between one producer and one consumer with two atomic indices."
   - "A thread pool keeps worker threads alive and feeds them tasks from a queue."
   - "Each one removes a cost: malloc calls, locks, or thread creation."
 ---
+## Milestone 13: the engine core
+
+**What we build this module:** three pieces the rest of the game stands on. A **frame arena** for scratch memory that lives exactly one frame, an **SPSC ring buffer** that carries sound commands from the game thread to the audio thread, a **job system** (thread pool) that spreads the slime AI over all cores, and in the module test a **projectile pool** that reuses bullet objects.
+
+**Why the game needs it:** the profiler from the last module points at costs that are not in our own algorithms: thousands of small `new`/`delete` calls per frame, threads created and destroyed for tiny jobs, and an audio thread that must never wait for a lock. Each building block removes one of those costs.
+
+## The careless version: new and delete for scratch data
+
+Every frame, 100 slimes each run a 200-step path search, and each step allocates a node. All of it is garbage when the frame ends.
+
+```cpp
+#include <chrono>
+#include <cstddef>
+#include <cstdio>
+#include <new>
+#include <vector>
+
+struct Node { int tile; float cost; Node* parent; };       // one step of a slime's path search
+template <class T> void do_not_optimize(T const& v) { asm volatile("" : : "r,m"(v) : "memory"); }
+
+int main() {
+    const int frames = 200, searches = 100, steps = 200;
+    auto ms = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };
+
+    auto t0 = std::chrono::steady_clock::now();
+    for (int f = 0; f < frames; ++f)
+        for (int s = 0; s < searches; ++s) {
+            Node* last = nullptr;
+            for (int i = 0; i < steps; ++i) last = new Node{i, 1.0f * i, last};
+            do_not_optimize(last);
+            while (last) { Node* p = last->parent; delete last; last = p; }
+        }
+    auto t1 = std::chrono::steady_clock::now();
+
+    std::vector<std::byte> arena(1 << 20);
+    for (int f = 0; f < frames; ++f) {
+        std::size_t used = 0;                               // reset: the whole frame's scratch is free again
+        for (int s = 0; s < searches; ++s) {
+            Node* last = nullptr;
+            for (int i = 0; i < steps; ++i) {
+                last = new (arena.data() + used) Node{i, 1.0f * i, last};
+                used += sizeof(Node);
+            }
+            do_not_optimize(last);
+        }
+    }
+    auto t2 = std::chrono::steady_clock::now();
+    std::printf("new/delete per node: %5.1f ms\n", ms(t1 - t0));
+    std::printf("frame arena:         %5.1f ms\n", ms(t2 - t1));
+}
+```
+```text
+new/delete per node:  46.3 ms
+frame arena:           2.4 ms
+```
+
+(One run at `-O2`, 200 frames.) The same nodes, built the same way. The arena version never frees a node: it sets `used = 0` at the start of each frame.
+
 ## Arena allocator
 
-`malloc`/`new` must handle any size and any free order, so each call does bookkeeping. When many objects share one lifetime (for example, everything for one request), an **arena** is simpler:
+`new`/`malloc` must handle any size and any free order, so each call does bookkeeping. When many objects share one lifetime (everything for one frame), an **arena** is simpler:
 
 1. Reserve one large block.
 2. Keep an **offset**, the first unused byte.
 3. To allocate n bytes: round the offset up to the required alignment, return that address, add n.
 4. Never free single objects. **Reset** the offset to 0 to free everything at once.
 
-```cpp
-void* alloc(size_t n, size_t align) {
-    size_t p = (off_ + align - 1) & ~(align - 1);   // round up
-    if (p + n > cap_) return nullptr;
-    off_ = p + n;
-    return buf_ + p;
-}
-```
-
-Allocation is a few instructions, and objects are contiguous, which helps the cache. Destructors are not run, so store only trivially destructible types or call them yourself.
+Destructors are not run, so store only trivially destructible types, or call them yourself.
 
 ## SPSC ring buffer
 
-A **ring buffer** is a fixed array used in a circle. **SPSC** means single producer, single consumer: exactly one thread pushes and one thread pops.
+A **ring buffer** is a fixed array used in a circle. **SPSC** means single producer, single consumer: exactly one thread pushes (the game thread) and one pops (the audio thread).
 
-State: `head` (next slot to read, written only by the consumer) and `tail` (next slot to write, written only by the producer). Both are `std::atomic<size_t>`.
+Two counters only ever grow: one counts items written (written only by the producer), the other counts items read (written only by the consumer). Both are `std::atomic<size_t>`. Empty when they are equal; full when they differ by the capacity. The slot for counter `c` is `c % cap`, or `c & (cap - 1)` when the capacity is a power of two.
 
-- push: if `tail - head == capacity`, full. Else write `buf[tail % cap]`, then store `tail + 1` with **release**.
-- pop: if `head == tail` (loaded with **acquire**), empty. Else read `buf[head % cap]`, then store `head + 1` with release.
-
-Release/acquire guarantees the consumer sees the item's data before it sees the new `tail`. No mutex is needed because each index has only one writer. With a power-of-two capacity, `% cap` becomes `& (cap - 1)`.
+The producer writes the slot, then publishes its counter with **release**; the consumer loads it with **acquire**, so it sees the slot's data. No mutex is needed because each counter has one writer.
 
 ![Ring buffer with head and tail indices](/diagrams/cpp-systems/12-building-blocks/02-spsc-ring-buffer.png)
 
 ## Thread pool
 
-Creating a thread per task costs tens of microseconds. A **thread pool** creates N workers once and reuses them.
-
-Parts:
+Creating a thread costs tens of microseconds. A **thread pool** creates N workers once and reuses them:
 
 1. A queue of tasks (`std::function<void()>`), protected by a mutex.
 2. A `std::condition_variable` that sleeping workers wait on.
@@ -56,14 +100,21 @@ Parts:
 4. `submit(task)`: lock, push, unlock, `notify_one()`.
 5. Shutdown: set `stop`, `notify_all()`, join every worker.
 
-To return a result, wrap the task in `std::packaged_task` and hand the caller a `std::future`.
-
-N is usually the number of hardware threads (`std::thread::hardware_concurrency()`). More workers than cores adds switching cost without extra speed for CPU-bound work.
+To return a result, wrap the task in `std::packaged_task` and hand the caller a `std::future`. N is usually the number of hardware threads.
 
 <MCQ
   id="concept-check"
-  prompt="In an SPSC ring buffer, why is no mutex needed?"
+  prompt="The game thread pushes sound commands and the audio thread pops them through an SPSC ring buffer. Why is no mutex needed?"
   options={["Because the buffer is small", "Each index has exactly one writer thread, and release/acquire orders the data", "Because atomics are always locked", "It is actually needed"]}
   answer={1}
   explanation="Producer alone writes tail, consumer alone writes head. Acquire/release makes the data visible in order."
+/>
+
+<MCQ
+  id="concept-which-block"
+  prompt="Each frame, the pathfinder needs thousands of temporary nodes that are all useless once the frame is drawn. Which building block fits?"
+  options={["A thread pool", "A frame arena that is reset at the start of every frame", "An SPSC ring buffer", "std::shared_ptr for each node"]}
+  answer={1}
+  explanation="All the nodes share one lifetime, the frame. An arena hands them out with a pointer bump and frees them all with one reset, with no per-node free."
+  devices={["phone", "desktop"]}
 />

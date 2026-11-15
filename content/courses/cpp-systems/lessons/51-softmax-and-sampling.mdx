@@ -1,25 +1,77 @@
 ---
 id: cpp-systems/13-capstone/03-softmax-and-sampling
 title: "Stable Softmax and Greedy Decode"
-estMinutes: 9
+estMinutes: 11
 xp: 110
 fun: 5
-missionIntro: "Turn logits into probabilities without overflowing, then pick the next token. This is the last step of every inference loop."
+missionIntro: "Turn the brain's scores into probabilities without overflowing, then pick the boss's move. Always taking the top move makes a boss players beat by memorising it; sampling keeps it honest. The same step ends every language model's inference loop."
 keyIdeas:
   - "Subtract the max before exp: softmax(x) = exp(x − m) / Σ exp(x − m). It's mathematically identical and can't overflow."
   - "exp(89) already overflows float32 (max ≈ 3.4e38, ln ≈ 88.7)."
-  - "Greedy decoding is argmax. Temperature divides logits by T before softmax."
+  - "Greedy decoding is argmax. Temperature divides logits by T before softmax; sampling walks the cumulative probabilities."
 ---
 
-## Overflow
+## The feature: choosing the move
 
+The brain outputs one score per action. The boss has to turn them into one decision, several times a second, without freezing (overflow) and without becoming predictable.
 
+## The careless version: always take the best move
+
+```cpp
+#include <cstdio>
+#include <random>
+
+const char* actions[4] = {"slam", "jump", "summon", "retreat"};
+
+int greedy(const float* p) {
+    int best = 0;
+    for (int i = 1; i < 4; ++i) if (p[i] > p[best]) best = i;
+    return best;
+}
+int sample(const float* p, float u) {          // u uniform in [0, 1)
+    float c = 0;
+    for (int i = 0; i < 4; ++i) { c += p[i]; if (u < c) return i; }
+    return 3;                                   // rounding guard
+}
+
+int main() {
+    float p[4] = {0.45f, 0.30f, 0.15f, 0.10f};   // the brain's view of this situation
+    std::mt19937 rng(2026);
+    int g[4] = {}, s[4] = {};
+    for (int turn = 0; turn < 1000; ++turn) {
+        ++g[greedy(p)];
+        float u = (rng() >> 8) * (1.0f / 16777216.0f);
+        ++s[sample(p, u)];
+    }
+    std::printf("move      greedy  sampled\n");
+    for (int i = 0; i < 4; ++i) std::printf("%-8s %7d %8d\n", actions[i], g[i], s[i]);
+}
+```
+```text
+move      greedy  sampled
+slam        1000      449
+jump           0      302
+summon         0      144
+retreat        0      105
+```
+
+The network thought jumping was a good move 30% of the time, but greedy decoding threw that away: 1000 slams in a row. Players learn "dodge left when he raises his arms" and the fight is over. Sampling keeps the network's preferences (mostly slams) while staying varied.
+
+## The concept: stable softmax, then choose
+
+**Softmax without overflow.** `exp` of a float overflows above about 88.7. Subtract the largest logit first: `exp(z_i - m)` is at most 1, and the probabilities are unchanged because the common factor `exp(-m)` cancels.
+
+**Choosing.**
+
+- **Greedy (argmax)**: deterministic. Right for tests, replays and tutorial bosses.
+- **Sampling**: draw u in [0, 1), walk the running sum of p, return the first index where u is below it.
+- **Temperature T**: divide the logits by T before softmax. Low T (0.3) is nearly greedy: a focused, harder boss. High T (2) flattens the choices: an erratic, easier boss. One number becomes a difficulty setting.
 
 ![Logits bar chart shifted down by the max, exponentiated and normalised into probabilities](/diagrams/cpp-systems/13-capstone/03-softmax-and-sampling.png)
 
 <Trace
   id="softmax-ovf"
-  prompt="Naive versus stable."
+  prompt="Naive versus stable softmax on the enraged boss's logits."
   code={"#include <cmath>\n#include <cstdio>\nint main() {\n    float x[3] = {1000.f, 1001.f, 1002.f};\n    float naive = std::exp(x[2]) / (std::exp(x[0]) + std::exp(x[1]) + std::exp(x[2]));\n    float m = x[2];\n    float stable = std::exp(x[2] - m) / (std::exp(x[0] - m) + std::exp(x[1] - m) + 1.f);\n    std::printf(\"%s %.3f\", std::isnan(naive) ? \"nan\" : \"ok\", stable);\n}"}
   steps={[{"line": 5, "note": "exp(1000) = inf, and inf/inf = NaN"}, {"line": 6, "note": "subtract the max"}, {"line": 7, "note": "exp(-2), exp(-1), exp(0): finite"}]}
   question="What does it print?"
@@ -30,26 +82,52 @@ keyIdeas:
 
 <Predict
   id="exp-limit"
-  prompt="Largest integer x with exp(x) finite in float32?"
+  prompt="Largest integer logit x with exp(x) finite in float32?"
   answer={88}
   tolerance={{"mode": "absolute", "value": 0}}
   explanation="ln(3.4e38) ≈ 88.72."
   devices={["phone", "desktop"]}
 />
 
-## Build it
+## When to sample, and when not
+
+- Sample for anything players should not be able to predict: boss moves, enemy taunts, loot choices weighted by rarity.
+- Use greedy, or sampling with a fixed seed, when results must repeat: automated tests, replays, lockstep multiplayer where every machine must make the same choice.
+- Always use the max-subtracted softmax. The naive version works in testing and fails on exactly the confident, large-score cases that matter.
+- Do not sample from probabilities you did not normalize: the running sum must reach 1, or the last action is picked far too often by the rounding guard.
 
 Sources: [Wikipedia: softmax](https://en.wikipedia.org/wiki/Softmax_function), Milakov & Gimelshein, [Online normalizer calculation for softmax (2018)](https://arxiv.org/abs/1805.02867)
+
+## Coding task: stable softmax and argmax
+
+The two building blocks of the choice: probabilities that never overflow, and the greedy move.
 
 <Code
   id="softmax"
   devices={["desktop"]}
   language="cpp"
-  prompt="Write `void softmax(std::span<float> x, float temperature)`, an in-place, max-subtracted softmax over x / temperature, and `std::size_t argmax(std::span<const float> x)` (first index on ties)."
+  prompt="Write the brain's output step: `void softmax(std::span<float> x, float temperature)`, an in-place, max-subtracted softmax over x / temperature, and `std::size_t argmax(std::span<const float> x)` (the greedy move; first index on ties)."
   starter={"#include <span>\n#include <cmath>\nvoid softmax(std::span<float> x, float temperature) {}\nstd::size_t argmax(std::span<const float> x) { return 0; }\n"}
   visibleTests={"#include \"check.h\"\n\n#include <vector>\nint main() { std::vector<float> v{1000, 1001, 1002}; softmax(v, 1); CHECK(std::fabs(v[2] - 0.665f) < 1e-3f); return 0; }\n"}
   tests={"#include \"check.h\"\n\n#include <vector>\nint main() {\n    std::vector<float> v{1000, 1001, 1002}; softmax(v, 1); CHECK(std::fabs(v[2] - 0.6652f) < 1e-3f && std::fabs(v[0] + v[1] + v[2] - 1) < 1e-5f);\n    std::vector<float> w{-1e4f, 0, 3}; softmax(w, 0.5f); for (float p : w) CHECK(std::isfinite(p)); CHECK(w[2] > 0.99f);\n    std::vector<float> u{2, 2}; softmax(u, 1); CHECK(u[0] == 0.5f);\n    std::vector<float> a{1, 5, 5, 2}; CHECK(argmax(a) == 1);\n    std::vector<float> e; softmax(e, 1);\n    return 0;\n}\n"}
   solution={"#include <span>\n#include <cmath>\n#include <algorithm>\nvoid softmax(std::span<float> x, float temperature) {\n    if (x.empty()) return;\n    float m = *std::max_element(x.begin(), x.end()) / temperature, s = 0;\n    for (auto& v : x) { v = std::exp(v / temperature - m); s += v; }\n    for (auto& v : x) v /= s;\n}\nstd::size_t argmax(std::span<const float> x) { return std::max_element(x.begin(), x.end()) - x.begin(); }\n"}
   hints={["Divide by temperature first, then subtract the max of the scaled values."]}
-  explanation="Same code path as llama.cpp's sampler at temperature > 0, minus top-k and top-p."
+  explanation="The same code path as llama.cpp's sampler at temperature > 0, minus top-k and top-p. Here it decides the boss's move; there, the next word."
+/>
+
+## Coding task: pick the boss's move
+
+Put it together: logits in, one action out, with temperature as the difficulty knob.
+
+<Code
+  id="pick-action"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `int pick_action(std::span<const float> logits, float temperature, float u)`. If temperature <= 0, return the argmax (first index on ties). Otherwise compute a max-subtracted softmax of logits / temperature, then walk the running sum of the probabilities and return the first index i where u < sum. If rounding leaves u above the final sum, return the last index. u is in [0, 1); logits is not empty."
+  starter={"#include <cmath>\n#include <span>\nint pick_action(std::span<const float> logits, float temperature, float u) { return -1; }\n"}
+  visibleTests={"#include \"check.h\"\n#include <vector>\nint main() {\n    std::vector<float> z{2, 1, 0};\n    CHECK(pick_action(z, 1.0f, 0.5f) == 0);\n    CHECK(pick_action(z, 1.0f, 0.7f) == 1);\n    CHECK(pick_action(z, 1.0f, 0.95f) == 2);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <vector>\nint main() {\n    std::vector<float> z{2, 1, 0};\n    CHECK(pick_action(z, 1.0f, 0.5f) == 0);\n    CHECK(pick_action(z, 1.0f, 0.7f) == 1);\n    CHECK(pick_action(z, 1.0f, 0.95f) == 2);\n    CHECK(pick_action(z, 1.0f, 0.99999994f) == 2);\n    CHECK(pick_action(z, 0.0f, 0.99f) == 0);\n    std::vector<float> tie{1, 3, 3};\n    CHECK(pick_action(tie, 0.0f, 0.0f) == 1);\n    std::vector<float> enraged{95, 91, 90, 10};\n    CHECK(pick_action(enraged, 1.0f, 0.5f) == 0);\n    CHECK(pick_action(enraged, 1.0f, 0.99f) == 1);\n    CHECK(pick_action(enraged, 1.0f, 0.9999f) == 2);\n    CHECK(pick_action(z, 100.0f, 0.5f) == 1);\n    CHECK(pick_action(z, 0.1f, 0.999f) == 0);\n    std::vector<float> one{-5};\n    CHECK(pick_action(one, 1.0f, 0.3f) == 0);\n    return 0;\n}\n"}
+  solution={"#include <algorithm>\n#include <cmath>\n#include <span>\n#include <vector>\nint pick_action(std::span<const float> logits, float temperature, float u) {\n    if (temperature <= 0)\n        return (int)(std::max_element(logits.begin(), logits.end()) - logits.begin());\n    float m = *std::max_element(logits.begin(), logits.end()) / temperature;\n    std::vector<float> e(logits.size());\n    float s = 0;\n    for (std::size_t i = 0; i < logits.size(); ++i) { e[i] = std::exp(logits[i] / temperature - m); s += e[i]; }\n    float c = 0;\n    for (std::size_t i = 0; i < e.size(); ++i) { c += e[i] / s; if (u < c) return (int)i; }\n    return (int)logits.size() - 1;\n}\n"}
+  hints={["Scale first, then subtract the max of the scaled values: e_i = std::exp(logits[i] / T - m).", "Walk with c += e_i / s; if (u < c) return i; after the loop return (int)logits.size() - 1."]}
+  explanation="Temperature 0 gives the deterministic move for tests and replays; a positive temperature gives a varied boss that still prefers good moves. Large logits stay finite because every exp argument is at most 0."
 />

@@ -1,25 +1,97 @@
 ---
 id: cpp-systems/09-concurrency/01-threads-and-jthread
 title: "Threads, jthread and Stop Tokens"
-estMinutes: 8
+estMinutes: 14
 xp: 100
 fun: 5
-missionIntro: "std::jthread joins itself and carries a stop token, which makes it RAII for threads. Plain std::thread calls std::terminate if you forget to join."
+missionIntro: "The player quits to the menu while the next level is loading, and the game aborts on the way out. std::jthread joins itself and carries a stop token, which makes it RAII for threads. Plain std::thread calls std::terminate if you forget to join."
 keyIdeas:
   - "Destroying a joinable std::thread calls std::terminate."
   - "std::jthread (C++20) joins in its destructor and passes a std::stop_token for cooperative cancellation."
   - "Share data by mutex (std::scoped_lock for several at once) or hand off ownership. Never race."
 ---
 
-## Spot the terminate
+## The feature: a loader you can cancel
 
+The level loader runs on its own thread. If the player opens the menu and picks "Quit to title" while it runs, the game should stop loading and leave promptly.
 
+## The careless version: std::thread and an early return
+
+```cpp
+#include <chrono>
+#include <cstdio>
+#include <thread>
+
+void load_level() { std::this_thread::sleep_for(std::chrono::milliseconds(50)); }
+
+bool player_quit() { return true; }       // the player hit "Quit to title"
+
+int run_level() {
+    std::thread loader(load_level);
+    if (player_quit()) {
+        std::printf("returning to title screen\n");
+        std::fflush(stdout);
+        return 0;                          // loader is still joinable here
+    }
+    loader.join();
+    return 1;
+}
+
+int main() { run_level(); }
+```
+```text
+returning to title screen
+terminate called without an active exception
+Aborted
+[exit code 134]
+```
+
+## What went wrong
+
+Leaving `run_level` destroyed `loader` while it was still **joinable** (started and not yet joined or detached). `std::thread`'s destructor then calls `std::terminate`, which aborts the whole game (exit code 134 is 128 + SIGABRT). Every early return, `break` and exception between creating a `std::thread` and joining it has this bug.
+
+Calling `detach()` instead would let the loader keep running after `run_level` returned, possibly writing into a level object that no longer exists.
+
+## The fix: std::jthread and a stop token
+
+`std::jthread` (C++20) is RAII for threads. Its destructor calls `request_stop()` and then `join()`. If the thread function takes a `std::stop_token` as its first parameter, it can check `stop_requested()` and give up early:
+
+```cpp
+#include <chrono>
+#include <cstdio>
+#include <stop_token>
+#include <thread>
+
+void load_level(std::stop_token st) {
+    for (int file = 1; file <= 100; ++file) {
+        if (st.stop_requested()) { std::printf("loader: stopped after %d files\n", file - 1); return; }
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));   // load one file
+    }
+    std::printf("loader: all files loaded\n");
+}
+
+int run_level() {
+    std::jthread loader(load_level);
+    std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    std::printf("returning to title screen\n");
+    return 0;                       // ~jthread: request_stop(), then join()
+}
+
+int main() { run_level(); std::printf("title screen\n"); }
+```
+```text
+returning to title screen
+loader: stopped after 8 files
+title screen
+```
+
+The exact number of files depends on timing; the order of the messages does not. The loader finished its current file, saw the stop request, and returned before `run_level` did.
 
 ![Four jthreads summing chunks into per-thread slots, joined at scope exit](/diagrams/cpp-systems/09-concurrency/01-threads-and-jthread.png)
 
 <SpotBug
   id="no-join"
-  prompt="Which line calls std::terminate?"
+  prompt="The old loader code. Which line calls std::terminate?"
   code={"#include <thread>\nvoid work() {}\nint main() {\n    std::thread t(work);\n    if (true) return 0;\n    t.join();\n}"}
   bugLine={5}
   explanation="Returning destroys t while it's still joinable. Use std::jthread, or join on every path."
@@ -28,7 +100,7 @@ keyIdeas:
 
 <MCQ
   id="jthread-dtor"
-  prompt="std::jthread's destructor does what?"
+  prompt="When the player quits, the loader's std::jthread is destroyed. Its destructor does what?"
   options={["Detaches", "Calls terminate if joinable", "Requests stop, then joins", "Nothing"]}
   answer={2}
   explanation="request_stop() followed by join()."
@@ -37,7 +109,7 @@ keyIdeas:
 
 <Trace
   id="scoped-sum"
-  prompt="Four jthreads add to a shared counter under a mutex."
+  prompt="Four loader threads add to a shared counter under a mutex."
   code={"#include <cstdio>\n#include <mutex>\n#include <thread>\n#include <vector>\nint main() {\n    long total = 0;\n    std::mutex m;\n    {\n        std::vector<std::jthread> ts;\n        for (int t = 0; t < 4; ++t)\n            ts.emplace_back([&, t] {\n                for (int i = 0; i < 1000; ++i) { std::scoped_lock lk(m); total += t; }\n            });\n    }\n    std::printf(\"%ld\", total);\n}"}
   steps={[{"line": 9, "note": "the jthreads live in this scope"}, {"line": 12, "note": "each thread adds its id 1,000 times"}, {"line": 14, "note": "leaving the scope joins all four"}, {"line": 15, "note": "(0+1+2+3) × 1000"}]}
   question="What does it print?"
@@ -46,19 +118,45 @@ keyIdeas:
   devices={["phone", "desktop"]}
 />
 
-## Parallel sum
+## When to use it, and when not
+
+- Use `std::jthread` for every thread you start. Plain `std::thread` has no advantage in new code.
+- Check the stop token at natural break points (between files, between chunks). Stopping is cooperative: nothing interrupts a thread in the middle of a file read.
+- Do not start a thread per small task (per enemy, per particle batch): starting one costs tens of microseconds. Use a fixed pool of workers, built in the building-blocks module.
+- Pass data to a thread by value or by moving it in. Capturing locals by reference in a thread that outlives them is the lambda-capture bug again, with a thread on top.
+
+## Coding task: split the work
 
 Sources: [cppreference: std::jthread](https://en.cppreference.com/w/cpp/thread/jthread), Anthony Williams, *C++ Concurrency in Action* (2nd ed.), Core Guidelines CP.25 (prefer gsl::joining_thread/jthread)
+
+The end-of-level screen sums the damage dealt by every attack in the replay, and there are millions of them.
 
 <Code
   id="par-sum"
   devices={["desktop"]}
   language="cpp"
-  prompt="Write `double parallel_sum(std::span<const double> v, unsigned nthreads)`. Split v into nthreads contiguous chunks, sum each chunk in its own std::jthread into a per-thread slot (no shared accumulator), then add up the partials. Handle nthreads > size and nthreads == 0 (treat as 1)."
+  prompt="Write `double parallel_sum(std::span<const double> v, unsigned nthreads)`. Split v (the damage values of every attack) into nthreads contiguous chunks, sum each chunk in its own std::jthread into a per-thread slot (no shared accumulator), then add up the partials. Handle nthreads > size and nthreads == 0 (treat as 1)."
   starter={"#include <span>\n#include <thread>\n#include <vector>\ndouble parallel_sum(std::span<const double> v, unsigned nthreads) { return 0; }\n"}
   visibleTests={"#include \"check.h\"\n\nint main() {\n    std::vector<double> v(1000, 1.0);\n    CHECK(parallel_sum(v, 4) == 1000);\n    return 0;\n}\n"}
   tests={"#include \"check.h\"\n\nint main() {\n    std::vector<double> v(100001); for (std::size_t i = 0; i < v.size(); ++i) v[i] = (double)i;\n    for (unsigned t : {0u, 1u, 3u, 8u}) CHECK(parallel_sum(v, t) == 100000.0 * 100001 / 2);\n    std::vector<double> small{1, 2}; CHECK(parallel_sum(small, 16) == 3);\n    CHECK(parallel_sum({}, 4) == 0);\n    return 0;\n}\n"}
   solution={"#include <span>\n#include <thread>\n#include <vector>\n#include <numeric>\n#include <algorithm>\ndouble parallel_sum(std::span<const double> v, unsigned nthreads) {\n    nthreads = std::max(1u, nthreads);\n    std::vector<double> part(nthreads, 0.0);\n    std::size_t chunk = (v.size() + nthreads - 1) / nthreads;\n    {\n        std::vector<std::jthread> ts;\n        for (unsigned t = 0; t < nthreads; ++t)\n            ts.emplace_back([&, t] {\n                std::size_t b = std::min(v.size(), t * chunk), e = std::min(v.size(), b + chunk);\n                part[t] = std::accumulate(v.begin() + b, v.begin() + e, 0.0);\n            });\n    }\n    return std::accumulate(part.begin(), part.end(), 0.0);\n}\n"}
   hints={["Clamp each chunk's begin and end to v.size().", "Each thread writes only its own part[t]."]}
-  explanation="Per-thread partials avoid locks. Module 09's false-sharing lesson shows why adjacent slots can still hurt."
+  explanation="Per-thread partials avoid locks. The false-sharing lesson shows why adjacent slots can still hurt."
+/>
+
+## Coding task: the cancellable loader
+
+The core of the loader thread: load files one by one, and stop promptly when asked.
+
+<Code
+  id="cancel-loader"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `int load_all(std::stop_token st, int n, const std::function<void(int)>& load_one)`. It calls load_one(0), load_one(1), ... up to n-1, but checks st.stop_requested() before each call and stops as soon as a stop is requested. Return how many files were loaded."
+  starter={"#include <functional>\n#include <stop_token>\nint load_all(std::stop_token st, int n, const std::function<void(int)>& load_one) {\n    for (int i = 0; i < n; ++i) load_one(i);\n    return n;\n}\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    std::stop_source src;\n    int seen = 0;\n    int r = load_all(src.get_token(), 10, [&](int i) { ++seen; if (i == 2) src.request_stop(); });\n    CHECK(r == 3 && seen == 3);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <atomic>\n#include <chrono>\n#include <thread>\nint main() {\n    std::stop_source src;\n    int seen = 0;\n    CHECK(load_all(src.get_token(), 10, [&](int i) { ++seen; if (i == 2) src.request_stop(); }) == 3 && seen == 3);\n    std::stop_source stopped; stopped.request_stop();\n    seen = 0;\n    CHECK(load_all(stopped.get_token(), 10, [&](int) { ++seen; }) == 0 && seen == 0);\n    std::stop_source fresh;\n    CHECK(load_all(fresh.get_token(), 7, [&](int) {}) == 7);\n    CHECK(load_all(fresh.get_token(), 0, [&](int) {}) == 0);\n    std::atomic<int> result{-1};\n    {\n        std::jthread t([&](std::stop_token st) {\n            result = load_all(st, 100000, [](int) { std::this_thread::sleep_for(std::chrono::microseconds(200)); });\n        });\n        std::this_thread::sleep_for(std::chrono::milliseconds(20));\n    }\n    CHECK(result >= 0 && result < 100000);\n    return 0;\n}\n"}
+  solution={"#include <functional>\n#include <stop_token>\nint load_all(std::stop_token st, int n, const std::function<void(int)>& load_one) {\n    for (int i = 0; i < n; ++i) {\n        if (st.stop_requested()) return i;\n        load_one(i);\n    }\n    return n;\n}\n"}
+  hints={["for (int i = 0; i < n; ++i) { if (st.stop_requested()) return i; load_one(i); } return n;", "A stop requested during load_one(i) takes effect before load_one(i + 1)."]}
+  explanation="Checking before each file gives a bounded reaction time (one file's worth) without interrupting a file half-way. std::jthread passes the token automatically when the function's first parameter is a std::stop_token."
 />

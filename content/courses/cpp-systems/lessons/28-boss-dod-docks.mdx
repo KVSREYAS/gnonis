@@ -4,7 +4,7 @@ title: "Module test: Data-oriented design"
 estMinutes: 12
 xp: 220
 fun: 5
-missionIntro: "AoS vs SoA, hot/cold and branches. Then write a data-oriented update loop."
+missionIntro: "AoS vs SoA, hot/cold and branches in a timed test. Then write the data-oriented update loop for falling debris."
 kind: boss
 keyIdeas:
   - "Store fields the hot loop reads contiguously (SoA)."
@@ -14,7 +14,7 @@ keyIdeas:
 
 ## Module test
 
-Six timed questions on Data-oriented design. 3 wrong answers end the test. Then a coding task: the update loop.
+Milestone 8 check: a million particles fit in the frame, enemy data is split by use, the hot loops avoid random branches, and game objects are entities with components. Six timed questions on data-oriented design. 3 wrong answers end the test. Then a coding task: the update loop.
 
 <Boss
   id="docks-dod"
@@ -29,13 +29,13 @@ Six timed questions on Data-oriented design. 3 wrong answers end the test. Then 
 
 ## Coding task: the update loop
 
-Step every living body in SoA order, and retire the ones that hit the floor.
+When the boss dies, its armour breaks into thousands of pieces of debris that fall under gravity and settle on the floor. Step every living piece in SoA order, and retire the ones that hit the floor.
 
 <Code
   id="soa-update"
   devices={["desktop"]}
   language="cpp"
-  prompt={"Implement `struct Bodies { std::vector<float> x, v; std::vector<std::uint8_t> alive; }` with `void step(Bodies& b, float dt, float floor)`. For each alive body: v -= 9.8f*dt and x += v*dt. If x < floor, set x = floor, v = 0 and alive = 0. Return the number still alive. Keep it SoA, with no per-body objects."}
+  prompt="Implement `struct Bodies { std::vector<float> x, v; std::vector<std::uint8_t> alive; }` with `void step(Bodies& b, float dt, float floor)`. Here x is a debris piece's height. For each alive piece: v -= 9.8f*dt and x += v*dt. If x < floor, set x = floor, v = 0 and alive = 0 (it has settled). Return the number still alive. Keep it SoA, with no per-piece objects."
   starter={"#include <vector>\n#include <cstdint>\n#include <cstddef>\nstruct Bodies { std::vector<float> x, v; std::vector<std::uint8_t> alive; };\nstd::size_t step(Bodies& b, float dt, float floor) { return 0; }\n"}
   visibleTests={"#include \"check.h\"\n\nint main() {\n    Bodies b{{10.f}, {0.f}, {1}};\n    CHECK(step(b, 0.1f, 0.f) == 1 && b.v[0] < 0);\n    return 0;\n}\n"}
   tests={"#include \"check.h\"\n\n#include <cmath>\nint main() {\n    Bodies b{{10.f, 0.05f, 5.f}, {0.f, 0.f, 0.f}, {1, 1, 0}};\n    std::size_t n = step(b, 0.1f, 0.f);\n    CHECK(n == 1);\n    CHECK(std::fabs(b.v[0] + 0.98f) < 1e-5f && std::fabs(b.x[0] - (10.f - 0.098f)) < 1e-5f);\n    CHECK(b.x[1] == 0.f && b.alive[1] == 0 && b.v[1] == 0.f);\n    CHECK(b.x[2] == 5.f);\n    for (int i = 0; i < 100; ++i) step(b, 0.1f, 0.f);\n    CHECK(b.alive[0] == 0 && b.x[0] == 0.f);\n    return 0;\n}\n"}

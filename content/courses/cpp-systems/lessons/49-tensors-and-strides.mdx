@@ -1,25 +1,68 @@
 ---
 id: cpp-systems/13-capstone/01-tensors-and-strides
 title: "Tensors, Shapes and Strides"
-estMinutes: 9
+estMinutes: 11
 xp: 110
 fun: 5
-missionIntro: "A tensor is a flat buffer plus a shape and strides. Transpose and slice become metadata changes with no copying."
+missionIntro: "The boss's inputs live in a flat buffer with a shape and strides. Transpose and slice become metadata changes with no copying, as long as every reader uses the strides."
 keyIdeas:
   - "Row-major strides: stride[last] = 1 and stride[i] = stride[i+1] × shape[i+1]."
   - "offset(i, j, k) = i·s0 + j·s1 + k·s2. A transpose swaps strides and copies nothing."
   - "Non-contiguous views are fine to read, but kernels usually want contiguous inputs, so call .contiguous() first."
 ---
 
-## Strides
+## The feature: the boss's view of the arena
 
+Each frame the game fills a table: one row per enemy in the fight, one column per feature (distance to player, health, speed, minions nearby). The network wants it one way, the debug overlay the other way round (one row per feature, to draw a graph of each). Copying the table for each consumer every frame is wasteful, so we describe the same buffer two ways.
 
+## The careless version: a transposed view read as if it were flat
+
+```cpp
+#include <cstdio>
+#include <vector>
+
+struct View { const float* data; int rows, cols, s0, s1; };
+
+View transpose(View v) { return {v.data, v.cols, v.rows, v.s1, v.s0}; }   // no copy
+
+int main() {
+    // 3 enemies x 4 features: distance, health, speed, minions
+    std::vector<float> table = {5, 100, 2, 0,
+                                9,  40, 3, 1,
+                                2,  75, 1, 4};
+    View enemies{table.data(), 3, 4, 4, 1};
+    View features = transpose(enemies);                         // 4 features x 3 enemies
+
+    std::printf("health of each enemy (careless): ");
+    for (int e = 0; e < features.cols; ++e)
+        std::printf("%g ", features.data[1 * features.cols + e]);   // assumes a flat row-major layout
+    std::printf("\nhealth of each enemy (strides):  ");
+    for (int e = 0; e < features.cols; ++e)
+        std::printf("%g ", features.data[1 * features.s0 + e * features.s1]);
+    std::printf("\n");
+}
+```
+```text
+health of each enemy (careless): 0 9 40 
+health of each enemy (strides):  100 40 75 
+```
+
+The overlay's health graph showed 0, 9 and 40: a minion count, a distance and one real health value. The view's shape said "4 by 3", but the code computed the offset as if the data were laid out that way. It is not: only the strides know where element (feature 1, enemy e) lives.
+
+## The concept: shape plus strides
+
+A tensor is a flat buffer plus:
+
+- **shape**: the size of each dimension, `[3, 4]` here.
+- **strides**: how far to move in the buffer to step one along each dimension. Row-major `[3, 4]` has strides `[4, 1]`.
+
+The offset of `(i, j)` is always `i*s0 + j*s1`. A **transpose** swaps both the shape and the strides (`[4, 3]`, `[1, 4]`) and copies nothing. A **slice** (some columns only) changes the start pointer and shape, keeps the strides. Every reader must use the strides; the only layout it may assume is "contiguous", and only after checking.
 
 ![Flat buffer with a 2x3x4 shape overlaid, strides 12, 4 and 1, and a transposed view sharing the same buffer](/diagrams/cpp-systems/13-capstone/01-tensors-and-strides.png)
 
 <Predict
   id="stride0"
-  prompt="Shape [2, 3, 4], row-major. stride[0]?"
+  prompt="The boss's arena tensor has shape [2, 3, 4], row-major (2 frames, 3 enemies, 4 features). stride[0]?"
   answer={12}
   tolerance={{"mode": "absolute", "value": 0}}
   explanation="3 × 4."
@@ -28,7 +71,7 @@ keyIdeas:
 
 <Predict
   id="offset"
-  prompt="Same tensor: flat offset of element [1, 2, 3]?"
+  prompt="Same tensor: flat offset of element [1, 2, 3] (frame 1, enemy 2, feature 3)?"
   answer={23}
   tolerance={{"mode": "absolute", "value": 0}}
   explanation="1·12 + 2·4 + 3·1."
@@ -37,26 +80,52 @@ keyIdeas:
 
 <MCQ
   id="transpose-view"
-  prompt="Transposing a [3, 4] row-major view to [4, 3] by swapping strides gives strides…"
+  prompt="Transposing the [3, 4] row-major enemy table to a [4, 3] feature view by swapping strides gives strides…"
   options={["[4, 1]", "[1, 4]", "[3, 1]", "[1, 3]"]}
   answer={1}
   explanation="Original strides were [4, 1], swapped to [1, 4]."
   devices={["phone", "desktop"]}
 />
 
-## Build it
+## When to use views, and when not
+
+- Use views to give several consumers different shapes of the same data without copying: transposes, slices, a single row.
+- Before a hot kernel (matmul, SIMD loops), make the input contiguous with one copy. Strided inner loops cannot vectorize and miss the cache.
+- A view does not own the buffer. If the table is rebuilt (a vector that reallocates), every view dangles. PyTorch and our exercise share ownership through a `shared_ptr` for this reason.
+- For a fixed small table, a plain struct with named fields is clearer than a tensor.
 
 Sources: [PyTorch: tensor views](https://pytorch.org/docs/stable/tensor_view.html), Edward Z. Yang, [PyTorch internals](http://blog.ezyang.com/2019/05/pytorch-internals/)
+
+## Coding task: the tensor type
+
+The capstone's tensor: shared buffer, shape, strides, and views that share the buffer.
 
 <Code
   id="tensor"
   devices={["desktop"]}
   language="cpp"
-  prompt={"Implement `struct Tensor { std::shared_ptr<std::vector<float>> data; std::vector<std::size_t> shape, stride; std::size_t offset = 0; }` with `static Tensor zeros(std::vector<std::size_t> shape)` (row-major strides), `float& at(std::initializer_list<std::size_t> idx)`, `Tensor transpose(std::size_t a, std::size_t b) const` (a view) and `bool is_contiguous() const`."}
+  prompt="Implement the brain's tensor type: `struct Tensor { std::shared_ptr<std::vector<float>> data; std::vector<std::size_t> shape, stride; std::size_t offset = 0; }` with `static Tensor zeros(std::vector<std::size_t> shape)` (row-major strides), `float& at(std::initializer_list<std::size_t> idx)`, `Tensor transpose(std::size_t a, std::size_t b) const` (a view) and `bool is_contiguous() const`."
   starter={"#include <vector>\n#include <memory>\n#include <initializer_list>\n#include <cstddef>\nstruct Tensor {\n    std::shared_ptr<std::vector<float>> data; std::vector<std::size_t> shape, stride; std::size_t offset = 0;\n    static Tensor zeros(std::vector<std::size_t> shape) {\n        Tensor t; t.shape = shape; t.stride.assign(shape.size(), 0);\n        std::size_t n = 1; for (auto d : shape) n *= d;\n        t.data = std::make_shared<std::vector<float>>(n ? n : 1, 0.f);\n        return t;\n    }\n    float& at(std::initializer_list<std::size_t> idx) { return (*data)[0]; }\n    Tensor transpose(std::size_t a, std::size_t b) const { return *this; }\n    bool is_contiguous() const { return false; }\n};\n"}
   visibleTests={"#include \"check.h\"\n\nint main() { auto t = Tensor::zeros({2, 3, 4}); CHECK(t.stride[0] == 12); t.at({1, 2, 3}) = 5; CHECK((*t.data)[23] == 5); return 0; }\n"}
   tests={"#include \"check.h\"\n\nint main() {\n    auto t = Tensor::zeros({2, 3, 4}); CHECK(t.stride[0] == 12 && t.stride[1] == 4 && t.stride[2] == 1 && t.data->size() == 24);\n    t.at({1, 2, 3}) = 5; CHECK((*t.data)[23] == 5 && t.is_contiguous());\n    auto m = Tensor::zeros({3, 4}); for (std::size_t i = 0; i < 3; ++i) for (std::size_t j = 0; j < 4; ++j) m.at({i, j}) = float(i * 10 + j);\n    auto mt = m.transpose(0, 1);\n    CHECK(mt.shape[0] == 4 && mt.stride[0] == 1 && mt.stride[1] == 4 && !mt.is_contiguous());\n    CHECK(mt.at({3, 2}) == 23 && mt.data == m.data);\n    mt.at({0, 1}) = -1; CHECK(m.at({1, 0}) == -1);\n    return 0;\n}\n"}
   solution={"#include <vector>\n#include <memory>\n#include <initializer_list>\n#include <cstddef>\n#include <utility>\nstruct Tensor {\n    std::shared_ptr<std::vector<float>> data; std::vector<std::size_t> shape, stride; std::size_t offset = 0;\n    static Tensor zeros(std::vector<std::size_t> shape) {\n        Tensor t; t.shape = shape; t.stride.assign(shape.size(), 1);\n        std::size_t n = 1;\n        for (std::size_t i = shape.size(); i-- > 0;) { t.stride[i] = n; n *= shape[i]; }\n        t.data = std::make_shared<std::vector<float>>(n, 0.f); return t;\n    }\n    float& at(std::initializer_list<std::size_t> idx) {\n        std::size_t o = offset, d = 0; for (auto i : idx) o += i * stride[d++];\n        return (*data)[o];\n    }\n    Tensor transpose(std::size_t a, std::size_t b) const { Tensor t = *this; std::swap(t.shape[a], t.shape[b]); std::swap(t.stride[a], t.stride[b]); return t; }\n    bool is_contiguous() const {\n        std::size_t n = 1;\n        for (std::size_t i = shape.size(); i-- > 0;) { if (shape[i] != 1 && stride[i] != n) return false; n *= shape[i]; }\n        return true;\n    }\n};\n"}
   hints={["Fill strides right to left.", "A transpose is a view: it shares the data pointer."]}
   explanation="This is exactly how PyTorch, ggml and every inference runtime describe tensors."
+/>
+
+## Coding task: slices and making a view contiguous
+
+The network only uses some feature columns. Slice them out as a view, then copy the view into a flat buffer for the matmul.
+
+<Code
+  id="feature-slice"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Given `struct View { const float* data; std::size_t rows, cols, s0, s1; float at(std::size_t i, std::size_t j) const { return data[i * s0 + j * s1]; } };` write `View col_slice(View v, std::size_t c0, std::size_t c1)` (columns c0 up to but not including c1, no copying) and `std::vector<float> contiguous(View v)` (rows*cols values in row-major order)."
+  starter={"#include <cstddef>\n#include <vector>\nstruct View {\n    const float* data; std::size_t rows, cols, s0, s1;\n    float at(std::size_t i, std::size_t j) const { return data[i * s0 + j * s1]; }\n};\nView col_slice(View v, std::size_t c0, std::size_t c1) { return v; }\nstd::vector<float> contiguous(View v) { return {}; }\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    float t[6] = {1, 2, 3,\n                  4, 5, 6};\n    View v{t, 2, 3, 3, 1};\n    View s = col_slice(v, 1, 3);\n    CHECK(s.cols == 2 && s.at(0, 0) == 2 && s.at(1, 1) == 6);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\nint main() {\n    float t[6] = {1, 2, 3,\n                  4, 5, 6};\n    View v{t, 2, 3, 3, 1};\n    View s = col_slice(v, 1, 3);\n    CHECK(s.cols == 2 && s.rows == 2 && s.at(0, 0) == 2 && s.at(1, 1) == 6);\n    CHECK(s.data == t + 1);\n    std::vector<float> c = contiguous(s);\n    CHECK(c.size() == 4 && c[0] == 2 && c[1] == 3 && c[2] == 5 && c[3] == 6);\n    View tr{t, 3, 2, 1, 3};\n    std::vector<float> ct = contiguous(tr);\n    CHECK(ct.size() == 6 && ct[0] == 1 && ct[1] == 4 && ct[2] == 2 && ct[5] == 6);\n    View ts = col_slice(tr, 1, 2);\n    std::vector<float> cs = contiguous(ts);\n    CHECK(cs.size() == 3 && cs[0] == 4 && cs[1] == 5 && cs[2] == 6);\n    CHECK(contiguous(col_slice(v, 2, 2)).empty());\n    return 0;\n}\n"}
+  solution={"#include <cstddef>\n#include <vector>\nstruct View {\n    const float* data; std::size_t rows, cols, s0, s1;\n    float at(std::size_t i, std::size_t j) const { return data[i * s0 + j * s1]; }\n};\nView col_slice(View v, std::size_t c0, std::size_t c1) {\n    return {v.data + c0 * v.s1, v.rows, c1 - c0, v.s0, v.s1};\n}\nstd::vector<float> contiguous(View v) {\n    std::vector<float> out;\n    out.reserve(v.rows * v.cols);\n    for (std::size_t i = 0; i < v.rows; ++i)\n        for (std::size_t j = 0; j < v.cols; ++j) out.push_back(v.at(i, j));\n    return out;\n}\n"}
+  hints={["A column slice starts at column c0: data + c0 * s1, with cols = c1 - c0 and the same strides.", "contiguous: for each i, for each j, push_back(v.at(i, j))."]}
+  explanation="The slice is just new metadata over the same buffer. contiguous() is the one copy before the hot loop, after which the matmul can assume row-major data and walk it with unit stride."
 />

@@ -1,64 +1,253 @@
 ---
 id: cpp-systems/oop/04-inheritance-and-polymorphism
 title: "Inheritance, Virtual Functions and Polymorphism"
-estMinutes: 9
+estMinutes: 15
 xp: 100
 fun: 5
-missionIntro: "A derived class reuses a base class. Make a function virtual and a base pointer calls the right version at runtime."
+missionIntro: "Slimes hop, bats swoop, turrets shoot, and the update loop should not care which is which. Inheritance and virtual functions, plus the three bugs they cause when used carelessly: hiding, slicing and the missing virtual destructor."
 keyIdeas:
-  - "`class Truck : public Vehicle` inherits Vehicle's public interface."
-  - "`virtual` plus `override` lets a call through a Base& or Base* pick the derived version. A class with a pure virtual function (`= 0`) is abstract."
+  - "`class Slime : public Enemy` inherits Enemy's members and public interface."
+  - "`virtual` plus `override` lets a call through an Enemy& or Enemy* pick the derived version at runtime. A class with a pure virtual function (`= 0`) is abstract."
+  - "Copying a derived object into a base value slices it. Store polymorphic objects by pointer."
   - "If you delete through a base pointer, the base needs a `virtual` destructor."
 ---
 
-## Virtual calls
+## The feature: many kinds of enemy
 
-Each class with virtual functions has a table of function pointers (the vtable), and each object carries a hidden pointer to it. That's how the call finds the right version.
+Slime Siege has slimes (hop toward the player), bats (fly fast, ignore walls) and turrets (stand still and shoot). Next month someone adds ghosts. The game loop should be one line: "update every enemy". Adding ghosts should not mean editing the loop.
 
-![Truck object with a hidden vptr pointing at Truck's vtable, whose honk slot points at Truck::honk](/diagrams/cpp-systems/oop/04-inheritance-and-polymorphism.png)
+## The careless version: a type tag and a switch
+
+```cpp
+#include <cstdio>
+#include <vector>
+
+enum class Kind { Slime, Bat, Turret, Ghost };   // Ghost added last week
+struct Enemy { Kind kind; float x = 0; };
+
+void update(Enemy& e) {
+    switch (e.kind) {
+        case Kind::Slime:  e.x += 1; break;
+        case Kind::Bat:    e.x += 3; break;
+        case Kind::Turret: break;
+        // whoever added Ghost forgot this switch (one of twelve in the game)
+    }
+}
+
+int main() {
+    std::vector<Enemy> wave = {{Kind::Slime}, {Kind::Bat}, {Kind::Ghost}};
+    for (auto& e : wave) update(e);
+    for (auto& e : wave) std::printf("%.0f ", e.x);
+    std::printf("\n");
+}
+```
+```text
+1 3 0 
+```
+
+## What went wrong
+
+The ghost never moves. Every function that cares about the enemy type (update, draw, attack, sound, save) has its own `switch`, and adding a type means finding and editing all of them. Miss one and the bug is silent. (g++ `-Wall` warns about an unhandled enum in a switch, but only if there is no `default:`, and real switches usually have one.)
+
+What we want is for the behaviour to live **with the type**: the ghost's movement code is written in the ghost, and the loop just asks "whatever you are, update yourself".
+
+## The fix: a base class and virtual functions
+
+**Inheritance**: `class Slime : public Enemy` makes `Slime` a kind of `Enemy`. It contains all of Enemy's members, and a `Slime&` can be used anywhere an `Enemy&` is expected.
+
+A **virtual** function in the base can be **overridden** in each derived class. When you call it through a base pointer or reference, the program looks at the real type of the object at runtime and calls that type's version.
+
+```cpp
+#include <cstdio>
+#include <memory>
+#include <vector>
+
+class Enemy {
+public:
+    virtual ~Enemy() = default;
+    virtual void update() = 0;               // every enemy must define it
+    float x() const { return x_; }
+protected:
+    float x_ = 0;                            // derived classes may touch it
+};
+class Slime : public Enemy  { public: void update() override { x_ += 1; } };
+class Bat : public Enemy    { public: void update() override { x_ += 3; } };
+class Ghost : public Enemy  { public: void update() override { x_ += 2; } };
+
+int main() {
+    std::vector<std::unique_ptr<Enemy>> wave;
+    wave.push_back(std::make_unique<Slime>());
+    wave.push_back(std::make_unique<Bat>());
+    wave.push_back(std::make_unique<Ghost>());
+    for (auto& e : wave) e->update();        // never changes when types are added
+    for (auto& e : wave) std::printf("%.0f ", e->x());
+    std::printf("\n");
+}
+```
+```text
+1 3 2 
+```
+
+## The keywords
+
+- `virtual`: this function can be overridden and is dispatched at runtime.
+- `= 0`: **pure virtual**. The base has no version, and the class becomes **abstract**: you cannot create a plain `Enemy`, only concrete kinds.
+- `override`: on the derived function, asks the compiler to check that it really overrides a base virtual. A typo or a missing `const` becomes a compile error instead of a silent new function.
+- `protected`: like private, but derived classes can use it. Here `x_` is shared with every enemy kind, and still hidden from the rest of the game.
+- `virtual ~Enemy()`: explained two cards below; required.
+
+(`std::unique_ptr<Enemy>` holds one heap enemy and deletes it automatically. The ownership module covers it fully; here it just stands in for "pointer that cleans up".)
+
+![Bat object with a hidden vptr pointing at Bat's vtable, whose update slot points at Bat::update](/diagrams/cpp-systems/oop/04-inheritance-and-polymorphism.png)
+
+## Bug 1: forgetting virtual (hiding)
+
+Without `virtual`, a function with the same name in the derived class only **hides** the base one. The call is picked from the type of the pointer or reference at compile time, not from the object.
+
+```cpp
+#include <cstdio>
+
+struct Enemy { const char* roar() const { return "(silence)"; } };
+struct Dragon : Enemy { const char* roar() const { return "ROAR"; } };
+
+void play_sound(const Enemy& e) { std::printf("%s\n", e.roar()); }
+
+int main() {
+    Dragon boss;
+    std::printf("direct: %s\n", boss.roar());
+    play_sound(boss);                    // through Enemy&
+}
+```
+```text
+direct: ROAR
+(silence)
+```
+
+The boss fight is silent, because the sound system only sees `Enemy&`.
 
 <Trace
   id="virtual-honk"
-  prompt="Virtual vs non-virtual."
-  code={"#include <cstdio>\nstruct Vehicle {\n    virtual const char* honk() const { return \"beep\"; }\n    const char* kind() const { return \"vehicle\"; }\n    virtual ~Vehicle() = default;\n};\nstruct Truck : Vehicle {\n    const char* honk() const override { return \"HOOONK\"; }\n    const char* kind() const { return \"truck\"; }\n};\nint main() {\n    Truck t;\n    const Vehicle& v = t;\n    std::printf(\"%s %s\", v.honk(), v.kind());\n}"}
-  steps={[{"line": 13, "note": "a Vehicle reference to a Truck"}, {"line": 14, "note": "honk is virtual, so Truck's runs; kind isn't, so Vehicle's runs"}]}
+  prompt="Virtual vs non-virtual, through a base reference."
+  code={"#include <cstdio>\nstruct Enemy {\n    virtual const char* roar() const { return \"hiss\"; }\n    const char* kind() const { return \"enemy\"; }\n    virtual ~Enemy() = default;\n};\nstruct Dragon : Enemy {\n    const char* roar() const override { return \"ROAR\"; }\n    const char* kind() const { return \"dragon\"; }\n};\nint main() {\n    Dragon d;\n    const Enemy& e = d;\n    std::printf(\"%s %s\", e.roar(), e.kind());\n}"}
+  steps={[{"line": 13, "note": "an Enemy reference to a Dragon"}, {"line": 14, "note": "roar is virtual, so Dragon's runs; kind is not, so Enemy's runs"}]}
   question="What does it print?"
-  answer="HOOONK vehicle"
+  answer="ROAR enemy"
   explanation="Only virtual functions dispatch on the real type of the object."
   devices={["phone", "desktop"]}
 />
 
 <MCQ
   id="override-why"
-  prompt="What does `override` buy you?"
+  prompt="You write `void update() const override` in Bat, but Enemy declares `virtual void update()` (no const). What does `override` buy you here?"
   options={["Faster calls", "A compile error if the function doesn't actually override a base virtual (typo, wrong const)", "It makes the function virtual in the base", "Nothing"]}
   answer={1}
-  explanation="Always write override on overriders."
+  explanation="Without override, Bat::update() const would be a new, unrelated function and bats would silently use the base behaviour. With override, the compiler reports that it overrides nothing."
   devices={["phone", "desktop"]}
 />
+
+## Bug 2: slicing
+
+The spawner stores enemies **by value** in a `std::vector<Enemy>` (here `Enemy` is not abstract, so this compiles):
+
+```cpp
+#include <cstdio>
+#include <vector>
+
+struct Enemy {
+    virtual ~Enemy() = default;
+    virtual const char* name() const { return "generic enemy"; }
+    int hp = 10;
+};
+struct Bat : Enemy {
+    const char* name() const override { return "bat"; }
+    float wing_speed = 9.5f;
+};
+
+int main() {
+    std::vector<Enemy> wave;
+    wave.push_back(Bat{});               // copies only the Enemy part
+    std::printf("%s\n", wave[0].name());
+}
+```
+```text
+generic enemy
+```
+
+`push_back` copies the `Bat` into a slot that is exactly `sizeof(Enemy)` bytes. Only the `Enemy` part fits, so `wing_speed` and the bat's identity are cut off. This is **object slicing**. The fix: store pointers (`std::vector<std::unique_ptr<Enemy>>`), so each object keeps its real type. Making the base abstract (`= 0`) prevents the mistake entirely, because an abstract `Enemy` cannot be copied into a value.
+
+## Bug 3: the missing virtual destructor
+
+```cpp
+#include <string>
+
+struct Enemy { ~Enemy() {} };                       // not virtual
+struct Boss : Enemy { std::string title = "The Slime King, Devourer of Tiles"; };
+
+int main() {
+    Enemy* e = new Boss;
+    delete e;                                       // runs only ~Enemy
+}
+```
+```text
+==1==ERROR: AddressSanitizer: new-delete-type-mismatch on 0x503000000040 in thread T0:
+  object passed to delete has wrong type:
+SUMMARY: AddressSanitizer: new-delete-type-mismatch ../../../../src/libsanitizer/asan/asan_new_delete.cpp:164 in operator delete(void*, unsigned long)
+```
+
+`delete e` looks at the static type `Enemy`. Without a virtual destructor it runs only `~Enemy` and frees the wrong size; `~Boss` never runs, so the string leaks. The language calls this undefined behaviour. Rule: **a class meant to be used through base pointers gets `virtual ~Base() = default;`**.
 
 <SpotBug
   id="no-virtual-dtor"
-  prompt="Which line is undefined behaviour?"
+  prompt="The level unloader deletes every entity through a base pointer. Which line is undefined behaviour?"
   code={"#include <string>\nstruct Base { ~Base() {} };\nstruct Derived : Base { std::string name = \"engine\"; };\nint main() {\n    Base* p = new Derived;\n    delete p;\n}"}
   bugLine={6}
-  explanation="Base has no virtual destructor, so deleting a Derived through a Base* is UB, and name is never destroyed."
+  explanation="Base has no virtual destructor, so deleting a Derived through a Base* is undefined behaviour, and name is never destroyed."
   devices={["phone", "desktop"]}
 />
 
-## Abstract shapes
+## When to use it, and when not
 
-A pure virtual function `= 0` makes the class abstract: you can't create one directly, only derived classes that implement it.
+Use virtual functions when:
+
+- you have a family of types with the same operations but different behaviour, and the set of types grows (enemy kinds, UI widgets, weapons)
+- the number of objects is in the hundreds or thousands per frame
+
+Avoid them when:
+
+- the set of types is small and fixed: a `std::variant` (later module) is often simpler
+- you process 100,000 identical things per frame (particles): the vptr adds 8 bytes per object and every call is an indirect jump the compiler cannot inline. The data-oriented design module stores those in plain arrays instead
+- you only want to share code, not substitute types: a helper function or a member object is simpler than inheritance
+
+## Coding task: hitbox shapes
+
+Collision code works with hitbox shapes through a base class, so new shapes can be added without touching the code that sums them.
 
 <Code
   id="shapes"
   devices={["desktop"]}
   language="cpp"
-  prompt="Write an abstract `struct Shape` with `virtual double area() const = 0;` and a virtual destructor. Add `Rect(double w, double h)` and `Circle(double r)` (use 3.14159 for pi) that override area(). Then write `double total_area(const std::vector<std::unique_ptr<Shape>>& shapes)`."
+  prompt="Collision uses hitbox shapes. Write an abstract `struct Shape` with `virtual double area() const = 0;` and a virtual destructor. Add `Rect(double w, double h)` and `Circle(double r)` (use 3.14159 for pi) that override area(). Then write `double total_area(const std::vector<std::unique_ptr<Shape>>& shapes)` (the debug overlay shows how much of the screen is covered by hitboxes)."
   starter={"#include <vector>\n#include <memory>\nstruct Shape {\n    virtual double area() const { return 0; }\n    virtual ~Shape() = default;\n};\nstruct Rect : Shape { Rect(double, double) {} };\nstruct Circle : Shape { Circle(double) {} };\ndouble total_area(const std::vector<std::unique_ptr<Shape>>& shapes) { return 0; }\n"}
   visibleTests={"#include \"check.h\"\nint main() {\n    Rect r(2, 3);\n    CHECK(r.area() == 6);\n    return 0;\n}\n"}
   tests={"#include \"check.h\"\n#include <cmath>\nint main() {\n    Rect r(2, 3); CHECK(r.area() == 6);\n    std::vector<std::unique_ptr<Shape>> v;\n    v.push_back(std::make_unique<Rect>(4, 5));\n    v.push_back(std::make_unique<Circle>(1));\n    CHECK(std::fabs(total_area(v) - 23.14159) < 1e-9);\n    const Shape& s = Circle(2); CHECK(std::fabs(s.area() - 12.56636) < 1e-9);\n    CHECK(total_area({}) == 0);\n    return 0;\n}\n"}
   solution={"#include <vector>\n#include <memory>\nstruct Shape {\n    virtual double area() const = 0;\n    virtual ~Shape() = default;\n};\nstruct Rect : Shape {\n    double w, h;\n    Rect(double w, double h) : w(w), h(h) {}\n    double area() const override { return w * h; }\n};\nstruct Circle : Shape {\n    double r;\n    Circle(double r) : r(r) {}\n    double area() const override { return 3.14159 * r * r; }\n};\ndouble total_area(const std::vector<std::unique_ptr<Shape>>& shapes) {\n    double t = 0;\n    for (const auto& s : shapes) t += s->area();\n    return t;\n}\n"}
   hints={["Store the dimensions as members and override area().", "total_area just loops and calls s->area()."]}
-  explanation="total_area doesn't know or care which shapes it gets. That's polymorphism."
+  explanation="total_area does not know or care which shapes it gets. That is polymorphism: new hitbox kinds can be added without touching it."
+/>
+
+## Coding task: enemy movement
+
+The update loop from the top of this lesson, with three real behaviours. Positions are whole tiles on one row to keep the maths small.
+
+<Code
+  id="enemy-move"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write an abstract `class Enemy` with a constructor `explicit Enemy(int x)`, `int x() const`, a pure virtual `void step(int player_x)` and a virtual destructor. Add three kinds. `Slime`: moves 1 toward player_x (no move if already there). `Bat`: moves 2 toward player_x, but never past it. `Turret`: never moves. Then write `void update_all(std::vector<std::unique_ptr<Enemy>>& wave, int player_x)` that steps every enemy."
+  starter={"#include <memory>\n#include <vector>\nclass Enemy {\npublic:\n    explicit Enemy(int x) {}\n    virtual ~Enemy() = default;\n    int x() const { return 0; }\n    virtual void step(int player_x) {}\n};\nclass Slime : public Enemy { public: explicit Slime(int x) : Enemy(x) {} };\nclass Bat : public Enemy { public: explicit Bat(int x) : Enemy(x) {} };\nclass Turret : public Enemy { public: explicit Turret(int x) : Enemy(x) {} };\nvoid update_all(std::vector<std::unique_ptr<Enemy>>& wave, int player_x) {}\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    Slime s(0);\n    s.step(5);\n    CHECK(s.x() == 1);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\nint main() {\n    Slime s(0); s.step(5); CHECK(s.x() == 1);\n    s.step(-3); CHECK(s.x() == 0);\n    s.step(0); CHECK(s.x() == 0);\n    Bat b(10); b.step(0); CHECK(b.x() == 8);\n    b.step(7); CHECK(b.x() == 7);\n    b.step(7); CHECK(b.x() == 7);\n    b.step(12); CHECK(b.x() == 9);\n    std::vector<std::unique_ptr<Enemy>> wave;\n    wave.push_back(std::make_unique<Slime>(0));\n    wave.push_back(std::make_unique<Bat>(20));\n    wave.push_back(std::make_unique<Turret>(4));\n    for (int i = 0; i < 3; ++i) update_all(wave, 10);\n    CHECK(wave[0]->x() == 3 && wave[1]->x() == 14 && wave[2]->x() == 4);\n    const Enemy& e = *wave[1];\n    CHECK(e.x() == 14);\n    return 0;\n}\n"}
+  solution={"#include <memory>\n#include <vector>\nclass Enemy {\npublic:\n    explicit Enemy(int x) : x_(x) {}\n    virtual ~Enemy() = default;\n    int x() const { return x_; }\n    virtual void step(int player_x) = 0;\nprotected:\n    int x_;\n};\nclass Slime : public Enemy {\npublic:\n    explicit Slime(int x) : Enemy(x) {}\n    void step(int px) override { if (px > x_) ++x_; else if (px < x_) --x_; }\n};\nclass Bat : public Enemy {\npublic:\n    explicit Bat(int x) : Enemy(x) {}\n    void step(int px) override {\n        int d = px - x_;\n        if (d > 2) d = 2;\n        if (d < -2) d = -2;\n        x_ += d;\n    }\n};\nclass Turret : public Enemy {\npublic:\n    explicit Turret(int x) : Enemy(x) {}\n    void step(int) override {}\n};\nvoid update_all(std::vector<std::unique_ptr<Enemy>>& wave, int player_x) {\n    for (auto& e : wave) e->step(player_x);\n}\n"}
+  hints={["Keep x_ as a protected member so derived classes can change it.", "For the bat: compute the distance d = player_x - x_, then move by d clamped to the range -2..2."]}
+  explanation="update_all is three lines and never changes when a new enemy kind is added. Each kind's behaviour lives in its own class."
 />

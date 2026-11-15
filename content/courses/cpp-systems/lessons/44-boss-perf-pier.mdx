@@ -4,7 +4,7 @@ title: "Module test: Profiling and benchmarking"
 estMinutes: 14
 xp: 240
 fun: 5
-missionIntro: "Benchmarks, profiles and assembly in a timed test. Then write a benchmark harness that can't be fooled."
+missionIntro: "Benchmarks, profiles and assembly in a timed test. Then write the benchmark harness the team uses to compare two versions of a hot function, one that can't be fooled."
 kind: boss
 keyIdeas:
   - "Defeat dead-code elimination, and report median and spread."
@@ -14,7 +14,7 @@ keyIdeas:
 
 ## Module test
 
-Six timed questions on Profiling and benchmarking. 3 wrong answers end the test. Then a coding task: a benchmark harness.
+Milestone 12 check: frame times are reported as median and p99, benchmarks keep their results and warm up, the zone profiler shows where each frame's milliseconds go, and hot loops are checked in the assembly. Six timed questions on profiling and benchmarking. 3 wrong answers end the test. Then a coding task: a benchmark harness.
 
 <Boss
   id="pier"
@@ -29,7 +29,7 @@ Six timed questions on Profiling and benchmarking. 3 wrong answers end the test.
 
 ## Coding task: a benchmark harness
 
-Time many reps, then report the median and the best, not one lucky sample.
+The profiler said the slime AI is the hot spot, and there are two candidate rewrites. Time many reps of each, then report the median and the best, not one lucky sample.
 
 <Code
   id="bench-harness"

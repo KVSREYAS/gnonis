@@ -1,16 +1,62 @@
 ---
 id: cpp-systems/10-simd/00-concepts
 title: "Concepts: SIMD Vectorization"
-estMinutes: 8
+estMinutes: 10
 xp: 40
-fun: 1
-missionIntro: "How one instruction processes several numbers at once, how compilers produce it, and how to write it yourself."
+fun: 2
+missionIntro: "Milestone 11 of Slime Siege: particle physics fast enough for every explosion. How one instruction processes several numbers at once, how compilers produce it, and how to write it yourself."
 keyIdeas:
   - "SIMD: Single Instruction, Multiple Data. One instruction operates on a register holding several values."
   - "An SSE register is 128 bits: four floats or two doubles."
   - "Compilers auto-vectorize simple loops with no dependencies or aliasing doubts."
   - "Floating-point reductions need several accumulators, which changes rounding slightly."
 ---
+## Milestone 11: particle physics for every explosion
+
+**What we build this module:** the particle step that moves tens of thousands of sparks, slime droplets and smoke puffs every frame, written so the CPU processes four (or eight) particles per instruction. Then the total-energy statistic the effects system uses to fade old explosions, and a damage clamp kernel.
+
+**Why the game needs it:** after the data-oriented rewrite, particles live in flat float arrays. That is exactly the shape SIMD hardware wants. A loop that handles one float per instruction leaves most of each core idle; the same loop written so the compiler can vectorize it runs several times faster without touching the algorithm.
+
+## The careless version: a call per particle
+
+The physics helper lives in another `.cpp` file, so the compiler cannot see inside it when compiling the loop (no link-time optimization). `noipa` below makes that happen in one file.
+
+```cpp
+#include <chrono>
+#include <cstdio>
+#include <vector>
+
+constexpr int N = 4096;                       // particles alive this frame
+struct Particles { std::vector<float> x, vx; };
+
+__attribute__((noipa)) float move_one(float x, float vx, float dt) { return x + vx * dt; }   // "in physics.cpp"
+
+__attribute__((noipa)) void step_calls(Particles& p, float dt) {
+    for (int i = 0; i < N; ++i) p.x[i] = move_one(p.x[i], p.vx[i], dt);
+}
+__attribute__((noipa)) void step_simd(float* __restrict x, const float* __restrict vx, float dt) {
+    for (int i = 0; i < N; ++i) x[i] += vx[i] * dt;
+}
+
+int main() {
+    Particles p{std::vector<float>(N, 0.f), std::vector<float>(N, 1.f)};
+    auto ms = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };
+    auto t0 = std::chrono::steady_clock::now();
+    for (int frame = 0; frame < 100000; ++frame) step_calls(p, 0.016f);
+    auto t1 = std::chrono::steady_clock::now();
+    for (int frame = 0; frame < 100000; ++frame) step_simd(p.x.data(), p.vx.data(), 0.016f);
+    auto t2 = std::chrono::steady_clock::now();
+    std::printf("call per particle: %6.1f ms\n", ms(t1 - t0));
+    std::printf("plain SIMD loop:   %6.1f ms\n", ms(t2 - t1));
+}
+```
+```text
+call per particle:  710.3 ms
+plain SIMD loop:     30.9 ms
+```
+
+Same arithmetic, same particles, one run on the course machine at `-O2`. The first loop does one particle per call and per instruction. The second loop compiled to `mulps`/`addps`, which handle four floats each.
+
 ## What SIMD is
 
 A normal (scalar) add instruction adds one pair of numbers. A **SIMD** instruction adds several pairs at once, using wide **vector registers**.
@@ -21,7 +67,7 @@ On x86-64:
 - **AVX/AVX2**: 256-bit `ymm`, 8 floats.
 - **AVX-512**: 512-bit `zmm`, 16 floats, on some CPUs.
 
-Each slot in the register is a **lane**. `addps` adds lane 0 to lane 0, lane 1 to lane 1, and so on, in about the same time as one scalar add. A loop over floats can therefore run up to 4 times (SSE) or 8 times (AVX) faster when it is limited by arithmetic.
+Each slot in the register is a **lane**. `addps` adds lane 0 to lane 0, lane 1 to lane 1, and so on, in about the same time as one scalar add.
 
 ![Four lanes added by one instruction](/diagrams/cpp-systems/10-simd/01-auto-vectorization.png)
 
@@ -30,24 +76,18 @@ Each slot in the register is a **lane**. `addps` adds lane 0 to lane 0, lane 1 t
 At `-O2` (GCC 12 and newer) and `-O3`, the compiler tries to turn loops into SIMD code. It succeeds when:
 
 1. Iterations are **independent**: iteration i does not need the result of i-1.
-2. Memory is accessed with a simple stride, ideally contiguous.
-3. It can prove arrays do not overlap, or it adds a runtime check.
+2. Memory is accessed contiguously, ideally one flat array per field.
+3. It can prove arrays do not overlap (`__restrict`), or it adds a runtime check. At `-O2` GCC only uses the cheap cases, so the proof matters.
 4. There are no function calls it cannot inline.
 
-```cpp
-void add(float* __restrict a, const float* __restrict b, int n) {
-    for (int i = 0; i < n; ++i) a[i] += b[i];   // vectorizes
-}
-```
-
-`__restrict` promises no overlap. Check the result with `-fopt-info-vec` (GCC) or by reading the assembly for `ps` (packed single) instructions like `addps`.
+Check the result with `-fopt-info-vec` (GCC) or by reading the assembly for `ps` (packed single) instructions like `addps`.
 
 ## Intrinsics
 
 **Intrinsics** are functions that map one-to-one to specific instructions. They let you write SIMD by hand.
 
 ```cpp
-#include <emmintrin.h>
+#include <immintrin.h>
 void add4(float* a, const float* b) {
     __m128 va = _mm_loadu_ps(a);   // load 4 floats (unaligned ok)
     __m128 vb = _mm_loadu_ps(b);
@@ -55,43 +95,33 @@ void add4(float* a, const float* b) {
 }
 ```
 
-Naming: `_mm_` = 128-bit, `add` = operation, `ps` = packed single-precision. `__m128` is the register type. `_mm_load_ps` (no `u`) requires 16-byte alignment.
-
-For an array whose length is not a multiple of 4, process groups of 4 and then finish the remaining 0-3 elements with a scalar **tail loop**.
+Naming: `_mm_` = 128-bit, `add` = operation, `ps` = packed single-precision. `__m128` is the register type. `_mm_load_ps` (no `u`) requires 16-byte alignment. For a length that is not a multiple of 4, finish the last 0-3 elements with a scalar **tail loop**.
 
 ## Reductions
 
-A **reduction** combines many values into one, such as a sum. `s += x[i]` has a dependency: each add needs the previous `s`. A float add has a latency of about 4 cycles, so the loop is limited to one add per 4 cycles.
+A **reduction** combines many values into one, such as total kinetic energy. `s += x[i]` has a dependency: each add needs the previous `s`. A float add has a latency of about 4 cycles, so the loop is limited to one add per 4 cycles.
 
-Fix: keep several independent **accumulators** and combine them at the end.
-
-```cpp
-float s0 = 0, s1 = 0, s2 = 0, s3 = 0;
-for (int i = 0; i + 3 < n; i += 4) {
-    s0 += x[i]; s1 += x[i+1]; s2 += x[i+2]; s3 += x[i+3];
-}
-float s = (s0 + s1) + (s2 + s3);   // plus a tail loop
-```
-
-Floating-point addition is not associative, so this changes the rounding a little. That is why the compiler will not do it for you without `-ffast-math` or `-fassociative-math`.
+Fix: keep several independent **accumulators** and combine them at the end. Floating-point addition is not associative, so this changes the rounding a little. That is why the compiler will not do it for you without `-ffast-math` or `-fassociative-math`.
 
 ## FMA and horizontal operations
 
-**FMA** (fused multiply-add) computes `a * b + c` in one instruction with one rounding step instead of two. `_mm256_fmadd_ps` does 8 of them at once. It needs the FMA3 extension (Haswell and newer, enabled by `-mfma` or `-march=native`). It is not in baseline SSE2, so this site's runner does not use it. Because there is one rounding instead of two, results can differ slightly from separate multiply and add.
+**FMA** (fused multiply-add) computes `a * b + c` in one instruction with one rounding step. It needs the FMA3 extension (`-mfma` or `-march=native`), not baseline SSE2, so this site's runner does not use it.
 
-A **horizontal** operation combines lanes **within** one register, for example adding the 4 floats of an `__m128` into a single float. These are slower than vertical (lane by lane) operations, so SIMD code keeps sums vertical inside the loop and does one horizontal sum at the end:
-
-```cpp
-__m128 shuf = _mm_movehl_ps(v, v);   // lanes 2,3 into 0,1
-__m128 s = _mm_add_ps(v, shuf);      // 0+2, 1+3
-s = _mm_add_ss(s, _mm_shuffle_ps(s, s, 1));
-float total = _mm_cvtss_f32(s);
-```
+A **horizontal** operation combines lanes **within** one register, for example adding the 4 floats of an `__m128` into one float. These are slower than vertical (lane by lane) operations, so SIMD code keeps sums vertical inside the loop and does one horizontal sum at the end.
 
 <MCQ
   id="concept-check"
-  prompt="Why won't GCC vectorize a plain float sum loop at -O2 without extra flags?"
+  prompt="The effects system sums the kinetic energy of every particle with `float e = 0; for (...) e += ke[i];`. Why won't GCC vectorize that loop at -O2 without extra flags?"
   options={["Floats cannot be in SIMD registers", "Reordering the additions would change the rounding of the result", "Sums have no loop", "SSE has no add instruction"]}
   answer={1}
   explanation="Vectorizing a sum needs reassociation, which the compiler only does when you allow it."
+/>
+
+<MCQ
+  id="concept-simd-shape"
+  prompt="Which particle loop can the compiler turn into SIMD most easily?"
+  options={["for each i: x[i] += vx[i] * dt, with x and vx separate __restrict float arrays", "for each i: x[i] = x[i - 1] + 1 (each step uses the previous result)", "for each particle pointer in a std::list: p->x += p->vx * dt", "for each i: x[i] = physics_dll_move(x[i]) (a call into another library)"]}
+  answer={0}
+  explanation="Independent iterations over contiguous, non-overlapping arrays are the easy case. A dependency on the previous iteration, pointer chasing, and calls the compiler cannot see into all block vectorization."
+  devices={["phone", "desktop"]}
 />

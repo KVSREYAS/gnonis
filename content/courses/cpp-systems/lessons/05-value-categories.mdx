@@ -1,25 +1,169 @@
 ---
 id: cpp-systems/02-move/01-value-categories
 title: "Value Categories and std::move"
-estMinutes: 7
+estMinutes: 14
 xp: 90
-fun: 3
-missionIntro: "lvalues have names, prvalues are fresh temporaries, xvalues are about to expire. std::move is only a cast."
+fun: 5
+missionIntro: "Handing a freshly loaded level to the world copies 256 KB of tiles for nothing. lvalues, rvalues, && overloads and std::move turn that into three pointer writes, and the use-after-move bug shows what not to do next."
 keyIdeas:
-  - "Every expression has a value category: lvalue, prvalue or xvalue (glvalue = lvalue + xvalue, rvalue = prvalue + xvalue)."
-  - "std::move(x) is static_cast<T&&>(x). It moves nothing by itself; the overload it selects does."
-  - "A named rvalue reference is itself an lvalue inside the function."
+  - "An lvalue has a name; an rvalue is a temporary or something marked as expiring."
+  - "Overloads `f(const T&)` and `f(T&&)` let a function copy from lvalues and move from rvalues."
+  - "A named rvalue reference is an lvalue. Inside `set_level(Level&& l)`, write `std::move(l)` to pass it on."
+  - "After a move, the source is valid but unspecified: assign to it or destroy it, do not read it."
 ---
 
-## Overloads pick the category
+## The feature: switching levels
 
-`f(T&)` binds lvalues, `f(T&&)` binds rvalues. `std::move` turns an lvalue into an xvalue so the `&&` overload wins.
+When the player walks through a door, the loader builds the next `Level` and hands it to the `World`. The world stores it as the current level, and the loader's copy is never used again.
+
+```cpp
+struct Level {
+    std::string name;
+    std::vector<unsigned char> tiles;   // 512 x 512 = 262,144 bytes
+};
+```
+
+The first version of `World::set_level` takes a `const Level&` and copies it in.
+
+## The careless version: always copy
+
+```cpp
+#include <cstdio>
+#include <string>
+#include <vector>
+
+int g_tile_bytes_copied = 0;
+struct Tiles {
+    std::vector<unsigned char> v;
+    explicit Tiles(int n) : v(n) {}
+    Tiles(const Tiles& o) : v(o.v) { g_tile_bytes_copied += int(v.size()); }
+    Tiles(Tiles&&) noexcept = default;
+    Tiles& operator=(const Tiles& o) { v = o.v; g_tile_bytes_copied += int(v.size()); return *this; }
+    Tiles& operator=(Tiles&&) noexcept = default;
+};
+struct Level { std::string name; Tiles tiles{512 * 512}; };
+
+class World {
+public:
+    void set_level(const Level& l) { current_ = l; }    // copies everything
+private:
+    Level current_;
+};
+
+Level load_level(const char* name) { Level l; l.name = name; return l; }
+
+int main() {
+    World w;
+    for (const char* door : {"cave", "forest", "castle"}) {
+        Level next = load_level(door);
+        w.set_level(next);              // next is thrown away right after
+    }
+    std::printf("tile bytes copied: %d\n", g_tile_bytes_copied);
+}
+```
+```text
+tile bytes copied: 786432
+```
+
+(`Tiles` wraps the vector only so we can count copied bytes. It behaves exactly like a vector.)
+
+## What went wrong
+
+Three doors, 768 KB copied, and every copy was pointless: `next` dies at the end of each loop step. On a console with a 16.6 ms frame budget, copying a large level at the moment the door opens is a visible hitch.
+
+`set_level` has no way to know that the caller is done with its level. A `const Level&` parameter accepts anything and promises only "I will not change it". So it must copy.
+
+We need a second kind of reference that means "this object is expiring, you may take its insides".
+
+## lvalues and rvalues
+
+Every expression in C++ has a **value category**:
+
+- **lvalue**: names an object you can refer to again: `next`, `w`, `levels[2]`, `*ptr`. You can take its address with `&`.
+- **rvalue**: a temporary with no name (`load_level("cave")`, `a + b`, `42`), or an object you have explicitly marked as expiring with `std::move(next)`.
+
+There are two reference types to match:
+
+- `Level&` (and `const Level&`) binds to lvalues. `const Level&` also accepts rvalues.
+- `Level&&`, an **rvalue reference**, binds only to rvalues.
+
+If a function has both overloads, the compiler picks `Level&&` for rvalues and `const Level&` for lvalues.
 
 ![Venn-style diagram of expression categories: glvalue, rvalue, lvalue, xvalue, prvalue](/diagrams/cpp-systems/02-move/01-value-categories.png)
 
+## The fix: a move overload and std::move
+
+Add an overload that takes `Level&&` and moves from it. The caller says "I am done with this" by writing `std::move(next)`:
+
+```cpp
+#include <cstdio>
+#include <string>
+#include <utility>
+#include <vector>
+
+int g_tile_bytes_copied = 0;
+struct Tiles {
+    std::vector<unsigned char> v;
+    explicit Tiles(int n) : v(n) {}
+    Tiles(const Tiles& o) : v(o.v) { g_tile_bytes_copied += int(v.size()); }
+    Tiles(Tiles&&) noexcept = default;
+    Tiles& operator=(const Tiles& o) { v = o.v; g_tile_bytes_copied += int(v.size()); return *this; }
+    Tiles& operator=(Tiles&&) noexcept = default;
+};
+struct Level { std::string name; Tiles tiles{512 * 512}; };
+
+class World {
+public:
+    void set_level(const Level& l) { current_ = l; }             // lvalues: copy
+    void set_level(Level&& l) { current_ = std::move(l); }       // rvalues: move
+    const std::string& level_name() const { return current_.name; }
+private:
+    Level current_;
+};
+
+Level load_level(const char* name) { Level l; l.name = name; return l; }
+
+int main() {
+    World w;
+    for (const char* door : {"cave", "forest", "castle"}) {
+        Level next = load_level(door);
+        w.set_level(std::move(next));    // "I am done with next"
+    }
+    w.set_level(load_level("boss room"));    // a temporary is already an rvalue
+    std::printf("in %s, tile bytes copied: %d\n", w.level_name().c_str(), g_tile_bytes_copied);
+}
+```
+```text
+in boss room, tile bytes copied: 0
+```
+
+## The trap inside the && overload
+
+Look at the `Level&&` overload again: it says `current_ = std::move(l);`. Why `std::move` again, when `l` is already an rvalue reference?
+
+Because **a named rvalue reference is an lvalue**. The type of `l` is `Level&&`, but the expression `l` has a name, so it is an lvalue, and `current_ = l;` picks copy assignment. This rule is deliberate: a name can be used twice, and moving out of it silently on the first use would be dangerous.
+
+```cpp
+#include <cstdio>
+#include <utility>
+
+void take(const int&) { std::printf("copy-overload "); }
+void take(int&&)      { std::printf("move-overload "); }
+
+void set_level(int&& l) {
+    take(l);              // l has a name: lvalue
+    take(std::move(l));   // cast back to rvalue
+}
+
+int main() { set_level(42); std::printf("\n"); }
+```
+```text
+copy-overload move-overload 
+```
+
 <Trace
   id="which-overload"
-  prompt="Which overloads run?"
+  prompt="Which overloads run? (Same rule as set_level: a named && parameter is an lvalue.)"
   code={"#include <cstdio>\n#include <utility>\nvoid f(int&) { std::printf(\"L\"); }\nvoid f(int&&) { std::printf(\"R\"); }\nvoid g(int&& x) { f(x); }\nint main() {\n    int a = 1;\n    f(a);\n    f(2);\n    f(std::move(a));\n    g(3);\n}"}
   steps={[{"line": 8, "note": "a is an lvalue: L"}, {"line": 9, "note": "2 is a prvalue: R"}, {"line": 10, "note": "std::move(a) is an xvalue: R"}, {"line": 5, "note": "inside g, x has a name, so it's an lvalue: L"}]}
   question="What does it print?"
@@ -28,26 +172,77 @@ keyIdeas:
   devices={["phone", "desktop"]}
 />
 
+## What std::move actually is
+
+`std::move(x)` does not move anything. It is a cast: it turns the lvalue `x` into an rvalue (an **xvalue**, an expiring value), so that overload resolution picks the `&&` version. The moving happens inside the move constructor or move assignment that receives it.
+
+So `std::move(level);` on a line by itself does nothing at all, and moving from a `const Level` silently copies, because `const Level&&` cannot bind to the move constructor's `Level&&` and falls back to `const Level&`.
+
 <MCQ
   id="move-cast"
-  prompt="What does `std::move(v)` do to a `std::vector v` by itself, as a standalone statement?"
+  prompt="What does `std::move(level)` do to a `Level level` by itself, as a standalone statement?"
   options={["Moves its buffer somewhere", "Nothing: it's a cast and the result is discarded", "Clears it", "Copies it"]}
   answer={1}
   explanation="No constructor or assignment is called, so nothing happens. Clang-tidy even warns about it."
   devices={["phone", "desktop"]}
 />
 
-## After the move
+## Bug: use after move
 
-A moved-from standard library object is in a valid but unspecified state. You can assign to it or destroy it, but don't read its value.
+The loader logs the level name after handing the level to the world:
 
-Sources: [cppreference: value categories](https://en.cppreference.com/w/cpp/language/value_category), Scott Meyers, *Effective Modern C++*, Items 23–25
+```cpp
+#include <cstdio>
+#include <string>
+#include <utility>
+#include <vector>
+
+struct Level { std::string name; std::vector<unsigned char> tiles; };
+
+int main() {
+    Level next{"forest of extremely long names", std::vector<unsigned char>(1024)};
+    Level current = std::move(next);
+    std::printf("loaded '%s' with %zu tiles\n", next.name.c_str(), next.tiles.size());
+}
+```
+```text
+loaded '' with 0 tiles
+```
+
+The log line reads the moved-from object. With libstdc++ the string and vector were left empty, so the log is wrong. Another library could leave something else; the standard only promises a **valid but unspecified state**. Read from the destination instead, or log before the move.
 
 <MCQ
   id="moved-from"
-  prompt="After `std::string t = std::move(s);`, which use of `s` is always fine?"
+  prompt="After `std::string world_name = std::move(loaded_name);`, which use of `loaded_name` is always fine?"
   options={["`s.size()` is guaranteed to be 0", "`s = \"new\";`", "`s[0]`", "Printing s and expecting the old text"]}
   answer={1}
   explanation="Valid but unspecified: reassign or destroy it. Many implementations leave it empty, but the standard doesn't promise that for every type."
   devices={["phone", "desktop"]}
+/>
+
+## When to use it, and when not
+
+- Write `std::move(x)` when you hand off a local you will not use again: giving a level to the world, pushing a big object into a container, returning a member out of a dying object.
+- Add a `T&&` overload (or take by value and move, next lesson) for functions that store their argument.
+- Do **not** write `std::move` on `return local;`: it blocks copy elision (next lesson).
+- Do **not** `std::move` from a `const` object: it silently copies.
+- Do **not** move small types like `int`, `Vec2`, `Tile`. Moving them is a copy anyway, and the extra `std::move` only adds noise.
+
+Sources: [cppreference: value categories](https://en.cppreference.com/w/cpp/language/value_category), Scott Meyers, *Effective Modern C++*, Items 23–25
+
+## Coding task: World::set_level
+
+The world from this lesson, graded: lvalues must be copied (the caller still needs them), rvalues must be moved.
+
+<Code
+  id="set-level-overloads"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="`Level` is given; its `tiles` member counts copies in `Tiles::copies`. Write `class World` with two overloads, `void set_level(const Level& l)` (copy) and `void set_level(Level&& l)` (move), plus `const Level& current() const`. Also write `void enter_door(World& w, const std::string& name)` that builds a local `Level` with that name and 4096 tiles and hands it to the world without copying the tiles."
+  starter={"#include <string>\n#include <utility>\n#include <vector>\nstruct Tiles {\n    inline static int copies = 0;\n    std::vector<unsigned char> v;\n    Tiles() = default;\n    explicit Tiles(int n) : v(n) {}\n    Tiles(const Tiles& o) : v(o.v) { ++copies; }\n    Tiles(Tiles&&) noexcept = default;\n    Tiles& operator=(const Tiles& o) { v = o.v; ++copies; return *this; }\n    Tiles& operator=(Tiles&&) noexcept = default;\n};\nstruct Level { std::string name; Tiles tiles; };\nclass World {\npublic:\n    void set_level(const Level& l) { current_ = l; }\n    const Level& current() const { return current_; }\nprivate:\n    Level current_;\n};\nvoid enter_door(World& w, const std::string& name) {\n    Level next{name, Tiles(4096)};\n    w.set_level(next);\n}\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    World w;\n    Tiles::copies = 0;\n    enter_door(w, \"cave\");\n    CHECK(w.current().name == \"cave\" && Tiles::copies == 0);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\nint main() {\n    World w;\n    Tiles::copies = 0;\n    enter_door(w, \"cave\");\n    CHECK(w.current().name == \"cave\" && w.current().tiles.v.size() == 4096);\n    CHECK(Tiles::copies == 0);\n    w.set_level(Level{\"temp\", Tiles(10)});\n    CHECK(w.current().name == \"temp\" && Tiles::copies == 0);\n    Level preview{\"editor\", Tiles(20)};\n    w.set_level(preview);\n    CHECK(Tiles::copies == 1 && preview.tiles.v.size() == 20 && w.current().tiles.v.size() == 20);\n    Level mine{\"mine\", Tiles(30)};\n    w.set_level(std::move(mine));\n    CHECK(Tiles::copies == 1 && w.current().name == \"mine\");\n    return 0;\n}\n"}
+  solution={"#include <string>\n#include <utility>\n#include <vector>\nstruct Tiles {\n    inline static int copies = 0;\n    std::vector<unsigned char> v;\n    Tiles() = default;\n    explicit Tiles(int n) : v(n) {}\n    Tiles(const Tiles& o) : v(o.v) { ++copies; }\n    Tiles(Tiles&&) noexcept = default;\n    Tiles& operator=(const Tiles& o) { v = o.v; ++copies; return *this; }\n    Tiles& operator=(Tiles&&) noexcept = default;\n};\nstruct Level { std::string name; Tiles tiles; };\nclass World {\npublic:\n    void set_level(const Level& l) { current_ = l; }\n    void set_level(Level&& l) { current_ = std::move(l); }\n    const Level& current() const { return current_; }\nprivate:\n    Level current_;\n};\nvoid enter_door(World& w, const std::string& name) {\n    Level next{name, Tiles(4096)};\n    w.set_level(std::move(next));\n}\n"}
+  hints={["The && overload must use std::move(l) inside: a named rvalue reference is an lvalue.", "In enter_door, the local is not used after the call, so pass std::move(local). Building it as Level{name, Tiles(4096)} works."]}
+  explanation="The const& overload serves callers who keep their level (an editor preview). The && overload serves the loader, who is done with it. Inside it, std::move again, because l has a name."
 />

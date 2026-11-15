@@ -1,25 +1,90 @@
 ---
 id: cpp-systems/12-building-blocks/02-spsc-ring-buffer
 title: "Lock-Free SPSC Ring Buffer"
-estMinutes: 10
+estMinutes: 12
 xp: 120
-fun: 4
-missionIntro: "One producer, one consumer, two atomic indices and no locks. Common in audio, networking and token streaming."
+fun: 5
+missionIntro: "The game thread sends sound commands to the audio thread. One producer, one consumer, two atomic indices and no locks. With plain integers instead, most sounds never reach the speakers."
 keyIdeas:
   - "A power-of-two capacity lets you wrap indices with `& (N - 1)` instead of %."
   - "The producer owns head and the consumer owns tail. Each reads the other's index with acquire and publishes its own with release."
   - "Put head and tail on separate cache lines to avoid false sharing."
 ---
 
-## Index maths
+## The feature: the audio command queue
 
+The audio thread fills the sound card's buffer every few milliseconds. If it is late even once, the player hears a click. So it must never wait for a lock held by the game thread. The game thread sends commands ("play splat.wav at 50% volume") through a fixed ring of slots: the game thread only pushes, the audio thread only pops.
 
+## The careless version: plain integer indices
+
+```cpp
+#include <cstdio>
+#include <thread>
+
+struct AudioCmd { int sound; float volume; };
+
+struct AudioQueue {                       // game thread pushes, audio thread pops
+    AudioCmd buf[8];
+    unsigned head = 0, tail = 0;          // careless: plain integers
+    bool try_push(AudioCmd c) {
+        if (head - tail == 8) return false;
+        buf[head & 7] = c;
+        ++head;
+        return true;
+    }
+    bool try_pop(AudioCmd& out) {
+        if (tail == head) return false;
+        out = buf[tail & 7];
+        ++tail;
+        return true;
+    }
+};
+
+AudioQueue q;
+
+int main() {
+    std::thread audio([] {
+        int played = 0;
+        AudioCmd c;
+        for (long spins = 0; played < 100 && spins < 100'000'000; ++spins)
+            if (q.try_pop(c)) ++played;
+        std::printf("audio thread played %d of 100 sounds\n", played);
+    });
+    int sent = 0;
+    for (long spins = 0; sent < 100 && spins < 100'000'000; ++spins)
+        if (q.try_push({sent, 0.5f})) ++sent;
+    std::printf("game thread sent %d of 100 sounds\n", sent);
+    audio.join();
+}
+```
+```text
+audio thread played 8 of 100 sounds
+game thread sent 16 of 100 sounds
+```
+
+(One run at `-O2`; the counts can differ between runs and compilers.) Most of the 100 sounds were never played. Each thread stopped seeing the other's index changes: the game thread believed the ring was full, and the audio thread believed it was empty. ThreadSanitizer names the cause:
+
+```text
+WARNING: ThreadSanitizer: data race (pid=1)
+SUMMARY: ThreadSanitizer: data race game.cpp:12 in AudioQueue::try_push(AudioCmd)
+```
+
+## What went wrong
+
+Two threads read and write `head` and `tail` with no synchronization: a data race, so undefined behaviour. In practice the compiler assumed no other thread changes `tail` inside the game thread's loop, read it once, and kept using that stale value. Even when the loop does re-read, nothing guarantees the audio thread sees the slot's data before it sees the new `head`.
+
+## The concept: two atomic counters, one writer each
+
+- `head_` counts items pushed. Only the producer writes it. `tail_` counts items popped. Only the consumer writes it.
+- Empty: `head == tail`. Full: `head - tail == N`. Slot: `counter & (N - 1)` for a power-of-two N. Unsigned subtraction keeps working when the counters wrap.
+- Producer: write the slot, then `head_.store(h + 1, release)`. Consumer: `head_.load(acquire)`, then read the slot. Release/acquire makes the slot's data visible before the new count. The same pairing in the other direction tells the producer a slot is free.
+- `alignas(64)` on each counter keeps them on separate cache lines (no false sharing).
 
 ![Ring of 8 slots with head and tail indices on separate cache lines, producer and consumer at each end](/diagrams/cpp-systems/12-building-blocks/02-spsc-ring-buffer.png)
 
 <Predict
   id="ring-wrap"
-  prompt="Capacity 8. Index 13 maps to slot?"
+  prompt="The audio queue has capacity 8. Command counter 13 maps to which slot?"
   answer={5}
   tolerance={{"mode": "absolute", "value": 0}}
   explanation="13 & 7 = 5."
@@ -28,26 +93,52 @@ keyIdeas:
 
 <MCQ
   id="ring-full"
-  prompt="With monotonically increasing head and tail counters, the buffer is full when…"
+  prompt="With monotonically increasing head (pushed) and tail (popped) counters, the audio queue is full when…"
   options={["head == tail", "head - tail == N", "tail - head == N", "head & (N-1) == 0"]}
   answer={1}
   explanation="Empty is head == tail, full is head − tail == N."
   devices={["phone", "desktop"]}
 />
 
-## Build it
+## When to use it, and when not
+
+- Use it between exactly two threads where one must never block: game to audio, network thread to game, game to render thread.
+- It is fixed size. Decide what happens when it is full: drop the command (fine for a footstep sound), or retry next frame (needed for "stop the music").
+- With more than one producer or consumer it is wrong: two producers can claim the same slot. Use a mutex queue or an MPMC design.
+- If nobody has a hard deadline, a mutex-protected `std::deque` is simpler and fast enough.
 
 Sources: [Rigtorp, SPSCQueue](https://github.com/rigtorp/SPSCQueue), [1024cores: lock-free algorithms](https://www.1024cores.net/home/lock-free-algorithms/queues), Williams ch. 7
+
+## Coding task: the audio command queue
+
+Build the lock-free queue that replaces the careless version above.
 
 <Code
   id="spsc"
   devices={["desktop"]}
   language="cpp"
-  prompt="Implement `template<class T, std::size_t N> class Spsc` (N a power of two, static_assert it) with `bool try_push(const T&)` and `bool try_pop(T&)`. Use `alignas(64) std::atomic<std::size_t> head_, tail_` (monotonic counters) and a std::array<T, N>. Use acquire loads of the other side's index and release stores of your own."
+  prompt="Implement the audio command queue as `template<class T, std::size_t N> class Spsc` (N a power of two, static_assert it) with `bool try_push(const T&)` (game thread) and `bool try_pop(T&)` (audio thread). Use `alignas(64) std::atomic<std::size_t> head_, tail_` (monotonic counters) and a std::array<T, N>. Use acquire loads of the other side's index and release stores of your own."
   starter={"#include <atomic>\n#include <array>\n#include <cstddef>\ntemplate<class T, std::size_t N> class Spsc {\npublic:\n    bool try_push(const T& v) { return false; }\n    bool try_pop(T& out) { return false; }\n};\n"}
   visibleTests={"#include \"check.h\"\n\nint main() { Spsc<int, 4> q; int x; CHECK(q.try_push(1) && q.try_pop(x) && x == 1 && !q.try_pop(x)); return 0; }\n"}
   tests={"#include \"check.h\"\n\n#include <thread>\nint main() {\n    Spsc<int, 4> q; int x;\n    for (int i = 0; i < 4; ++i) CHECK(q.try_push(i));\n    CHECK(!q.try_push(9));\n    for (int i = 0; i < 4; ++i) CHECK(q.try_pop(x) && x == i);\n    CHECK(!q.try_pop(x));\n    Spsc<long, 64> r; long sum = 0; const long M = 200000;\n    {\n        std::jthread prod([&] { for (long i = 1; i <= M; ++i) while (!r.try_push(i)) {} });\n        long got = 0, prev = 0;\n        while (got < M) { long v; if (r.try_pop(v)) { CHECK(v == prev + 1); prev = v; sum += v; ++got; } }\n    }\n    CHECK(sum == M * (M + 1) / 2);\n    return 0;\n}\n"}
   solution={"#include <atomic>\n#include <array>\n#include <cstddef>\ntemplate<class T, std::size_t N> class Spsc {\n    static_assert(N && (N & (N - 1)) == 0, \"N must be a power of two\");\n    std::array<T, N> buf_{};\n    alignas(64) std::atomic<std::size_t> head_{0};\n    alignas(64) std::atomic<std::size_t> tail_{0};\npublic:\n    bool try_push(const T& v) {\n        auto h = head_.load(std::memory_order_relaxed);\n        if (h - tail_.load(std::memory_order_acquire) == N) return false;\n        buf_[h & (N - 1)] = v; head_.store(h + 1, std::memory_order_release); return true;\n    }\n    bool try_pop(T& out) {\n        auto t = tail_.load(std::memory_order_relaxed);\n        if (t == head_.load(std::memory_order_acquire)) return false;\n        out = buf_[t & (N - 1)]; tail_.store(t + 1, std::memory_order_release); return true;\n    }\n};\n"}
   hints={["Unsigned subtraction handles wraparound of the counters.", "Write the slot before the release-store of head."]}
   explanation="The tests check FIFO order across threads, so any reordering bug shows up."
+/>
+
+## Coding task: the input history ring
+
+The same ring idea works within one thread. The fighting-game style combo detector needs the player's last N inputs. New inputs overwrite the oldest, with no allocation.
+
+<Code
+  id="input-history"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `template<class T, std::size_t N> class History` (static_assert that N is a power of two) storing the last N pushed values. `void push(const T& v)` adds a value, overwriting the oldest when full. `std::size_t size() const` returns how many values are stored (at most N). `const T& back(std::size_t k) const` returns the k-th newest value (k = 0 is the newest; k < size()). Use a std::array<T, N> and a monotonic counter with `& (N - 1)`."
+  starter={"#include <array>\n#include <cstddef>\ntemplate <class T, std::size_t N>\nclass History {\npublic:\n    void push(const T& v) {}\n    std::size_t size() const { return 0; }\n    const T& back(std::size_t k) const { return buf_[0]; }\nprivate:\n    std::array<T, N> buf_{};\n};\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    History<char, 4> h;\n    h.push('D'); h.push('F'); h.push('P');\n    CHECK(h.size() == 3);\n    CHECK(h.back(0) == 'P' && h.back(1) == 'F' && h.back(2) == 'D');\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <string>\nint main() {\n    History<char, 4> h;\n    CHECK(h.size() == 0);\n    h.push('D'); h.push('F'); h.push('P');\n    CHECK(h.size() == 3);\n    CHECK(h.back(0) == 'P' && h.back(1) == 'F' && h.back(2) == 'D');\n    h.push('K'); h.push('J');\n    CHECK(h.size() == 4);\n    CHECK(h.back(0) == 'J' && h.back(1) == 'K' && h.back(2) == 'P' && h.back(3) == 'F');\n    History<int, 8> n;\n    for (int i = 1; i <= 1000; ++i) n.push(i);\n    CHECK(n.size() == 8 && n.back(0) == 1000 && n.back(7) == 993);\n    History<std::string, 2> s;\n    s.push(\"jump\"); s.push(\"dash\"); s.push(\"slash\");\n    CHECK(s.size() == 2 && s.back(0) == \"slash\" && s.back(1) == \"dash\");\n    return 0;\n}\n"}
+  solution={"#include <array>\n#include <cstddef>\ntemplate <class T, std::size_t N>\nclass History {\n    static_assert(N != 0 && (N & (N - 1)) == 0, \"N must be a power of two\");\npublic:\n    void push(const T& v) { buf_[count_ & (N - 1)] = v; ++count_; }\n    std::size_t size() const { return count_ < N ? count_ : N; }\n    const T& back(std::size_t k) const { return buf_[(count_ - 1 - k) & (N - 1)]; }\nprivate:\n    std::array<T, N> buf_{};\n    std::size_t count_ = 0;\n};\n"}
+  hints={["Keep std::size_t count_ = total pushes ever. push: buf_[count_ & (N - 1)] = v; ++count_;", "size(): count_ < N ? count_ : N. back(k): buf_[(count_ - 1 - k) & (N - 1)]."]}
+  explanation="The counter only grows, and the mask turns it into a slot. Nothing is moved when an old input falls off; it is simply overwritten. A combo check like \"down, forward, punch\" reads back(2), back(1), back(0)."
 />

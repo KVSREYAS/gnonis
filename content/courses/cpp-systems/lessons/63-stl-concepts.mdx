@@ -1,69 +1,105 @@
 ---
 id: cpp-systems/05-stl/00-concepts
 title: "Concepts: Containers, Iterators and Views"
-estMinutes: 8
+estMinutes: 13
 xp: 40
-fun: 1
-missionIntro: "How the standard containers store data, what iterators are, and what owning and non-owning views mean."
+fun: 2
+missionIntro: "Milestone 6 of Slime Siege: the entity list, the inventory and the event system. How the standard containers store data, what iterators are, lambdas, optional and variant, maps, and views."
 keyIdeas:
   - "A container owns a collection of elements and manages their memory."
   - "An iterator is a position in a container. Invalidation means that position is no longer safe to use."
   - "Algorithms work on iterator ranges, so one sort works on many containers."
   - "span and string_view are views: a pointer and a length, owning nothing."
 ---
+## Milestone 6: entity lists, inventory and events
+
+**What we build this module:** the list of live enemies that grows when the spawner fires and shrinks when enemies die; the targeting code that finds the nearest enemy; the event system ("on enemy killed, add score, play a sound, maybe drop loot"); the inventory, keyed by item name; and a spatial grid so collision checks only look at nearby enemies.
+
+**Why the game needs it:** all of this is collections of things, searched and changed every frame. The standard library already has the containers and algorithms. Using them well is mostly about three questions: where the elements live in memory, when an address into the container stops being valid, and who owns the data a function is looking at.
+
+## The careless version: a pointer into a growing list
+
+```cpp
+#include <cstdio>
+#include <vector>
+
+struct Enemy { int id; int hp; };
+
+int main() {
+    std::vector<Enemy> enemies{{1, 20}, {2, 20}};
+    Enemy* target = &enemies[0];              // turret locks on to enemy 1
+    enemies.push_back({3, 20});               // a new slime spawns
+    target->hp -= 5;                          // turret fires
+    std::printf("turret hit enemy %d\n", target->id);
+}
+```
+```text
+==1==ERROR: AddressSanitizer: heap-use-after-free on address 0x502000000014 at pc 0x564c6b5ba6f5 bp 0x7ffdcf2191c0 sp 0x7ffdcf2191b8
+SUMMARY: AddressSanitizer: heap-use-after-free game.cpp:10 in main
+```
+
+The vector was full (capacity 2), so `push_back` allocated a bigger buffer, moved the enemies, and freed the old one. `target` still pointed into the freed buffer. The turret fired at memory that no longer holds an enemy. In a release build, without ASan, this usually "works" for a while and then corrupts something unrelated.
+
 ## Containers and their layout
 
-A **container** is a class that owns a group of elements. The layout decides what is fast:
+A **container** is a class that owns a group of elements. Its layout decides what is fast:
 
 - `std::vector<T>`: one contiguous heap array, plus size and capacity. Fast index, fast iteration, cheap append at the end.
 - `std::deque<T>`: several fixed-size blocks. Cheap insert at both ends.
-- `std::list<T>`: separate heap node per element with prev/next pointers. Insert anywhere without moving others, but slow to iterate.
+- `std::list<T>`: separate heap node per element. Insert anywhere without moving others, but slow to iterate.
 - `std::map<K,V>`: balanced tree of nodes, sorted by key, O(log n) lookup.
-- `std::unordered_map<K,V>`: hash table with buckets, average O(1) lookup.
+- `std::unordered_map<K,V>`: hash table, average O(1) lookup.
 
-**Size** is how many elements exist. **Capacity** (vector only) is how many fit before it must reallocate.
-
-For most code `std::vector` is the right default, because contiguous memory suits the CPU cache.
+**Size** is how many elements exist. **Capacity** (vector only) is how many fit before it must reallocate. `std::vector` is the right default: contiguous memory suits the CPU cache, and games iterate over everything every frame.
 
 ## Iterators and invalidation
 
-An **iterator** is an object that refers to one element and can move to the next. For a vector it is basically a pointer. `begin()` points to the first element, `end()` points one past the last.
+An **iterator** refers to one element and can move to the next. For a vector it is basically a pointer. `begin()` is the first element, `end()` is one past the last.
 
-An iterator, pointer or reference into a container is **invalidated** when the element it refers to moves or is destroyed. Using it afterwards is undefined behaviour.
+An iterator, pointer or reference into a container is **invalidated** when the element moves or is destroyed. Using it afterwards is undefined behaviour, as in the turret above.
 
-```cpp
-std::vector<int> v{1, 2, 3};
-int& first = v[0];
-v.push_back(4);   // may reallocate: all old addresses gone
-first = 9;        // undefined if it reallocated
-```
-
-Rules of thumb:
-
-- vector: any reallocation invalidates everything; insert/erase invalidates from that point on
+- vector: any reallocation invalidates everything; insert or erase invalidates from that point on
 - list and map: only the erased element's iterators die
+
+That is why game code often stores enemy **ids** or **indices** rather than pointers into a vector, and looks them up when needed.
 
 ![Vector reallocation leaving an old iterator pointing at freed memory](/diagrams/cpp-systems/05-stl/01-containers-and-invalidation.png)
 
-## Algorithms and ranges
+## Algorithms, ranges and lambdas
 
-The `<algorithm>` header has functions such as `sort`, `find`, `count_if` and `transform`. They take a **range**, given as a begin and end iterator, so they do not care which container you have.
+The `<algorithm>` header has `sort`, `find`, `count_if`, `min_element` and many more. They take a **range** (a begin and end iterator, or in C++20 the container itself), so one `sort` works on any container.
 
-```cpp
-std::sort(v.begin(), v.end());
-auto it = std::find(v.begin(), v.end(), 7);
-if (it != v.end()) { /* found */ }
-```
-
-C++20 **ranges** let you pass the container directly and chain lazy steps:
+A **lambda** is an unnamed function written inline. The `[...]` part says which local variables it **captures**:
 
 ```cpp
-std::ranges::sort(v);
-auto evens = v | std::views::filter([](int x){ return x % 2 == 0; })
-               | std::views::transform([](int x){ return x * x; });
+#include <algorithm>
+#include <cstdio>
+#include <vector>
+
+struct Enemy { int id; float dist; int hp; };
+
+int main() {
+    std::vector<Enemy> enemies{{1, 9.5f, 20}, {2, 3.0f, 0}, {3, 4.5f, 12}};
+    float range = 5.0f;
+    auto in_range = [range](const Enemy& e) { return e.hp > 0 && e.dist <= range; };
+    auto n = std::ranges::count_if(enemies, in_range);
+    auto nearest = std::ranges::min_element(enemies, {}, &Enemy::dist);
+    std::printf("live enemies in range: %ld, nearest enemy: %d\n", (long)n, nearest->id);
+}
+```
+```text
+live enemies in range: 1, nearest enemy: 2
 ```
 
-`evens` stores no elements. It computes each value when you iterate. A **lambda** (the `[](int x){...}` part) is an unnamed function object written inline.
+`[range]` copies `range` into the lambda. `[&range]` would refer to it. `&Enemy::dist` is a **projection**: compare enemies by their `dist`. Note the nearest enemy is dead: "nearest" and "nearest live" are different questions.
+
+## optional, variant and maps
+
+- `std::optional<T>` holds a T or nothing. A function that may not find an enemy returns `std::optional<int>` instead of a magic `-1`.
+- `std::variant<A, B, C>` holds exactly one of several types, and knows which. Game events (Damage, Heal, Spawn) fit in one queue as a variant.
+- `std::map` and `std::unordered_map` look things up by key: item name to count, grid cell to the enemies in it. Watch out: `m[key]` **inserts** a default value when the key is missing.
+
+Each of these gets its own lesson in this module.
 
 ## Views: span and string_view
 
@@ -73,36 +109,36 @@ A **view** refers to data owned by something else. It does not allocate and does
 - `std::span<T>`: a `T*` and a length, for any contiguous array.
 
 ```cpp
-double sum(std::span<const double> xs) {
-    double s = 0;
-    for (double x : xs) s += x;
-    return s;
+void apply_damage(std::span<int> hp, int dmg) {
+    for (int& h : hp) h -= dmg;
 }
-sum(my_vector);   // no copy
-sum(my_array);    // same function
+apply_damage(slime_hp, 5);      // a std::vector<int>
+apply_damage(boss_parts, 5);    // an int[4]: same function, no copy
 ```
 
-Views are cheap to pass by value (two words). The risk is lifetime: the view must not outlive the owner.
-
-```cpp
-std::string_view sv = std::string("temp");  // temporary dies at ;
-// sv now dangles
-```
+Views are cheap to pass by value (two words). The risk is lifetime: the view must not outlive the owner. A `string_view` made from a temporary `std::string` dangles at the end of the statement.
 
 ## Small string optimization
 
-`std::string` stores characters on the heap, but allocating for every short string would be slow. Major implementations use the **small string optimization (SSO)**: strings up to a small length (15 chars in libstdc++ and MSVC, 22 in libc++) are stored inside the `std::string` object itself, with no heap allocation.
+Allocating for every short string would be slow, so major implementations store short strings (up to 15 characters in libstdc++ and MSVC, 22 in libc++) **inside** the `std::string` object. This is the **small string optimization (SSO)**.
 
-Consequences:
-
-- `sizeof(std::string)` is 32 bytes in libstdc++, larger than a pointer and two sizes would need.
-- Moving a short string copies its characters, so it is not cheaper than copying.
-- A `string_view` or pointer into a short string points **inside the string object**, so it dangles if that object moves, even though nothing was "reallocated".
+- `sizeof(std::string)` is 32 bytes in libstdc++.
+- Moving a short string copies its characters.
+- A `string_view` into a short string points inside the string object, so it dangles if that object moves, even with no reallocation. Item names like "Potion" are short.
 
 <MCQ
   id="concept-check"
-  prompt="You hold `int* p = &v[0];` and then call `v.push_back(x)` when size equals capacity. What is true?"
+  prompt="The turret holds `Enemy* target = &enemies[0];` and the spawner calls `enemies.push_back(e)` when size equals capacity. What is true?"
   options={["p still points to the first element", "p points to freed memory and must not be used", "push_back fails", "p is automatically updated"]}
   answer={1}
   explanation="Full capacity forces reallocation, which moves every element and invalidates all pointers."
+/>
+
+<MCQ
+  id="concept-store-id"
+  prompt="A homing arrow needs to find its target enemy next frame. The enemies live in a std::vector that grows and shrinks. What should the arrow store?"
+  options={["Enemy* from &enemies[i]", "An iterator into enemies", "The enemy's id, looked up when needed", "A copy of the Enemy"]}
+  answer={2}
+  explanation="Pointers and iterators into a vector die when it reallocates or elements are erased, and a copy never sees the real enemy's hp change. A stable id survives both; if the lookup fails, the target is gone."
+  devices={["phone", "desktop"]}
 />

@@ -1,25 +1,72 @@
 ---
 id: cpp-systems/07-dod/01-aos-vs-soa
 title: "Array of Structs vs Struct of Arrays"
-estMinutes: 8
+estMinutes: 14
 xp: 100
-fun: 4
-missionIntro: "If a loop touches one field, store that field contiguously. SoA turns half-wasted cache lines into fully used ones."
+fun: 5
+missionIntro: "The wind system pushes every particle sideways, touching one field of a 64-byte particle. If a loop touches one field, store that field contiguously: SoA turns mostly wasted cache lines into fully used ones."
 keyIdeas:
   - "AoS (`std::vector<Particle>`) interleaves fields, so a loop over x drags y, z, mass and id through the cache too."
   - "SoA (`struct { std::vector<float> x, y, z; }`) packs each field contiguously: 100% useful bytes and easy SIMD."
   - "Mike Acton: \"where there is one, there are many\". Design for the transform you run on the whole batch."
 ---
 
-## Wasted bytes
+## The feature: wind
 
+A gust of wind pushes every particle to the right: `x += wind * dt`. One field, one addition, 2,000,000 particles. The particles already live in a contiguous `std::vector<Particle>`, so the layout module's lesson seems learned.
 
+## The careless version: a contiguous array of fat structs
+
+```cpp
+#include <chrono>
+#include <cstdio>
+#include <vector>
+
+struct Particle {                    // 64 bytes: everything a particle might need
+    float x, y, vx, vy;
+    float r, g, b, a;
+    float size, rotation, life, max_life;
+    int   texture, flags, emitter, seed;
+};
+
+int main() {
+    const int N = 2'000'000;
+    std::vector<Particle> aos(N, Particle{});
+    std::vector<float> xs(N, 0.0f);                  // SoA: just the x field
+    auto ms = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };
+    double t_aos = 0, t_soa = 0;
+    for (int rep = 0; rep < 5; ++rep) {
+        auto t0 = std::chrono::steady_clock::now();
+        for (auto& p : aos) p.x += 3.0f * 0.016f;
+        auto t1 = std::chrono::steady_clock::now();
+        for (float& x : xs) x += 3.0f * 0.016f;
+        auto t2 = std::chrono::steady_clock::now();
+        t_aos += ms(t1 - t0); t_soa += ms(t2 - t1);
+    }
+    std::printf("sizeof(Particle) = %zu\n", sizeof(Particle));
+    std::printf("AoS wind: %.2f ms   SoA wind: %.2f ms\n", t_aos / 5, t_soa / 5);
+    std::printf("(check %.2f %.2f)\n", aos[7].x, xs[7]);
+}
+```
+```text
+sizeof(Particle) = 64
+AoS wind: 5.24 ms   SoA wind: 0.39 ms
+(check 0.24 0.24)
+```
+
+(Average of 5 runs on the course machine.)
+
+## What went wrong
+
+The AoS array is contiguous, but each 64-byte cache line holds exactly one particle, of which the wind loop uses 4 bytes. To update 2,000,000 `x` values it streams 128 MB through the caches. The SoA loop streams 8 MB, the `x` values alone, packed 16 per line. Same work, a fraction of the memory traffic.
+
+There is a second effect: with `x` values next to each other, the compiler loads 4 or 8 of them into one SIMD register and adds to all at once. With AoS it would have to collect `x` values 64 bytes apart.
 
 ![AoS memory with x fields scattered every 32 bytes versus SoA with x values packed contiguously](/diagrams/cpp-systems/07-dod/01-aos-vs-soa.png)
 
 <Predict
   id="aos-waste"
-  prompt={"Particle = {float x, y, z, vx, vy, vz, mass, id} (32 bytes). A loop reads only x for 1M particles. How many MB move through the cache?"}
+  prompt="Particle = {float x, y, z, vx, vy, vz, mass, id} (32 bytes). The wind loop reads only x for 1M particles. How many MB move through the cache?"
   answer={32}
   tolerance={{"mode": "relative", "value": 0.02}}
   unit="MB"
@@ -29,26 +76,67 @@ keyIdeas:
 
 <MCQ
   id="soa-simd"
-  prompt="Why does SoA vectorise more easily?"
+  prompt="Why does the SoA wind loop vectorise more easily?"
   options={["Structs can't be vectorised", "Consecutive x values sit in consecutive memory, so one SIMD load fetches 4–16 of them", "SoA uses fewer instructions per element in scalar code", "It doesn't"]}
   answer={1}
   explanation="AoS needs gathers or shuffles to collect the x's."
   devices={["phone", "desktop"]}
 />
 
-## Convert it
+## The fix: one array per field
+
+```cpp
+struct Particles {
+    std::vector<float> x, y, vx, vy;
+    std::vector<float> r, g, b, a;
+    std::vector<float> life;
+    // ...
+    std::size_t size() const { return x.size(); }
+};
+```
+
+Each system touches only the arrays it needs: wind touches `x`, the fade system touches `a` and `life`, the renderer reads `x`, `y`, `r`, `g`, `b`, `a` and `size`.
+
+The price: adding or removing a particle means touching every array, and they must stay the same length. Wrap that in `spawn()` and `kill()` functions so no other code can get it wrong.
+
+## When to use it, and when not
+
+- Use SoA for large collections processed field by field in hot loops: particles, physics bodies, the ECS component arrays.
+- Keep AoS when code usually needs all fields of one element at once, or the collection is small.
+- A middle ground is common: group fields always used together (`struct Vec2 { float x, y; }`) and store an array of those.
+
+## Coding task: convert the debris
 
 Sources: [Mike Acton, Data-Oriented Design and C++ (CppCon 2014)](https://www.youtube.com/watch?v=rX0ItVEVjHc), Richard Fabian, [*Data-Oriented Design*](https://www.dataorienteddesign.com/dodbook/)
+
+The debris system loads its pieces as structs from the level file, then wants SoA for the per-frame loops.
 
 <Code
   id="aos-to-soa"
   devices={["desktop"]}
   language="cpp"
-  prompt={"Given `struct P { float x, y, z, mass; };`, implement `struct Soa { std::vector<float> x, y, z, mass; }`, `Soa to_soa(const std::vector<P>&)` and `float total_mass_above(const Soa&, float y_min)`, which sums mass where y > y_min."}
+  prompt="Given `struct P { float x, y, z, mass; };` (a debris piece), implement `struct Soa { std::vector<float> x, y, z, mass; }`, `Soa to_soa(const std::vector<P>&)` and `float total_mass_above(const Soa&, float y_min)`, which sums mass where y > y_min (the debris still in the air, for the physics budget)."
   starter={"#include <vector>\nstruct P { float x, y, z, mass; };\nstruct Soa { std::vector<float> x, y, z, mass; };\nSoa to_soa(const std::vector<P>& ps) { return {}; }\nfloat total_mass_above(const Soa& s, float y_min) { return 0; }\n"}
   visibleTests={"#include \"check.h\"\n\nint main() {\n    auto s = to_soa({{0, 1, 0, 2}, {0, -1, 0, 3}});\n    CHECK(s.x.size() == 2 && total_mass_above(s, 0) == 2);\n    return 0;\n}\n"}
   tests={"#include \"check.h\"\n\nint main() {\n    std::vector<P> ps;\n    for (int i = 0; i < 1000; ++i) ps.push_back({float(i), float(i % 10), float(-i), 1.0f + (i % 3)});\n    auto s = to_soa(ps);\n    CHECK(s.x.size() == 1000 && s.z[999] == -999 && s.mass[2] == 3);\n    float expect = 0; for (auto& p : ps) if (p.y > 4.5f) expect += p.mass;\n    CHECK(total_mass_above(s, 4.5f) == expect);\n    CHECK(total_mass_above(to_soa({}), 0) == 0);\n    return 0;\n}\n"}
   solution={"#include <vector>\nstruct P { float x, y, z, mass; };\nstruct Soa { std::vector<float> x, y, z, mass; };\nSoa to_soa(const std::vector<P>& ps) {\n    Soa s; auto n = ps.size();\n    s.x.reserve(n); s.y.reserve(n); s.z.reserve(n); s.mass.reserve(n);\n    for (const auto& p : ps) { s.x.push_back(p.x); s.y.push_back(p.y); s.z.push_back(p.z); s.mass.push_back(p.mass); }\n    return s;\n}\nfloat total_mass_above(const Soa& s, float y_min) {\n    float t = 0;\n    for (std::size_t i = 0; i < s.y.size(); ++i) t += s.y[i] > y_min ? s.mass[i] : 0.f;\n    return t;\n}\n"}
   hints={["reserve each vector once.", "A ternary in the loop keeps it branch-free."]}
-  explanation="An LLM's KV cache is SoA by design: all keys for a layer are contiguous."
+  explanation="The query touches only y and mass, so it streams two arrays and skips x and z entirely. The capstone's tensors are stored the same way, one contiguous array per quantity."
+/>
+
+## Coding task: the SoA particle system
+
+Spawning and killing are where SoA goes wrong: one array forgotten and every particle after it has the wrong colour.
+
+<Code
+  id="particle-soa"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `class Particles` with SoA storage (`std::vector<float> x, vx, life`, public). `void spawn(float x, float vx, float life)` appends one particle. `void update(float dt)` moves every particle (x += vx * dt), reduces life by dt, then removes every particle with life <= 0 by swapping it with the last one and popping all arrays. `std::size_t size() const`. All three arrays must always have the same length."
+  starter={"#include <cstddef>\n#include <vector>\nclass Particles {\npublic:\n    std::vector<float> x, vx, life;\n    void spawn(float px, float pvx, float plife) {\n        x.push_back(px); vx.push_back(pvx); life.push_back(plife);\n    }\n    void update(float dt) {\n        for (std::size_t i = 0; i < x.size(); ++i) { x[i] += vx[i] * dt; life[i] -= dt; }\n    }\n    std::size_t size() const { return x.size(); }\n};\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    Particles p;\n    p.spawn(0, 1, 0.5f);\n    p.spawn(0, 2, 2.0f);\n    p.update(1.0f);\n    CHECK(p.size() == 1 && p.x[0] == 2.0f);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <algorithm>\nint main() {\n    Particles p;\n    for (int i = 0; i < 10; ++i) p.spawn(float(i), 1.0f, float(i % 3) + 0.5f);\n    p.update(1.0f);\n    CHECK(p.size() == 6 && p.x.size() == 6 && p.vx.size() == 6 && p.life.size() == 6);\n    std::vector<float> xs = p.x;\n    std::sort(xs.begin(), xs.end());\n    CHECK((xs == std::vector<float>{2, 3, 5, 6, 8, 9}));\n    for (std::size_t i = 0; i < p.size(); ++i) CHECK(p.life[i] > 0.0f);\n    p.update(1.0f);\n    CHECK(p.size() == 3);\n    xs = p.x; std::sort(xs.begin(), xs.end());\n    CHECK((xs == std::vector<float>{4, 7, 10}));\n    p.update(1.0f);\n    CHECK(p.size() == 0 && p.life.empty());\n    p.spawn(1, -1, 1.0f);\n    p.update(1.0f);\n    CHECK(p.size() == 0);\n    Particles q;\n    for (int i = 0; i < 1000; ++i) q.spawn(0, 0, 0.1f);\n    q.update(0.2f);\n    CHECK(q.size() == 0);\n    return 0;\n}\n"}
+  solution={"#include <cstddef>\n#include <utility>\n#include <vector>\nclass Particles {\npublic:\n    std::vector<float> x, vx, life;\n    void spawn(float px, float pvx, float plife) {\n        x.push_back(px); vx.push_back(pvx); life.push_back(plife);\n    }\n    void update(float dt) {\n        for (std::size_t i = 0; i < x.size(); ++i) { x[i] += vx[i] * dt; life[i] -= dt; }\n        std::size_t i = 0;\n        while (i < x.size()) {\n            if (life[i] <= 0.0f) kill(i);\n            else ++i;\n        }\n    }\n    std::size_t size() const { return x.size(); }\nprivate:\n    void kill(std::size_t i) {\n        std::swap(x[i], x.back()); x.pop_back();\n        std::swap(vx[i], vx.back()); vx.pop_back();\n        std::swap(life[i], life.back()); life.pop_back();\n    }\n};\n"}
+  hints={["In the removal loop, do not advance i after a swap: the element moved into slot i has not been checked yet.", "Write a private kill(i) that swaps x[i], vx[i] and life[i] with the back, then pop_back on all three."]}
+  explanation="Swap-and-pop removes in O(1) without shifting, which is fine because particle order does not matter. Funnelling every removal through one kill() keeps the arrays in sync."
 />
