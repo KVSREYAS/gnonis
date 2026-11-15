@@ -15,25 +15,25 @@ keyIdeas:
 
 Everyone picks a whole number from 0 to 100. The winner is whoever is closest to **2/3 of the average** of all picks.
 
-John Maynard Keynes used a newspaper beauty contest in 1936 to describe stock markets: you win not by picking what you like, but what you think others will pick. Rosemarie Nagel ran this number version as a lab experiment in 1995.
+John Maynard Keynes used a newspaper beauty contest in 1936 to describe stock markets: you win not by picking what you like, but what you think others will pick. Rosemarie Nagel's lab experiments with this number version, published in 1995, made it famous.
 
 ## Levels of thinking
 
 - **Level 0** picks at random, averaging 50.
 - **Level 1** expects level 0 and picks 2/3 × 50 ≈ 33.
 - **Level 2** expects level 1 and picks 2/3 × 33 ≈ 22.
-- Repeat forever and you reach **0**, the only Nash equilibrium.
+- Repeat forever and you reach **0**, the Nash equilibrium. (With whole numbers only, everyone picking 1 is also stable, because 2/3 of 1 rounds to 1.)
 
 ![Level 0 at 50, level 1 at 33, level 2 at 22, equilibrium at 0](/diagrams/game-theory/beauty-levels.png)
 
-In Nagel's experiment the first-round average was about 37, and nobody picked 0. Picking 0 in round 1 loses.
+In Nagel's 2/3 sessions the first-round average was 36.7, the median 33, and nobody picked 0. Picking 0 in round 1 loses.
 
 <Game
   id="contest"
   game={"beauty-contest"}
   prompt={"Four rounds against 40 bots. Finish in the top 3 in any round."}
   config={{"rounds": 4, "fraction": 0.6667, "crowd": 40}}
-  explanation={"Round 1 winners usually pick around 20 to 25. In later rounds the crowd anchors on the last target, so go a bit below it."}
+  explanation={"In round 1 the target usually lands around 19 to 22. In later rounds the crowd anchors on the last target, so go a bit below it."}
 />
 
 ## The lesson

@@ -17,7 +17,7 @@ keyIdeas:
 - **English**: the price rises in public until one bidder is left. Used for art and cricket player auctions.
 - **Dutch**: the price falls until someone accepts. Used for flowers in the Netherlands.
 - **First-price sealed bid**: everyone submits one secret bid. Highest bid wins and pays **its own bid**. Common in government tenders.
-- **Second-price sealed bid** (Vickrey): highest bid wins but pays the **second-highest bid**. Online ad auctions are close cousins.
+- **Second-price sealed bid** (Vickrey): highest bid wins but pays the **second-highest bid**. Search ad auctions used a version of it for years, though most display ads moved to first-price around 2019.
 
 In a **private value** auction, each bidder knows what the item is worth to them, and values differ.
 
@@ -40,9 +40,9 @@ How much? With n bidders whose values are spread evenly, the equilibrium bid is 
 
 ## Revenue equivalence and the winner's curse
 
-**Revenue equivalence**: with private values spread the same way and risk-neutral bidders, all four formats give the seller the same expected revenue. Bidders shade in first-price exactly enough to offset the second-price discount.
+**Revenue equivalence** (Vickrey 1961, Myerson 1981): with independent private values drawn from the same spread, and risk-neutral bidders, all four formats give the seller the same expected revenue. Bidders shade in first-price exactly enough to offset the second-price discount.
 
-When the item has a **common value** (an oil field worth the same to everyone, but nobody knows how much), the winner is the one who guessed highest, and often overpaid. That is the **winner's curse**. Smart bidders bid below their estimate to allow for it.
+When the item has a **common value** (an oil field worth the same to everyone, but nobody knows how much), the winner is the one who guessed highest, and often overpaid. That is the **winner's curse**, first described by oil engineers Capen, Clapp and Campbell (1971). Smart bidders bid below their estimate to allow for it.
 
 <Predict
   id="shade"

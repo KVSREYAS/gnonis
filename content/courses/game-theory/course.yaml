@@ -42,6 +42,7 @@ lessons:
 - ultimatum
 - shared-lake
 - test-fairness
+- gt-sources
 districts:
 - id: 01-games-and-payoffs
   title: Games, players and payoffs
@@ -147,3 +148,4 @@ districts:
   - ultimatum
   - shared-lake
   - test-fairness
+  - gt-sources

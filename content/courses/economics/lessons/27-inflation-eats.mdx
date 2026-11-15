@@ -26,7 +26,7 @@ When lenders expect inflation, they ask for higher nominal rates to protect the 
   game={"compound"}
   prompt={"Your aunt keeps ₹10 lakh in a 6.5% deposit for 20 years and adds nothing. Move inflation to find a rate where she still ends with at least ₹10 lakh in today's money."}
   config={{"start": 1000000, "monthly": 0, "rate": 6.5, "inflation": 8, "years": 20, "goalReal": 1000000, "locked": ["start", "monthly", "rate", "years"]}}
-  explanation={"She keeps her real value only if inflation is at or below 6.5%, the deposit rate. Above it, the real value shrinks every year."}
+  explanation={"She keeps her real value only if inflation is at or below the deposit's yearly yield. Interest here is added monthly, so 6.5% a year works out to about 6.7% after a year, and she holds her value up to roughly 6.7% inflation. Above that, the real value shrinks every year."}
 />
 
 ## Takeaway
