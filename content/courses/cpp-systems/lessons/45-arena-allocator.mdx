@@ -1,25 +1,70 @@
 ---
 id: cpp-systems/12-building-blocks/01-arena-allocator
 title: "Arena Allocators"
-estMinutes: 9
+estMinutes: 11
 xp: 110
-fun: 4
-missionIntro: "Bump a pointer to allocate and reset to free everything. That's the fastest allocator there is, and it's how inference engines handle per-step scratch memory."
+fun: 5
+missionIntro: "Bump a pointer to allocate and reset to free everything. That's the fastest allocator there is, and it's how game engines handle per-frame scratch memory. Forget to align and the combat log's damage record lands on an odd address."
 keyIdeas:
   - "An arena owns one big buffer. Allocation is align_up(offset) then bump, which is O(1) with no per-object free."
-  - "Reset frees everything at once, which suits per-request or per-step lifetimes."
+  - "Reset frees everything at once, which suits per-frame or per-level lifetimes."
   - "std::pmr::monotonic_buffer_resource is the standard arena and plugs into std::pmr containers."
 ---
 
-## Bump maths
+## The feature: the frame arena
 
+The combat system builds temporary records every frame (labels for the combat log, damage events, path nodes) and throws them all away when the frame ends. We give it a frame arena: one buffer, one offset, reset every frame.
 
+## The careless version: bump without aligning
+
+```cpp
+#include <cstddef>
+#include <cstdio>
+#include <new>
+
+struct FrameArena {                              // careless: no alignment
+    alignas(16) std::byte buf[1024];
+    std::size_t used = 0;
+    void* alloc(std::size_t n) { void* p = buf + used; used += n; return p; }
+};
+
+struct Damage { double amount; int target; };   // needs 8-byte alignment
+
+int main() {
+    FrameArena arena;
+    char* tag = static_cast<char*>(arena.alloc(3));          // "hit" label for the combat log
+    tag[0] = 'h'; tag[1] = 'i'; tag[2] = 't';
+    auto* d = new (arena.alloc(sizeof(Damage))) Damage{12.5, 7};
+    std::printf("%.*s: %.1f damage to slime %d\n", 3, tag, d->amount, d->target);
+}
+```
+```text
+game.cpp:17:63: runtime error: member access within misaligned address 0x7f98f0a00033 for type 'struct Damage', which requires 8 byte alignment
+0x7f98f0a00033: note: pointer points here
+ 00  68 69 74 00 00 00 00 00  00 00 00 00 00 00 00 00  00 00 00 00 00 00 00 00  00 00 00 00 00 00 00
+              ^ 
+```
+
+(Built with `-fsanitize=address,undefined`.) The 3-byte label left the offset at 3, so the `Damage` record starts at an address that is not a multiple of 8. A plain `-O2` build prints the right line on x86, which is why this bug survives testing. It is still undefined behaviour: on ARM consoles and phones, and with SIMD loads, misaligned access can crash or tear values.
+
+## The concept: align, then bump
+
+Every type has an alignment (`alignof(T)`): its address must be a multiple of it. An arena rounds the offset up before each allocation:
+
+```cpp
+std::size_t p = (off_ + align - 1) & ~(align - 1);   // round up; align is a power of two
+if (p + n > cap_) return nullptr;                    // the frame's budget is used up
+off_ = p + n;
+return buf_ + p;
+```
+
+Allocation is a few instructions. Objects from one frame sit next to each other, which helps the cache. Resetting is `off_ = 0`.
 
 ![Arena buffer with a bump pointer advancing past aligned allocations, and reset snapping it back](/diagrams/cpp-systems/12-building-blocks/01-arena-allocator.png)
 
 <Predict
   id="bump"
-  prompt="Arena at offset 13. Allocate 8 bytes with alignment 16. New offset after allocation?"
+  prompt="The frame arena is at offset 13 after the combat log labels. Allocate an 8-byte record with alignment 16. New offset after allocation?"
   answer={24}
   tolerance={{"mode": "absolute", "value": 0}}
   explanation="align_up(13,16) = 16, plus 8 = 24."
@@ -28,26 +73,52 @@ keyIdeas:
 
 <MCQ
   id="pmr"
-  prompt="Which standard type is an arena?"
+  prompt="The engine wants an arena without writing one. Which standard type is an arena?"
   options={["std::allocator", "std::pmr::monotonic_buffer_resource", "std::pmr::synchronized_pool_resource", "std::shared_ptr"]}
   answer={1}
   explanation="Memory is released only when the resource is destroyed or release() is called."
   devices={["phone", "desktop"]}
 />
 
-## Build it
+## When to use an arena, and when not
+
+- Use it for many objects that die together: per-frame scratch, per-level data (reset when the level unloads), a parsed save file.
+- Do not use it for objects with their own lifetimes, like a slime that may die at any moment: freeing one object is impossible, so memory only grows until reset. Use a pool for those (the module test).
+- Destructors do not run on reset. Store trivially destructible types (numbers, PODs, pointers into the arena), not `std::string` or `std::vector` that own heap memory.
+- Pointers into the arena become dangling at reset. Nothing from the frame arena may be kept past the frame.
 
 Sources: [cppreference: monotonic_buffer_resource](https://en.cppreference.com/w/cpp/memory/monotonic_buffer_resource), Ryan Fleury, [Untangling Lifetimes: The Arena Allocator](https://www.rfleury.com/p/untangling-lifetimes-the-arena-allocator)
+
+## Coding task: the frame arena
+
+Build the arena the combat system and the pathfinder allocate from, reset at the start of every frame.
 
 <Code
   id="arena"
   devices={["desktop"]}
   language="cpp"
-  prompt="Implement `class Arena` with ctor(std::size_t bytes) owning a std::unique_ptr<std::byte[]>, `void* alloc(std::size_t n, std::size_t align)` (nullptr when it doesn't fit), `template<class T> T* make_array(std::size_t n)` (value-initialises trivially-constructible T), `void reset()` and `std::size_t used() const`. Make it non-copyable."
+  prompt="Implement the frame arena: `class Arena` with ctor(std::size_t bytes) owning a std::unique_ptr<std::byte[]>, `void* alloc(std::size_t n, std::size_t align)` (nullptr when the frame's budget doesn't fit it), `template<class T> T* make_array(std::size_t n)` (value-initialises trivially-constructible T), `void reset()` (start of the next frame) and `std::size_t used() const`. Make it non-copyable."
   starter={"#include <cstddef>\n#include <memory>\nclass Arena {\npublic:\n    explicit Arena(std::size_t bytes) {}\n    void* alloc(std::size_t n, std::size_t align) { return nullptr; }\n    template<class T> T* make_array(std::size_t n) { return nullptr; }\n    void reset() {}\n    std::size_t used() const { return 0; }\n};\n"}
   visibleTests={"#include \"check.h\"\n\nint main() { Arena a(256); CHECK(a.alloc(8, 8) != nullptr && a.used() >= 8); return 0; }\n"}
   tests={"#include \"check.h\"\n\n#include <cstdint>\n#include <type_traits>\nint main() {\n    static_assert(!std::is_copy_constructible_v<Arena>);\n    Arena a(1024);\n    auto* f = a.make_array<float>(10); CHECK(f && f[9] == 0.f);\n    void* p = a.alloc(1, 64); CHECK(p && reinterpret_cast<std::uintptr_t>(p) % 64 == 0);\n    CHECK(a.alloc(4096, 8) == nullptr);\n    std::size_t u = a.used(); CHECK(u > 40);\n    a.reset(); CHECK(a.used() == 0);\n    auto* d = a.make_array<double>(128); CHECK(d && d[127] == 0.0);\n    CHECK(a.make_array<double>(1) == nullptr);\n    return 0;\n}\n"}
   solution={"#include <cstddef>\n#include <cstdint>\n#include <memory>\n#include <new>\n#include <type_traits>\nclass Arena {\n    std::unique_ptr<std::byte[]> buf_; std::size_t cap_, off_ = 0;\npublic:\n    explicit Arena(std::size_t bytes) : buf_(new std::byte[bytes]), cap_(bytes) {}\n    Arena(const Arena&) = delete; Arena& operator=(const Arena&) = delete;\n    void* alloc(std::size_t n, std::size_t align) {\n        auto base = reinterpret_cast<std::uintptr_t>(buf_.get());\n        auto p = (base + off_ + align - 1) & ~(std::uintptr_t)(align - 1);\n        if (p + n > base + cap_) return nullptr;\n        off_ = p + n - base; return reinterpret_cast<void*>(p);\n    }\n    template<class T> T* make_array(std::size_t n) {\n        static_assert(std::is_trivially_default_constructible_v<T>);\n        void* p = alloc(n * sizeof(T), alignof(T)); if (!p) return nullptr;\n        return new (p) T[n]();\n    }\n    void reset() { off_ = 0; }\n    std::size_t used() const { return off_; }\n};\n"}
   hints={["Align the absolute address, not just the offset (the buffer may sit at any 16-aligned address).", "Placement-new `T[n]()` value-initialises."]}
-  explanation="llama.cpp's ggml uses a context arena for tensors in the same spirit."
+  explanation="Engines put one of these per frame (often two, alternating, so data from the previous frame is still readable). llama.cpp's ggml uses a context arena for tensors in the same spirit."
+/>
+
+## Coding task: scratch marks for the path search
+
+The path search needs scratch memory only while it runs, but other systems allocate from the same frame arena before and after it. A **mark** saves the offset; **rewinding** to it frees only what was allocated since. The debug overlay also wants the **peak** offset, to size the arena.
+
+<Code
+  id="scratch-marks"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `class ScratchStack` with ctor(std::size_t bytes), `void* alloc(std::size_t n, std::size_t align)` (aligned bump; nullptr when it does not fit), `std::size_t mark() const` (current offset), `void rewind(std::size_t m)` (set the offset back to m) and `std::size_t peak() const` (largest offset ever reached, kept across rewinds). Store the bytes in a std::unique_ptr<std::byte[]>."
+  starter={"#include <cstddef>\n#include <cstdint>\n#include <memory>\nclass ScratchStack {\npublic:\n    explicit ScratchStack(std::size_t bytes) {}\n    void* alloc(std::size_t n, std::size_t align) { return nullptr; }\n    std::size_t mark() const { return 0; }\n    void rewind(std::size_t m) {}\n    std::size_t peak() const { return 0; }\n};\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    ScratchStack s(256);\n    void* a = s.alloc(10, 1);\n    CHECK(a != nullptr && s.mark() == 10);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <cstdint>\nint main() {\n    ScratchStack s(256);\n    void* a = s.alloc(10, 1);\n    CHECK(a != nullptr && s.mark() == 10);\n    std::size_t m = s.mark();\n    void* d = s.alloc(sizeof(double) * 4, alignof(double));\n    CHECK(d != nullptr && reinterpret_cast<std::uintptr_t>(d) % alignof(double) == 0);\n    std::size_t hi = s.mark();\n    CHECK(hi >= m + 32);\n    s.rewind(m);\n    CHECK(s.mark() == m && s.peak() == hi);\n    void* d2 = s.alloc(sizeof(double) * 4, alignof(double));\n    CHECK(d2 == d);\n    CHECK(s.alloc(1000, 1) == nullptr);\n    CHECK(s.mark() == hi);\n    s.rewind(0);\n    void* big = s.alloc(256, 1);\n    CHECK(big != nullptr && s.peak() == 256 && s.alloc(1, 1) == nullptr);\n    void* v = s.alloc(0, 1);\n    CHECK(v != nullptr);\n    return 0;\n}\n"}
+  solution={"#include <algorithm>\n#include <cstddef>\n#include <cstdint>\n#include <memory>\nclass ScratchStack {\npublic:\n    explicit ScratchStack(std::size_t bytes) : buf_(new std::byte[bytes]), cap_(bytes) {}\n    void* alloc(std::size_t n, std::size_t align) {\n        auto base = reinterpret_cast<std::uintptr_t>(buf_.get());\n        auto p = (base + off_ + align - 1) & ~(std::uintptr_t)(align - 1);\n        if (p + n > base + cap_) return nullptr;\n        off_ = p + n - base;\n        peak_ = std::max(peak_, off_);\n        return reinterpret_cast<void*>(p);\n    }\n    std::size_t mark() const { return off_; }\n    void rewind(std::size_t m) { off_ = m; }\n    std::size_t peak() const { return peak_; }\nprivate:\n    std::unique_ptr<std::byte[]> buf_;\n    std::size_t cap_, off_ = 0, peak_ = 0;\n};\n"}
+  hints={["Align the absolute address: auto base = reinterpret_cast<std::uintptr_t>(buf_.get()); auto p = (base + off_ + align - 1) & ~(std::uintptr_t)(align - 1);", "After a successful alloc: off_ = p + n - base; peak_ = std::max(peak_, off_);"]}
+  explanation="Marks give stack-like lifetimes inside one frame: the search frees its nodes without touching what the combat system allocated earlier. The peak tells you how big the arena must be for the worst frame."
 />

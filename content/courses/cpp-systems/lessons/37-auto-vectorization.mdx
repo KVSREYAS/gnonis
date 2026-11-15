@@ -1,25 +1,68 @@
 ---
 id: cpp-systems/10-simd/01-auto-vectorization
 title: "Auto-Vectorisation"
-estMinutes: 8
+estMinutes: 10
 xp: 100
-fun: 3
-missionIntro: "Write simple, aliasing-free loops over contiguous data and the compiler emits SIMD for you. Then check that it did."
+fun: 5
+missionIntro: "The particle step looks vectorizable, yet GCC emits one float per instruction. Two pointers that might overlap are enough to stop it. Write loops the compiler can prove safe, then check that it did."
 keyIdeas:
   - "SSE2 is baseline on x86-64 (128-bit, 4 floats). AVX2 is 256-bit (8 floats) and needs -mavx2 or -march."
   - "Vectorisation blockers: possible aliasing, non-contiguous access, loop-carried dependencies, function calls, and FP reductions without -ffast-math or -fassociative-math."
   - "Check with -fopt-info-vec (GCC), -Rpass=loop-vectorize (Clang) or Compiler Explorer."
 ---
 
+## The feature: moving every particle
+
+Each frame, every particle moves by its velocity: `x[i] += vx[i] * dt`, over flat arrays from the data-oriented rewrite. There are no branches and no calls. It should be the best case for SIMD.
+
+## The careless version: pointers that might overlap
+
+```cpp
+#include <chrono>
+#include <cstdio>
+#include <vector>
+
+constexpr int N = 4096;
+
+__attribute__((noipa)) void step(float* x, const float* vx, float dt) {
+    for (int i = 0; i < N; ++i) x[i] += vx[i] * dt;
+}
+__attribute__((noipa)) void step_restrict(float* __restrict x, const float* __restrict vx, float dt) {
+    for (int i = 0; i < N; ++i) x[i] += vx[i] * dt;
+}
+
+int main() {
+    std::vector<float> x(N, 0.f), vx(N, 1.f);
+    auto ms = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };
+    auto t0 = std::chrono::steady_clock::now();
+    for (int f = 0; f < 100000; ++f) step(x.data(), vx.data(), 0.016f);
+    auto t1 = std::chrono::steady_clock::now();
+    for (int f = 0; f < 100000; ++f) step_restrict(x.data(), vx.data(), 0.016f);
+    auto t2 = std::chrono::steady_clock::now();
+    std::printf("float* x, const float* vx: %6.1f ms\n", ms(t1 - t0));
+    std::printf("same with __restrict:      %6.1f ms\n", ms(t2 - t1));
+}
+```
+```text
+float* x, const float* vx:  118.6 ms
+same with __restrict:        30.7 ms
+```
+
+(One run on the course machine, GCC at `-O2`.) The two loops are identical except for `__restrict`.
+
+## What went wrong
+
+The compiler must assume `x` and `vx` might point into the same memory: someone could call `step(buf + 1, buf, dt)`. Then writing `x[i]` changes `vx[i + 1]`, and processing four at once would read stale values. To vectorize anyway, the compiler would have to add a runtime overlap check and two versions of the loop. At `-O2`, GCC uses a "very cheap" cost model that refuses to do that, so the loop stays scalar. (At `-O3` it adds the check and both loops run at the fast speed.)
+
+`__restrict` is a promise from you: through this function, the memory behind these pointers does not overlap. With that, the compiler vectorizes at `-O2`. Break the promise and the behaviour is undefined, so only add it when it is true.
+
 ## Lanes
-
-
 
 ![Scalar loop processing one float per instruction versus SSE processing 4 lanes at once](/diagrams/cpp-systems/10-simd/01-auto-vectorization.png)
 
 <Predict
   id="lanes-avx512"
-  prompt="How many float32 lanes in a 512-bit AVX-512 register?"
+  prompt="A PC build of Slime Siege enables AVX-512 for the particle step. How many float32 lanes are in one 512-bit register?"
   answer={16}
   tolerance={{"mode": "absolute", "value": 0}}
   explanation="512 / 32."
@@ -28,30 +71,59 @@ keyIdeas:
 
 <MCQ
   id="blocker"
-  prompt={"Why might GCC refuse to vectorise `void add(float* a, float* b, int n) { for (...) a[i] += b[i]; }`?"}
+  prompt="Why might GCC refuse to vectorise the particle step `void step(float* a, float* b, int n) { for (...) a[i] += b[i]; }`?"
   options={["float can't be vectorised", "a and b might overlap, so it needs a runtime check or __restrict", "n is an int", "It always vectorises"]}
   answer={1}
   explanation="GCC often adds a runtime overlap check (versioning). __restrict removes the doubt."
   devices={["phone", "desktop"]}
 />
 
+## Other things that block vectorization
+
+- **A dependency between iterations**: `x[i] = x[i - 1] * drag` needs the previous result, so lanes cannot run together.
+- **Strided or indirect access**: `particles[i].x` in an array of big structs, or `x[index[i]]`. Some can be vectorized with gathers, most are not worth it.
+- **Calls the compiler cannot see into**: a function in another file without LTO.
+- **Float reductions**: summing into one variable would need the additions reordered.
+
 <MCQ
   id="fp-reduce"
-  prompt="Why doesn't `float s = 0; for (...) s += a[i];` vectorise at plain -O2/-O3?"
+  prompt="Why doesn't the energy total `float e = 0; for (...) e += ke[i];` vectorise at plain -O2/-O3?"
   options={["Floats are too small", "Vectorising reorders the additions, and FP addition isn't associative, so results could change", "Reductions are impossible", "Missing #include"]}
   answer={1}
   explanation="Allow it with -ffast-math/-fassociative-math, or split accumulators by hand (next lesson)."
   devices={["phone", "desktop"]}
 />
 
-## Reading
+## When to use it, and when not
+
+- Use `__restrict` on hot loops over separate arrays you own: particle fields, audio buffers, pixel rows.
+- Prefer it to hand-written intrinsics: the compiler then also uses AVX when you build with `-mavx2`, with no code change.
+- Do not add it to pointers that can overlap, such as an in-place shift `move(buf + 1, buf)`. That is undefined behaviour and the vectorized loop will produce wrong numbers.
+- Do not guess. Check with `-fopt-info-vec-missed`, and measure.
 
 Sources: [GCC auto-vectorization](https://gcc.gnu.org/projects/tree-ssa/vectorization.html), Matt Godbolt, [Compiler Explorer](https://godbolt.org), [Intel Intrinsics Guide](https://www.intel.com/content/www/us/en/docs/intrinsics-guide/)
 
 <Ordering
   id="vec-workflow"
-  prompt="Order a vectorisation workflow."
+  prompt="Order a vectorisation workflow for the particle step."
   items={["Write the loop over contiguous arrays with no aliasing", "Compile with -O3 -fopt-info-vec-missed", "Read why it was missed (aliasing, dependency, call)", "Fix the cause (__restrict, SoA, split accumulators)", "Confirm in Godbolt that packed instructions (mulps/vfmadd…ps) appear"]}
   explanation="Measure after, of course."
   devices={["phone", "desktop"]}
+/>
+
+## Coding task: the gravity step
+
+Sparks and slime droplets fall. Write the per-frame gravity update so the compiler can vectorize it.
+
+<Code
+  id="gravity-step"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `void apply_gravity(float* __restrict vy, float* __restrict y, std::size_t n, float g, float dt)`. For each particle: first `vy[i] -= g * dt`, then `y[i] += vy[i] * dt` (using the new vy). Keep the loop simple (no calls, no branches) so it vectorizes at -O2. Also write `float lowest(const float* y, std::size_t n)` returning the smallest y (n ≥ 1), which the effects system uses to find particles that fell off screen."
+  starter={"#include <cstddef>\nvoid apply_gravity(float* __restrict vy, float* __restrict y, std::size_t n, float g, float dt) {}\nfloat lowest(const float* y, std::size_t n) { return 0; }\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    float vy[2] = {0, 10}, y[2] = {100, 50};\n    apply_gravity(vy, y, 2, 10, 0.5f);\n    CHECK(vy[0] == -5 && y[0] == 97.5f);\n    CHECK(vy[1] == 5 && y[1] == 52.5f);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <vector>\nint main() {\n    float vy[2] = {0, 10}, y[2] = {100, 50};\n    apply_gravity(vy, y, 2, 10, 0.5f);\n    CHECK(vy[0] == -5 && y[0] == 97.5f);\n    CHECK(vy[1] == 5 && y[1] == 52.5f);\n    std::vector<float> v(1003, 1.0f), p(1003, 0.0f);\n    apply_gravity(v.data(), p.data(), v.size(), 2.0f, 0.25f);\n    for (float a : v) CHECK(a == 0.5f);\n    for (float b : p) CHECK(b == 0.125f);\n    apply_gravity(v.data(), p.data(), 0, 2.0f, 0.25f);\n    CHECK(v[0] == 0.5f);\n    float h[5] = {30, 12, 40, 12.5f, 99};\n    CHECK(lowest(h, 5) == 12);\n    float pos[3] = {5, 6, 7};\n    CHECK(lowest(pos, 3) == 5);\n    float neg[4] = {-1, -8, 3, -2};\n    CHECK(lowest(neg, 4) == -8);\n    return 0;\n}\n"}
+  solution={"#include <cstddef>\nvoid apply_gravity(float* __restrict vy, float* __restrict y, std::size_t n, float g, float dt) {\n    const float dv = g * dt;\n    for (std::size_t i = 0; i < n; ++i) {\n        vy[i] -= dv;\n        y[i] += vy[i] * dt;\n    }\n}\nfloat lowest(const float* y, std::size_t n) {\n    float m = y[0];\n    for (std::size_t i = 1; i < n; ++i) m = y[i] < m ? y[i] : m;\n    return m;\n}\n"}
+  hints={["Compute `g * dt` once before the loop.", "lowest: start from y[0], not 0, or an all-positive screen reports 0."]}
+  explanation="Both writes go to separate arrays the function owns, so `__restrict` is a true promise and GCC vectorizes the loop at -O2. The tests check the numbers; check the vectorization yourself with -fopt-info-vec."
 />

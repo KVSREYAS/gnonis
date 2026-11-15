@@ -1,25 +1,155 @@
 ---
 id: cpp-systems/03-ownership/01-unique-ptr-and-deleters
 title: "unique_ptr and Custom Deleters"
-estMinutes: 7
+estMinutes: 15
 xp: 90
 fun: 5
-missionIntro: "Exclusive ownership with zero overhead, plus custom deleters for C APIs."
+missionIntro: "The enemy spawner leaks a slime every time one dies mid-update, and deletes a bat twice when two arrows hit it in the same frame. unique_ptr makes exactly-one-owner the type's job, and custom deleters extend it to C libraries."
 keyIdeas:
   - "std::unique_ptr<T> is a move-only owner. With the default deleter it's the size of a raw pointer."
+  - "Ownership moves with std::move; functions that take ownership take unique_ptr by value, functions that only look take T& or T*."
   - "A stateless deleter (empty struct or captureless lambda) adds no size, but a function-pointer deleter adds 8 bytes."
-  - "Use make_unique (C++14) and pass ownership by value: `void take(std::unique_ptr<T>)`."
+  - "Use make_unique (C++14). Never write new in game code."
 ---
+
+## The feature: the enemy spawner
+
+The spawner creates enemies on the heap (they are polymorphic: slimes, bats, turrets) and the world keeps them in a list. Each frame the update loop runs every enemy. Enemies that die are removed and destroyed. A dying enemy can also hand its "soul" to the boss, which absorbs it.
+
+With raw pointers, every one of those steps needs a matching `delete`, written by hand, in the right place, exactly once.
+
+## The careless version: raw owning pointers
+
+```cpp
+#include <cstdio>
+#include <vector>
+
+struct Enemy {
+    int hp;
+    explicit Enemy(int h) : hp(h) {}
+    virtual ~Enemy() = default;
+};
+
+std::vector<Enemy*> world;
+
+void remove_dead() {
+    std::vector<Enemy*> alive;
+    for (Enemy* e : world) {
+        if (e->hp <= 0) continue;      // removed from the list... not deleted
+        alive.push_back(e);
+    }
+    world = alive;
+}
+
+void on_arrow_hit(Enemy* e) { e->hp -= 50; if (e->hp <= 0) delete e; }   // deletes too
+
+int main() {
+    world = {new Enemy(30), new Enemy(10), new Enemy(40)};
+    world[1]->hp = 0;
+    remove_dead();                     // leaks the dead one
+    Enemy* bat = world[0];
+    on_arrow_hit(bat);                 // arrow 1 kills and deletes the bat
+    on_arrow_hit(bat);                 // arrow 2, same frame: use after free
+    std::printf("never reached cleanly\n");
+}
+```
+```text
+==1==ERROR: AddressSanitizer: heap-use-after-free on address 0x502000000010 at pc 0x563f50f363db bp 0x7fff21f46140 sp 0x7fff21f46138
+SUMMARY: AddressSanitizer: heap-use-after-free game.cpp:21 in on_arrow_hit(Enemy*)
+```
+
+## What went wrong
+
+ASan stops at the first error it sees, the use after free. Two different functions both thought they owned enemies. `remove_dead` took enemies out of the list without deleting them (leak). `on_arrow_hit` deleted an enemy that the world list still pointed at, and the second arrow used it (use after free). Neither function's signature said anything about ownership: they all take or hold `Enemy*`.
+
+The fix is to put the answer to "who deletes this?" into the type, so the compiler enforces it.
+
+## The fix: std::unique_ptr
+
+`std::unique_ptr<Enemy>` owns one enemy and deletes it in its destructor. It cannot be copied, only moved, so there is always exactly one owner.
+
+```cpp
+#include <cstdio>
+#include <memory>
+#include <vector>
+
+struct Enemy {
+    int hp;
+    explicit Enemy(int h) : hp(h) {}
+    virtual ~Enemy() = default;
+};
+
+std::vector<std::unique_ptr<Enemy>> world;        // the world owns
+
+void remove_dead() {
+    std::erase_if(world, [](const std::unique_ptr<Enemy>& e) { return e->hp <= 0; });
+}                                                 // erasing a unique_ptr deletes the enemy
+
+void on_arrow_hit(Enemy& e) { e.hp -= 50; }       // observes; cannot delete
+
+int main() {
+    world.push_back(std::make_unique<Enemy>(30));
+    world.push_back(std::make_unique<Enemy>(10));
+    world.push_back(std::make_unique<Enemy>(40));
+    world[1]->hp = 0;
+    remove_dead();
+    on_arrow_hit(*world[0]);
+    on_arrow_hit(*world[0]);
+    remove_dead();
+    std::printf("enemies left: %zu, no leaks, no double delete\n", world.size());
+}
+```
+```text
+enemies left: 1, no leaks, no double delete
+```
+
+The arrow handler now takes `Enemy&`: it can hurt the enemy but has no way to delete it. Only `remove_dead`, which owns the list, removes enemies, and removing a `unique_ptr` from the vector deletes the enemy. The ASan run is clean.
+
+## Moving ownership around
+
+```cpp
+#include <cstdio>
+#include <memory>
+#include <utility>
+#include <vector>
+
+struct Soul { int power = 10; ~Soul() { std::printf("soul freed\n"); } };
+
+struct Boss {
+    std::vector<std::unique_ptr<Soul>> absorbed;
+    void absorb(std::unique_ptr<Soul> s) { absorbed.push_back(std::move(s)); }  // takes ownership
+};
+
+std::unique_ptr<Soul> make_soul() { return std::make_unique<Soul>(); }         // gives ownership
+
+int main() {
+    Boss boss;
+    auto s = make_soul();
+    // boss.absorb(s);          // error: use of deleted copy constructor
+    boss.absorb(std::move(s));  // explicit hand-off
+    std::printf("caller still has a soul: %d, boss has %zu\n", s != nullptr, boss.absorbed.size());
+}
+```
+```text
+caller still has a soul: 0, boss has 1
+soul freed
+```
+
+Signatures now tell the story:
+
+- `std::unique_ptr<T> make_x()`: you get ownership.
+- `void absorb(std::unique_ptr<T> s)` (by value): I take ownership; the caller must write `std::move`.
+- `void hit(T& t)` or `T*`: I only look.
 
 ## How big is it?
 
-On x86-64 with libstdc++ or libc++, a `unique_ptr<T>` with the default deleter is 8 bytes, thanks to the empty-base / `[[no_unique_address]]` optimisation.
+On x86-64 with libstdc++ or libc++, a `unique_ptr<T>` with the default deleter is 8 bytes, exactly a raw pointer. The deleter is stored using the empty-base trick, so a deleter with no data takes no space. A world list of 10,000 enemies pays nothing for safety.
 
 ![unique_ptr layouts: 8-byte pointer only, versus pointer plus function-pointer deleter (16 bytes)](/diagrams/cpp-systems/03-ownership/01-unique-ptr-and-deleters.png)
 
 <Predict
   id="up-size-fnptr"
-  prompt="`std::unique_ptr<FILE, int(*)(FILE*)>` on x86-64. sizeof in bytes?"
+  prompt="The engine wraps C files as `std::unique_ptr<FILE, int(*)(FILE*)>` on x86-64. sizeof in bytes?"
   answer={16}
   tolerance={{"mode": "absolute", "value": 0}}
   unit="bytes"
@@ -29,7 +159,7 @@ On x86-64 with libstdc++ or libc++, a `unique_ptr<T>` with the default deleter i
 
 <Trace
   id="up-sizes"
-  prompt="Measured on x86-64 Linux, g++ 14."
+  prompt="Measured on x86-64 Linux, g++ 14. The engine uses all three kinds of deleter."
   code={"#include <cstdio>\n#include <cstdlib>\n#include <memory>\nstruct Free { void operator()(void* p) const { std::free(p); } };\nint main() {\n    std::printf(\"%zu %zu %zu\", sizeof(std::unique_ptr<int>),\n                sizeof(std::unique_ptr<int, Free>),\n                sizeof(std::unique_ptr<int, void(*)(void*)>));\n}"}
   steps={[{"line": 6, "note": "default deleter"}, {"line": 7, "note": "empty struct deleter"}, {"line": 8, "note": "function pointer deleter"}]}
   question="What does it print?"
@@ -38,19 +168,72 @@ On x86-64 with libstdc++ or libc++, a `unique_ptr<T>` with the default deleter i
   devices={["phone", "desktop"]}
 />
 
-## Wrap a C API
+## Custom deleters: wrapping a C library
 
-Sources: [cppreference: unique_ptr](https://en.cppreference.com/w/cpp/memory/unique_ptr), Core Guidelines R.20/R.21
+Windowing, audio and graphics libraries (SDL, OpenAL, Vulkan) are C APIs: you get a handle from a create function and must pass it to a destroy function. A custom deleter makes `unique_ptr` call the right one:
+
+```cpp
+#include <cstdio>
+#include <memory>
+
+// stand-in for a C windowing library
+struct Window { int w, h; };
+Window* window_create(int w, int h) { std::printf("window %dx%d opened\n", w, h); return new Window{w, h}; }
+void window_destroy(Window* win) { std::printf("window closed\n"); delete win; }
+
+struct WindowDeleter { void operator()(Window* w) const { window_destroy(w); } };
+using WindowPtr = std::unique_ptr<Window, WindowDeleter>;
+
+int main() {
+    WindowPtr win(window_create(1280, 720));
+    std::printf("game running in %dx%d, handle is %zu bytes\n", win->w, win->h, sizeof(win));
+}
+```
+```text
+window 1280x720 opened
+game running in 1280x720, handle is 8 bytes
+window closed
+```
+
+The deleter is an empty struct, so `WindowPtr` is still 8 bytes. A function pointer as the deleter (`std::unique_ptr<Window, void(*)(Window*)>`) works too but stores the pointer in every object: 16 bytes.
+
+## When to use it, and when not
+
+- Use `unique_ptr` for every heap object with one clear owner: entities in the world list, a level's physics body, the game's renderer, C library handles.
+- Create with `std::make_unique<T>(args...)`. A bare `new` in game code is a code-review red flag.
+- Take `unique_ptr` by value only in functions that take ownership. Everything else takes `T&` (must exist) or `T*` (may be null).
+- Do not use a smart pointer for objects that can just live by value: a `Vec2`, a small struct, a member that is never shared. `std::vector<Enemy>` is better than `std::vector<std::unique_ptr<Enemy>>` when there is no inheritance.
+
+## Coding task: wrap a C buffer
+
+The audio decoder is a C library that returns sample memory from `malloc`.
 
 <Code
   id="malloc-owner"
   devices={["desktop"]}
   language="cpp"
-  prompt="Write `IntBuf alloc_ints(std::size_t n)`, which mallocs n zeroed ints (use std::calloc) and returns them as `IntBuf = std::unique_ptr<int[], FreeDeleter>`. FreeDeleter must be an empty struct calling std::free, so sizeof(IntBuf) == sizeof(int*)."
+  prompt="The audio decoder is a C library that hands out sample buffers from malloc. Write `IntBuf alloc_ints(std::size_t n)`, which mallocs n zeroed ints (use std::calloc) and returns them as `IntBuf = std::unique_ptr<int[], FreeDeleter>`. FreeDeleter must be an empty struct calling std::free, so sizeof(IntBuf) == sizeof(int*)."
   starter={"#include <cstdlib>\n#include <memory>\nstruct FreeDeleter { /* TODO */ void operator()(void*) const {} };\nusing IntBuf = std::unique_ptr<int[], FreeDeleter>;\nIntBuf alloc_ints(std::size_t n) { return IntBuf(nullptr); }\n"}
   visibleTests={"#include \"check.h\"\n\nint main() {\n    auto b = alloc_ints(4);\n    CHECK(b != nullptr && b[3] == 0);\n    return 0;\n}\n"}
   tests={"#include \"check.h\"\n\nint main() {\n    static_assert(sizeof(IntBuf) == sizeof(int*));\n    auto b = alloc_ints(1000);\n    CHECK(b != nullptr);\n    long s = 0; for (int i = 0; i < 1000; ++i) s += b[i];\n    CHECK(s == 0);\n    b[999] = 5; CHECK(b[999] == 5);\n    IntBuf c = std::move(b); CHECK(!b && c[999] == 5);\n    return 0;\n}\n"}
   solution={"#include <cstdlib>\n#include <memory>\nstruct FreeDeleter { void operator()(void* p) const noexcept { std::free(p); } };\nusing IntBuf = std::unique_ptr<int[], FreeDeleter>;\nIntBuf alloc_ints(std::size_t n) { return IntBuf(static_cast<int*>(std::calloc(n, sizeof(int)))); }\n"}
   hints={["calloc zeroes memory for you.", "An empty struct with operator() is a stateless deleter."]}
-  explanation="Same pattern for cudaFree, fclose, SDL_DestroyWindow and every other C cleanup function."
+  explanation="Same pattern for SDL_DestroyWindow, fclose, alSourceDelete and every other C cleanup function: the deleter knows the right free, and unique_ptr makes sure it runs exactly once."
+/>
+
+## Coding task: the spawner
+
+The spawner from the top of the lesson, with the game's rules: the spawner owns enemies, removes the dead ones, and can hand one over to a new owner (the boss swallows a slime whole).
+
+<Code
+  id="spawner-unique"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `class Spawner` that owns enemies in a `std::vector<std::unique_ptr<Enemy>>` (Enemy is given). `Enemy& spawn(int id, int hp)` creates and stores one and returns a reference to it. `std::size_t remove_dead()` destroys every enemy with hp <= 0 and returns how many it removed. `std::unique_ptr<Enemy> take(int id)` removes that enemy from the spawner and hands ownership to the caller (nullptr if not found). `std::size_t size() const`. Enemy counts live objects in g_live, so leaks show up."
+  starter={"#include <cstddef>\n#include <memory>\n#include <vector>\nextern int g_live;\nstruct Enemy {\n    int id, hp;\n    Enemy(int i, int h) : id(i), hp(h) { ++g_live; }\n    ~Enemy() { --g_live; }\n};\nclass Spawner {\npublic:\n    Enemy& spawn(int id, int hp) {\n        list_.push_back(std::make_unique<Enemy>(id, hp));\n        return *list_.back();\n    }\n    std::size_t remove_dead() { return 0; }\n    std::unique_ptr<Enemy> take(int id) { return nullptr; }\n    std::size_t size() const { return list_.size(); }\nprivate:\n    std::vector<std::unique_ptr<Enemy>> list_;\n};\n"}
+  visibleTests={"#include \"check.h\"\nint g_live = 0;\nint main() {\n    Spawner s;\n    s.spawn(1, 30);\n    s.spawn(2, 0);\n    CHECK(s.remove_dead() == 1 && s.size() == 1 && g_live == 1);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\nint g_live = 0;\nint main() {\n    {\n        Spawner s;\n        Enemy& a = s.spawn(1, 30);\n        s.spawn(2, 10);\n        s.spawn(3, 40);\n        CHECK(g_live == 3 && a.id == 1);\n        a.hp = 0;\n        s.spawn(4, -5);\n        CHECK(s.remove_dead() == 2 && s.size() == 2 && g_live == 2);\n        CHECK(s.remove_dead() == 0);\n        std::unique_ptr<Enemy> boss_meal = s.take(3);\n        CHECK(boss_meal != nullptr && boss_meal->id == 3 && s.size() == 1 && g_live == 2);\n        CHECK(s.take(99) == nullptr && s.size() == 1);\n        boss_meal.reset();\n        CHECK(g_live == 1);\n    }\n    CHECK(g_live == 0);\n    return 0;\n}\n"}
+  solution={"#include <cstddef>\n#include <memory>\n#include <utility>\n#include <vector>\nextern int g_live;\nstruct Enemy {\n    int id, hp;\n    Enemy(int i, int h) : id(i), hp(h) { ++g_live; }\n    ~Enemy() { --g_live; }\n};\nclass Spawner {\npublic:\n    Enemy& spawn(int id, int hp) {\n        list_.push_back(std::make_unique<Enemy>(id, hp));\n        return *list_.back();\n    }\n    std::size_t remove_dead() {\n        return std::erase_if(list_, [](const std::unique_ptr<Enemy>& e) { return e->hp <= 0; });\n    }\n    std::unique_ptr<Enemy> take(int id) {\n        for (auto it = list_.begin(); it != list_.end(); ++it) {\n            if ((*it)->id == id) {\n                std::unique_ptr<Enemy> out = std::move(*it);\n                list_.erase(it);\n                return out;\n            }\n        }\n        return nullptr;\n    }\n    std::size_t size() const { return list_.size(); }\nprivate:\n    std::vector<std::unique_ptr<Enemy>> list_;\n};\n"}
+  hints={["std::erase_if returns how many elements it erased.", "In take, find the element, move the unique_ptr out of the vector slot, then erase the (now empty) slot."]}
+  explanation="The spawner is the only owner, so there is no way to leak or double-delete. take() shows a transfer: after it, the caller's unique_ptr is the owner and the spawner has forgotten the enemy."
 />

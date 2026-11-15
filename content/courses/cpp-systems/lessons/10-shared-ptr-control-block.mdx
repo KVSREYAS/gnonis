@@ -1,25 +1,115 @@
 ---
 id: cpp-systems/03-ownership/02-shared-ptr-control-block
 title: "shared_ptr and the Control Block"
-estMinutes: 7
+estMinutes: 15
 xp: 90
-fun: 3
-missionIntro: "Shared ownership costs a control block and atomic reference counts. make_shared puts both in one allocation."
+fun: 5
+missionIntro: "Forty slimes share one texture, and the inventory icon keeps using it after the level that loaded it is gone. shared_ptr keeps a texture alive exactly as long as anyone uses it. How the count works, what it costs, and how to pass it."
 keyIdeas:
-  - "shared_ptr is two pointers (16 bytes on x86-64): one to the object, one to the control block."
-  - "The control block holds the strong count, the weak count, and the deleter/allocator. Counts are updated atomically."
-  - "make_shared does one allocation for object + control block. `shared_ptr<T>(new T)` does two."
+  - "Copying a shared_ptr increments an atomic strong count; destroying one decrements it; at zero the object is deleted."
+  - "make_shared puts the object and the control block in one allocation."
+  - "sizeof(shared_ptr) is two pointers: the object and the control block."
+  - "Functions that only use the object take T& or const T&, not shared_ptr by value."
 ---
 
-## Counting owners
+## The feature: shared textures
 
-Copying a shared_ptr increments the strong count (an atomic RMW). Moving it doesn't. Destroying it decrements, and at zero the object is destroyed.
+Every slime sprite draws the same `slime.png`. Loading it forty times would waste forty times the GPU memory, so sprites share one `Texture`. The level's asset list loads it. But other things use it too: the bestiary screen shows a slime icon, and a slime the player captured in a jar travels to the next level in the inventory.
+
+So who frees the texture? Not the level: the jar still needs it after the level is gone. Not the jar: the level's slimes may outlive it. There is no single owner. The texture should die when the **last** user is done.
+
+## The careless version: the level owns, everyone else borrows
+
+```cpp
+#include <cstdio>
+#include <memory>
+#include <string>
+#include <vector>
+
+struct Texture { std::string file; int gpu_id; };
+
+struct Sprite { const Texture* tex; };          // borrows a raw pointer
+
+struct Level {
+    std::vector<std::unique_ptr<Texture>> textures;   // the level owns them
+};
+
+int main() {
+    Sprite jar_icon{};
+    {
+        Level forest;
+        forest.textures.push_back(std::make_unique<Texture>(Texture{"slime.png", 7}));
+        jar_icon.tex = forest.textures[0].get();      // captured slime goes in a jar
+    }                                                 // forest unloads: texture freed
+    std::printf("drawing jar with gpu texture %d\n", jar_icon.tex->gpu_id);
+}
+```
+```text
+==1==ERROR: AddressSanitizer: heap-use-after-free on address 0x504000000030 at pc 0x5605dad46bdd bp 0x7ffe34fa2030 sp 0x7ffe34fa2028
+SUMMARY: AddressSanitizer: heap-use-after-free game.cpp:21 in main
+```
+
+## What went wrong
+
+The level unloaded and freed its textures, but the inventory still held a raw pointer into one of them. Drawing the jar read freed memory: a use after free. In a normal build the icon would show garbage, or the GPU would be told to bind a texture id that now belongs to something else.
+
+The level was a reasonable owner for most textures, but not for this one. Ownership here really is shared: several independent parts of the game each need the texture to stay alive while they use it.
+
+## The fix: std::shared_ptr
+
+Each user holds a `std::shared_ptr<Texture>`. Each copy adds one to a count. Each destruction subtracts one. The texture is deleted when the count reaches zero, whoever lets go last.
+
+```cpp
+#include <cstdio>
+#include <memory>
+#include <string>
+#include <vector>
+
+struct Texture {
+    std::string file;
+    int gpu_id;
+    Texture(std::string f, int id) : file(std::move(f)), gpu_id(id) {}
+    ~Texture() { std::printf("texture %s freed\n", file.c_str()); }
+};
+struct Sprite { std::shared_ptr<const Texture> tex; };   // shares ownership
+
+int main() {
+    Sprite jar_icon;
+    {
+        std::vector<Sprite> forest_slimes;
+        auto tex = std::make_shared<const Texture>("slime.png", 7);
+        for (int i = 0; i < 40; ++i) forest_slimes.push_back(Sprite{tex});
+        jar_icon.tex = tex;
+        std::printf("users of slime.png: %ld\n", tex.use_count());
+    }                                                    // level gone: 42 owners released
+    std::printf("users after unload: %ld\n", jar_icon.tex.use_count());
+    std::printf("drawing jar with gpu texture %d\n", jar_icon.tex->gpu_id);
+}                                                        // last owner gone: freed
+```
+```text
+users of slime.png: 42
+users after unload: 1
+drawing jar with gpu texture 7
+texture slime.png freed
+```
+
+42 owners: 40 slimes, the jar, and the local `tex`. After the level, only the jar is left, and the texture is freed when the jar goes.
+
+## The control block
+
+`shared_ptr` needs somewhere to keep the count that all copies can see. That is the **control block**, a small heap object holding:
+
+- the **strong count**: how many `shared_ptr`s own the object
+- the **weak count**: how many `weak_ptr`s observe it (next lesson)
+- the deleter
+
+Each `shared_ptr` is two pointers: one to the object, one to the control block. Copying one increments the strong count with an **atomic** instruction, so copies on different threads are safe. Moving one just steals both pointers and leaves the count alone.
 
 ![shared_ptr pointing to an object and a control block with strong/weak counts; make_shared fuses them](/diagrams/cpp-systems/03-ownership/02-shared-ptr-control-block.png)
 
 <Trace
   id="use-count"
-  prompt="Follow the strong count."
+  prompt="Follow the strong count of a shared texture as sprites copy and move it."
   code={"#include <cstdio>\n#include <memory>\nint main() {\n    auto a = std::make_shared<int>(1);\n    auto b = a;\n    std::printf(\"%ld\", a.use_count());\n    auto c = std::move(b);\n    std::printf(\"%ld\", a.use_count());\n    { auto d = c; std::printf(\"%ld\", a.use_count()); }\n    std::printf(\"%ld\", a.use_count());\n}"}
   steps={[{"line": 5, "note": "copy: 2"}, {"line": 7, "note": "move: still 2, b is now empty"}, {"line": 9, "note": "d copies: 3"}, {"line": 10, "note": "d gone: 2"}]}
   question="What does it print?"
@@ -30,7 +120,7 @@ Copying a shared_ptr increments the strong count (an atomic RMW). Moving it does
 
 <Predict
   id="sp-size"
-  prompt="sizeof(std::shared_ptr<int>) on x86-64, in bytes?"
+  prompt="sizeof(std::shared_ptr<Texture>) on x86-64, in bytes?"
   answer={16}
   tolerance={{"mode": "absolute", "value": 0}}
   unit="bytes"
@@ -40,22 +130,84 @@ Copying a shared_ptr increments the strong count (an atomic RMW). Moving it does
 
 ## make_shared
 
+`std::shared_ptr<Texture>(new Texture{...})` makes two heap allocations: `new` allocates the texture, then the `shared_ptr` allocates a control block. `std::make_shared<Texture>(...)` allocates one block holding both, which is faster to create and better for the cache.
+
+One subtlety: with `make_shared`, the texture's memory is returned only when the weak count also reaches zero, because it shares a block with the control block. For huge objects observed by long-lived `weak_ptr`s, that can keep memory around longer.
+
 Sources: [cppreference: make_shared](https://en.cppreference.com/w/cpp/memory/shared_ptr/make_shared), Herb Sutter, [GotW #91: smart pointer parameters](https://herbsutter.com/2013/06/05/gotw-91-solution-smart-pointer-parameters/)
 
 <MCQ
   id="make-shared-allocs"
-  prompt="How many heap allocations does `std::shared_ptr<Big>(new Big)` perform, versus `std::make_shared<Big>()`?"
+  prompt="How many heap allocations does `std::shared_ptr<Texture>(new Texture)` perform, versus `std::make_shared<Texture>()`?"
   options={["1 vs 1", "2 vs 1", "1 vs 2", "2 vs 2"]}
   answer={1}
   explanation="`new` allocates the object, then the shared_ptr allocates a separate control block. make_shared fuses them."
   devices={["phone", "desktop"]}
 />
 
+## What it costs, and how to pass it
+
+The atomic count is not free. Here the draw function takes the texture by value, as a `shared_ptr`, 100,000 times (one call per sprite per frame in a busy scene):
+
+```cpp
+#include <chrono>
+#include <cstdio>
+#include <memory>
+
+struct Texture { int gpu_id = 7; };
+
+__attribute__((noipa)) int draw_by_value(std::shared_ptr<Texture> t) { return t->gpu_id; }
+__attribute__((noipa)) int draw_by_ref(const Texture& t) { return t.gpu_id; }
+
+int main() {
+    auto tex = std::make_shared<Texture>();
+    long sum = 0;
+    auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < 100000; ++i) sum += draw_by_value(tex);   // copy: atomic ++ and --
+    auto t1 = std::chrono::steady_clock::now();
+    for (int i = 0; i < 100000; ++i) sum += draw_by_ref(*tex);    // no counting
+    auto t2 = std::chrono::steady_clock::now();
+    auto us = [](auto d) { return (long)std::chrono::duration_cast<std::chrono::microseconds>(d).count(); };
+    std::printf("by shared_ptr value: %ld us, by reference: %ld us (sum %ld)\n", us(t1 - t0), us(t2 - t1), sum);
+}
+```
+```text
+by shared_ptr value: 116 us, by reference: 75 us (sum 1400000)
+```
+
+(`noipa` stops g++ from optimizing across the call, so we measure real calls. Timings are from one run on the course machine and vary. The by-value version does two atomic operations per call. On one thread the gap is modest; when several threads copy the same shared_ptr, the count's cache line moves between cores and the gap grows.)
+
+So: a function that only **uses** the texture takes `const Texture&`. Take `shared_ptr` by value only when the function **keeps** a copy (a sprite constructor storing it).
+
 <MCQ
   id="pass-sp"
-  prompt="A function only reads a Widget and never stores it. Best parameter type?"
+  prompt="The sprite renderer only reads a Texture and never stores it. Best parameter type?"
   options={["std::shared_ptr<Widget>", "const std::shared_ptr<Widget>&", "const Widget&", "std::weak_ptr<Widget>"]}
   answer={2}
   explanation="Don't make callees care about ownership if they don't take part in it (GotW #91, Core Guidelines F.7)."
   devices={["phone", "desktop"]}
+/>
+
+## When to use it, and when not
+
+- Use `shared_ptr` when ownership is really shared and the last user is not known in advance: textures, sounds, fonts used across levels; a dialog tree several NPCs refer to.
+- Do not use it as a "safe pointer" everywhere. If one object clearly owns another (the world owns enemies), `unique_ptr` is cheaper and states the design.
+- Prefer `shared_ptr<const T>` for shared assets, so no user can modify what others see.
+- Do not create two `shared_ptr`s from the same raw pointer (`shared_ptr<T> a(p), b(p);`): that makes two control blocks and a double delete. Copy the first `shared_ptr` instead.
+
+## Coding task: the texture cache
+
+The level loader asks the cache for textures by file name. Asking twice must not load twice, and textures nobody uses any more should be freeable between levels.
+
+<Code
+  id="texture-cache"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `class TextureCache` that hands out shared textures. `std::shared_ptr<const Texture> get(const std::string& file)` returns the cached texture for that file, loading it (with make_shared, gpu_id = number of loads so far + 1) only if it is not cached. `std::size_t unload_unused()` drops every cached texture that nobody outside the cache is using (use_count() == 1) and returns how many it dropped. `std::size_t size() const`. Texture counts live textures in g_textures."
+  starter={"#include <cstddef>\n#include <map>\n#include <memory>\n#include <string>\nextern int g_textures;\nstruct Texture {\n    std::string file;\n    int gpu_id;\n    Texture(std::string f, int id) : file(std::move(f)), gpu_id(id) { ++g_textures; }\n    ~Texture() { --g_textures; }\n};\nclass TextureCache {\npublic:\n    std::shared_ptr<const Texture> get(const std::string& file) {\n        return std::make_shared<const Texture>(file, ++loads_);\n    }\n    std::size_t unload_unused() { return 0; }\n    std::size_t size() const { return cache_.size(); }\nprivate:\n    std::map<std::string, std::shared_ptr<const Texture>> cache_;\n    int loads_ = 0;\n};\n"}
+  visibleTests={"#include \"check.h\"\nint g_textures = 0;\nint main() {\n    TextureCache c;\n    auto a = c.get(\"slime.png\");\n    auto b = c.get(\"slime.png\");\n    CHECK(a == b && g_textures == 1);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <vector>\nint g_textures = 0;\nint main() {\n    {\n        TextureCache c;\n        auto a = c.get(\"slime.png\");\n        auto b = c.get(\"slime.png\");\n        CHECK(a == b && a->gpu_id == 1 && g_textures == 1 && c.size() == 1);\n        auto bat = c.get(\"bat.png\");\n        CHECK(bat->gpu_id == 2 && g_textures == 2 && c.size() == 2);\n        { auto tmp = c.get(\"ghost.png\"); CHECK(tmp->gpu_id == 3); }\n        CHECK(g_textures == 3);\n        CHECK(c.unload_unused() == 1 && c.size() == 2 && g_textures == 2);\n        bat.reset();\n        CHECK(g_textures == 2);\n        CHECK(c.unload_unused() == 1 && g_textures == 1);\n        std::shared_ptr<const Texture> jar = a;\n        a.reset(); b.reset();\n        CHECK(c.unload_unused() == 0 && g_textures == 1);\n        jar.reset();\n        CHECK(c.unload_unused() == 1 && g_textures == 0 && c.size() == 0);\n        auto again = c.get(\"slime.png\");\n        CHECK(again->gpu_id == 4);\n    }\n    CHECK(g_textures == 0);\n    return 0;\n}\n"}
+  solution={"#include <cstddef>\n#include <map>\n#include <memory>\n#include <string>\n#include <utility>\nextern int g_textures;\nstruct Texture {\n    std::string file;\n    int gpu_id;\n    Texture(std::string f, int id) : file(std::move(f)), gpu_id(id) { ++g_textures; }\n    ~Texture() { --g_textures; }\n};\nclass TextureCache {\npublic:\n    std::shared_ptr<const Texture> get(const std::string& file) {\n        auto it = cache_.find(file);\n        if (it != cache_.end()) return it->second;\n        auto t = std::make_shared<const Texture>(file, ++loads_);\n        cache_.emplace(file, t);\n        return t;\n    }\n    std::size_t unload_unused() {\n        return std::erase_if(cache_, [](const auto& kv) { return kv.second.use_count() == 1; });\n    }\n    std::size_t size() const { return cache_.size(); }\nprivate:\n    std::map<std::string, std::shared_ptr<const Texture>> cache_;\n    int loads_ = 0;\n};\n"}
+  hints={["Store `std::map<std::string, std::shared_ptr<const Texture>>`.", "In unload_unused, erase entries whose shared_ptr has use_count() == 1: only the cache's copy is left. std::erase_if works on std::map too."]}
+  explanation="The cache is one owner among many. A texture stays alive while any sprite uses it, and unload_unused frees exactly the ones that only the cache still holds."
 />

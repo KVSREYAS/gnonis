@@ -1,0 +1,234 @@
+---
+id: cpp-systems/01-lifetime/05-exceptions-and-error-handling
+title: "Exceptions and Error Handling"
+estMinutes: 15
+xp: 90
+fun: 5
+missionIntro: "A level file has a typo on row 7. The game must not crash, must not leak, and must not end up with half of the old level and half of the new one. throw, try, catch, exception safety guarantees, and when to use error codes instead."
+keyIdeas:
+  - "throw stops the current function and unwinds to the nearest matching catch, destroying locals on the way."
+  - "Catch by const reference: `catch (const std::exception& e)`."
+  - "Strong guarantee: build the new state on the side, then swap it in with operations that cannot fail."
+  - "Exceptions are for rare failures far from where they are handled. Expected outcomes (item not found) use return values; [[nodiscard]] stops callers ignoring them."
+---
+
+## The feature: loading a level from a file
+
+Levels are text files. Each row is a line of tile characters: `#` wall, `.` floor, `S` slime spawn. Every row must have the same width. The game loads a new level when you walk through a door, and a modder's broken file must give a clear error and leave you in the current level.
+
+Here is the level type used in this lesson:
+
+```cpp
+struct Level {
+    int width = 0;
+    std::vector<std::string> rows;
+};
+```
+
+## The careless version: error codes and in-place edits
+
+```cpp
+#include <cstdio>
+#include <string>
+#include <vector>
+
+struct Level { int width = 0; std::vector<std::string> rows; };
+
+// returns 0 on success, -1 on a bad row
+int load_into(Level& lvl, const std::vector<std::string>& file) {
+    lvl.rows.clear();                         // old level destroyed first
+    lvl.width = int(file[0].size());
+    for (const auto& row : file) {
+        if (int(row.size()) != lvl.width) return -1;
+        lvl.rows.push_back(row);
+    }
+    return 0;
+}
+
+int main() {
+    Level current;
+    load_into(current, {"#####", "#.S.#", "#####"});
+    load_into(current, {"####", "#..#", "#.#"});    // broken file, result ignored
+    std::printf("rows=%zu width=%d\n", current.rows.size(), current.width);
+    for (const auto& r : current.rows) std::printf("%s\n", r.c_str());
+}
+```
+```text
+rows=2 width=4
+####
+#..#
+```
+
+## What went wrong
+
+1. **The error was ignored.** `load_into` returned -1 and nobody looked. Nothing forces the caller to check an `int`.
+2. **The failure left a broken state.** The function cleared the old level before it knew the new one was valid, then stopped halfway. The player is now standing in a two-row level with a width that came from the broken file. The level you were in is gone.
+
+Both bugs are about failure handling, and both are invisible in the happy path.
+
+## Exceptions in five lines
+
+```cpp
+#include <cstdio>
+#include <stdexcept>
+
+int parse_width(int w) {
+    if (w <= 0) throw std::invalid_argument("width must be positive");
+    return w;
+}
+
+int main() {
+    try {
+        parse_width(16);
+        parse_width(-3);                     // throws here
+        std::printf("never printed\n");
+    } catch (const std::invalid_argument& e) {
+        std::printf("bad level: %s\n", e.what());
+    }
+}
+```
+```text
+bad level: width must be positive
+```
+
+- `throw X` stops the function and searches up the call stack for a `catch` that matches the type of `X`.
+- Every function it leaves has its locals destroyed (stack unwinding, from the concepts page), so RAII objects clean up.
+- Catch **by const reference**. Catching by value copies the exception and slices derived types.
+- The standard types live in `<stdexcept>`: `std::runtime_error`, `std::invalid_argument`, `std::out_of_range`, all derived from `std::exception`, which has `what()`.
+- If nothing catches it, the program calls `std::terminate` and stops.
+
+## Exception safety guarantees
+
+When a function fails, what state does it leave things in? There are three standard answers:
+
+- **No-throw guarantee**: the function never fails. Destructors, moves of standard containers, and `swap` are like this. Mark such functions `noexcept`.
+- **Strong guarantee**: if it fails, nothing changed. It is as if the call never happened. This is what level loading needs.
+- **Basic guarantee**: if it fails, nothing leaked and every object is still valid, but values may have changed.
+
+With no guarantee at all, a failure can leave broken objects, like our level with a width from one file and rows from another.
+
+## The fix: build on the side, then commit
+
+The trick for the strong guarantee: do all the work that can fail on a **new** object. Only when it fully succeeds, move it into place with an operation that cannot fail.
+
+```cpp
+#include <cstdio>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
+
+struct Level { int width = 0; std::vector<std::string> rows; };
+
+Level parse_level(const std::vector<std::string>& file) {
+    Level lvl;                                        // new object on the side
+    lvl.width = int(file.at(0).size());
+    for (std::size_t i = 0; i < file.size(); ++i) {
+        if (int(file[i].size()) != lvl.width)
+            throw std::runtime_error("row " + std::to_string(i) + " has the wrong width");
+        lvl.rows.push_back(file[i]);
+    }
+    return lvl;
+}
+
+void enter_level(Level& current, const std::vector<std::string>& file) {
+    Level fresh = parse_level(file);    // may throw: current untouched
+    current = std::move(fresh);         // commit: a vector move cannot fail
+}
+
+int main() {
+    Level current;
+    enter_level(current, {"#####", "#.S.#", "#####"});
+    try {
+        enter_level(current, {"####", "#..#", "#.#"});
+    } catch (const std::exception& e) {
+        std::printf("door blocked: %s\n", e.what());
+    }
+    std::printf("still in: rows=%zu width=%d\n", current.rows.size(), current.width);
+}
+```
+```text
+door blocked: row 2 has the wrong width
+still in: rows=3 width=5
+```
+
+## noexcept
+
+`noexcept` on a function is a promise: "this never throws". If it throws anyway, the program terminates. Two reasons to write it:
+
+- **Documentation and optimization.** Callers, and the compiler, can rely on it.
+- **Containers ask.** `std::vector` moves its elements when it grows only if their move constructor is `noexcept`; otherwise it copies them to keep its own strong guarantee. The move module measures this.
+
+Destructors are `noexcept` by default. Never let an exception escape one.
+
+## The other tool: return values
+
+Exceptions are the right tool when the failure is **rare** and is handled **far away** from where it happens: a broken level file deep inside the loader, handled at the door. They are the wrong tool for outcomes that happen every frame, like "no enemy in range" or "item not in inventory". Those are normal results, not errors; return them.
+
+`[[nodiscard]]` makes ignoring a returned result a compiler warning:
+
+```cpp
+#include <cstdio>
+
+[[nodiscard]] bool try_load_texture(const char* file, int& id_out) {
+    if (file[0] == '\0') return false;
+    id_out = 7;
+    return true;
+}
+
+int main() {
+    int id = -1;
+    try_load_texture("", id);           // result ignored
+    std::printf("texture id %d\n", id);
+}
+```
+```text
+$ g++ -std=c++20 -O2 -Wall game.cpp
+game.cpp:11: warning: ignoring return value of 'bool try_load_texture(const char*, int&)', declared with attribute 'nodiscard' [-Wunused-result]
+$ ./game
+texture id -1
+```
+
+The containers module adds `std::optional<T>`, which carries "a value or nothing" in one return type.
+
+## When to use it, and when not
+
+- **Exceptions**: failures that are rare and handled far away: corrupt files, out of memory, a missing required asset at startup.
+- **Return values** (`bool`, `std::optional`, an error enum) with `[[nodiscard]]`: expected outcomes and anything on the per-frame hot path.
+- Many game studios build with `-fno-exceptions` for code size and predictable timing; then all errors are return values. Know both styles.
+- Whatever you use, make functions give at least the basic guarantee, and the strong one for user-visible state changes like loading a level or a save.
+
+<MCQ
+  id="which-guarantee"
+  prompt="The save system writes the new save to `save.tmp`, and only after the write fully succeeds renames it over `save.dat` (a rename that cannot half-happen). If the write fails, which guarantee does the player get for their old save?"
+  options={["No guarantee", "Basic: nothing leaks but the old save may be damaged", "Strong: the old save is exactly as it was", "No-throw: saving can never fail"]}
+  answer={2}
+  explanation="Build on the side (save.tmp), then commit with an operation that cannot fail (the rename). If anything fails before the commit, save.dat was never touched."
+  devices={["phone", "desktop"]}
+/>
+
+<MCQ
+  id="exception-or-value"
+  prompt="Which of these should be an exception rather than a return value?"
+  options={["The inventory has no health potion", "The ray cast this frame hit nothing", "The required file shaders/main.glsl is missing at startup", "The pathfinder found no path to the player this frame"]}
+  answer={2}
+  explanation="The others are normal results that happen all the time. A missing required file at startup is rare and is handled far from where it is detected (show an error dialog and quit)."
+  devices={["phone", "desktop"]}
+/>
+
+## Coding task: a level loader with the strong guarantee
+
+The door test from this lesson: a broken file must leave the player where they are.
+
+<Code
+  id="level-loader"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `Level parse_level(const std::vector<std::string>& file)`: throw `std::runtime_error` if the file is empty, if any row's width differs from the first row's, or if a row contains a character other than '#', '.' or 'S'. Otherwise return the Level (width = row length, rows = the file, spawns = the number of 'S'). Then write `bool enter_level(Level& current, const std::vector<std::string>& file)`: on success replace current and return true; on any parse error leave current exactly as it was and return false."
+  starter={"#include <stdexcept>\n#include <string>\n#include <vector>\nstruct Level { int width = 0; int spawns = 0; std::vector<std::string> rows; };\nLevel parse_level(const std::vector<std::string>& file) {\n    Level lvl;\n    lvl.rows = file;\n    return lvl;\n}\nbool enter_level(Level& current, const std::vector<std::string>& file) {\n    current.rows.clear();\n    current = parse_level(file);\n    return true;\n}\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    Level l = parse_level({\"#S#\", \"#.#\"});\n    CHECK(l.width == 3 && l.spawns == 1 && l.rows.size() == 2);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\nint main() {\n    Level l = parse_level({\"#S#\", \"#.#\", \"SS#\"});\n    CHECK(l.width == 3 && l.spawns == 3 && l.rows.size() == 3);\n    bool threw = false;\n    try { parse_level({\"###\", \"##\"}); } catch (const std::runtime_error&) { threw = true; }\n    CHECK(threw);\n    threw = false;\n    try { parse_level({\"#Q#\"}); } catch (const std::runtime_error&) { threw = true; }\n    CHECK(threw);\n    threw = false;\n    try { parse_level({}); } catch (const std::runtime_error&) { threw = true; }\n    CHECK(threw);\n    Level cur;\n    CHECK(enter_level(cur, {\"#####\", \"#.S.#\", \"#####\"}));\n    CHECK(cur.width == 5 && cur.rows.size() == 3 && cur.spawns == 1);\n    CHECK(!enter_level(cur, {\"####\", \"#..#\", \"#.#\"}));\n    CHECK(cur.width == 5 && cur.rows.size() == 3 && cur.rows[1] == \"#.S.#\" && cur.spawns == 1);\n    CHECK(!enter_level(cur, {}));\n    CHECK(cur.rows.size() == 3);\n    CHECK(enter_level(cur, {\"S\"}));\n    CHECK(cur.width == 1 && cur.spawns == 1);\n    return 0;\n}\n"}
+  solution={"#include <stdexcept>\n#include <string>\n#include <utility>\n#include <vector>\nstruct Level { int width = 0; int spawns = 0; std::vector<std::string> rows; };\nLevel parse_level(const std::vector<std::string>& file) {\n    if (file.empty()) throw std::runtime_error(\"empty level\");\n    Level lvl;\n    lvl.width = int(file[0].size());\n    for (const auto& row : file) {\n        if (int(row.size()) != lvl.width) throw std::runtime_error(\"ragged row\");\n        for (char c : row) {\n            if (c == 'S') ++lvl.spawns;\n            else if (c != '#' && c != '.') throw std::runtime_error(\"bad tile\");\n        }\n        lvl.rows.push_back(row);\n    }\n    return lvl;\n}\nbool enter_level(Level& current, const std::vector<std::string>& file) {\n    try {\n        Level fresh = parse_level(file);\n        current = std::move(fresh);\n        return true;\n    } catch (const std::exception&) {\n        return false;\n    }\n}\n"}
+  hints={["In parse_level, build a local Level and throw as soon as something is wrong.", "In enter_level, call parse_level inside try, and only assign to current after it returned. catch (const std::exception&) returns false."]}
+  explanation="All the work that can fail happens on a fresh Level. The commit is a move, which cannot fail, so the player's current level is either fully replaced or untouched: the strong guarantee."
+/>

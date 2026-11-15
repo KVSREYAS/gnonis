@@ -4,7 +4,7 @@ title: "Module test: Memory layout"
 estMinutes: 12
 xp: 220
 fun: 5
-missionIntro: "Padding, cache lines and alignment in a timed test. Then write the compiler's struct layout algorithm yourself."
+missionIntro: "Padding, cache lines and alignment in a timed test. Then write the compiler's struct layout algorithm yourself, so the engine's debug overlay can show how much of each component is padding."
 kind: boss
 keyIdeas:
   - "Member order changes sizeof. Sort by descending alignment."
@@ -14,7 +14,7 @@ keyIdeas:
 
 ## Module test
 
-Six timed questions on Memory layout. 3 wrong answers end the test. Then a coding task: compute struct layout.
+Milestone 7 check: components are packed, hot arrays are contiguous and walked in memory order, and SIMD buffers are aligned. Six timed questions on memory layout. 3 wrong answers end the test. Then a coding task: compute struct layout.
 
 <Boss
   id="lofts"
@@ -29,7 +29,7 @@ Six timed questions on Memory layout. 3 wrong answers end the test. Then a codin
 
 ## Coding task: compute struct layout
 
-Given each member's size and alignment, lay the struct out the way the compiler does.
+The engine's debug overlay lists every component type with its size and padding. Given each member's size and alignment, lay the struct out the way the compiler does.
 
 <Code
   id="layout-calc"

@@ -1,64 +1,294 @@
 ---
 id: cpp-systems/oop/02-constructors-and-destructors
 title: "Constructors, Destructors, this and const"
-estMinutes: 8
+estMinutes: 13
 xp: 90
 fun: 5
-missionIntro: "Constructors set an object up and destructors clean it up. `this` points at the current object, and const methods promise not to change it."
+missionIntro: "The enemy spawner must never create a half-built slime, and the HUD must never change the player by accident. Constructors, destructors, this and const methods fix both."
 keyIdeas:
-  - "Use the member initialiser list `: a_(a), b_(b)` to initialise members directly."
+  - "A constructor makes an object valid in one step. Use the member initialiser list `: a_(a), b_(b)` to initialise members directly."
+  - "Members are initialised in declaration order, not in the order you write the list."
   - "The destructor `~T()` runs automatically when the object goes out of scope."
   - "`this` is a pointer to the current object. A `const` method can be called on const objects and can't modify members."
 ---
 
-## Construction and destruction
+## The feature: spawning enemies
 
-Constructors run when the object is created. Destructors run in reverse order when it dies.
+Every few seconds the spawner creates a slime at the edge of the map. A slime needs a name (for the debug overlay), health, a speed and an `active` flag (inactive enemies are skipped by the update loop).
+
+The careless way is to create an empty object and then fill in the fields one by one. It works until someone forgets a field.
+
+## The careless version: fill it in later
+
+```cpp
+#include <cstdio>
+#include <string>
+#include <vector>
+
+struct Enemy {
+    std::string name;
+    int hp = 0;
+    float speed = 0;
+    bool active = false;
+};
+
+int main() {
+    std::vector<Enemy> enemies;
+    for (int i = 0; i < 3; ++i) {
+        Enemy e;
+        e.name = "slime";
+        e.hp = 30;
+        e.speed = 1.5f;        // forgot: e.active = true;
+        enemies.push_back(e);
+    }
+    int moving = 0;
+    for (const Enemy& e : enemies)
+        if (e.active) ++moving;
+    std::printf("spawned %zu, moving %d\n", enemies.size(), moving);
+}
+```
+```text
+spawned 3, moving 0
+```
+
+## What went wrong
+
+Three slimes exist, but none of them move. The player sees statues. There was a short window where each `Enemy` was half-built, and one missing line left it that way forever.
+
+Every place that creates an enemy has to remember all four fields. The boss spawner, the split-slime code, and the save-file loader would all need the same four lines, and the next field someone adds (say `damage`) needs updating in all of them.
+
+## The fix: a constructor
+
+A **constructor** is a member function with the class's name and no return type. It runs when the object is created, so the object is valid from its first moment. You cannot get an `Enemy` without going through it.
+
+```cpp
+#include <cstdio>
+#include <string>
+#include <utility>
+#include <vector>
+
+class Enemy {
+public:
+    Enemy(std::string name, int hp, float speed)
+        : name_(std::move(name)), hp_(hp), speed_(speed), active_(true) {}
+    bool active() const { return active_; }
+private:
+    std::string name_;
+    int hp_;
+    float speed_;
+    bool active_;
+};
+
+int main() {
+    std::vector<Enemy> enemies;
+    for (int i = 0; i < 3; ++i) enemies.push_back(Enemy("slime", 30, 1.5f));
+    int moving = 0;
+    for (const Enemy& e : enemies)
+        if (e.active()) ++moving;
+    std::printf("spawned %zu, moving %d\n", enemies.size(), moving);
+    // Enemy blank;   // error: no matching function for call to 'Enemy::Enemy()'
+}
+```
+```text
+spawned 3, moving 3
+```
+
+Once you write a constructor with parameters, the compiler no longer gives you a free default one, so a blank `Enemy` cannot be created by accident.
+
+## The member initializer list
+
+The part after the `:` is the **member initializer list**. It builds each member directly with its starting value. The constructor body `{ }` runs afterwards, when all members already exist.
+
+You could write `hp_ = hp;` in the body instead, but then `hp_` is first created and then overwritten. For a `std::string` that is wasted work. For a `const` member or a reference member it is impossible: they can only be set in the list.
+
+One trap: members are initialized in the order they are **declared in the class**, not the order you write them in the list. g++ warns about it with `-Wall`:
+
+```cpp
+#include <cstdio>
+
+class Bat {
+public:
+    explicit Bat(int level) : speed_(base_ * 2), base_(level) {}
+    int speed() const { return speed_; }
+private:
+    int speed_;   // declared first, so built first, from base_ that is not set yet
+    int base_;
+};
+
+int main() {
+    Bat b(3);
+    std::printf("bat speed: %d (expected 6)\n", b.speed());
+}
+```
+```text
+$ g++ -std=c++20 -O2 -Wall game.cpp
+game.cpp:5: warning: member 'Bat::base_' is used uninitialized [-Wuninitialized]
+game.cpp:5: warning: '*this.Bat::base_' is used uninitialized [-Wuninitialized]
+game.cpp:5: warning: 'b.Bat::base_' is used uninitialized [-Wuninitialized]
+$ ./game
+bat speed: 0 (expected 6)
+```
+
+The speed came out as 0 in this run, but it could be any value: reading an uninitialized `int` is undefined behaviour. Fix: declare `base_` before `speed_`, or compute from the parameter: `speed_(level * 2)`.
+
+## explicit
+
+A constructor that takes one argument can also act as a silent conversion. Without `explicit`, `Bat b = 3;` compiles, and so does passing a plain `3` to a function that expects a `Bat`. The line `spawn(3)` would quietly create a level-3 bat when someone meant "spawn 3 enemies".
+
+Mark one-argument constructors `explicit` unless the conversion is really what you want. `explicit Bat(int level)` turns `spawn(3)` into a compile error, and you write `spawn(Bat(3))` when you mean it.
 
 ![Object lifeline: constructor builds members from the init list, destructor runs at scope end](/diagrams/cpp-systems/oop/02-constructors-and-destructors.png)
 
+## Destructors: cleanup when an enemy dies
+
+A **destructor** is `~ClassName()`. It runs automatically when the object's lifetime ends: at the end of its scope for a local, or when the vector holding it is destroyed. The game uses it to update the live-enemy count, so the "wave cleared" check is never wrong.
+
+```cpp
+#include <cstdio>
+
+int g_alive = 0;
+
+class Enemy {
+public:
+    explicit Enemy(char id) : id_(id) { ++g_alive; std::printf("+%c ", id_); }
+    ~Enemy() { --g_alive; std::printf("-%c ", id_); }
+private:
+    char id_;
+};
+
+int main() {
+    Enemy a('A');
+    {
+        Enemy b('B');
+        Enemy c('C');
+        std::printf("[alive %d] ", g_alive);
+    }                                   // C dies, then B
+    std::printf("[alive %d] ", g_alive);
+}                                       // A dies
+```
+```text
++A +B +C [alive 3] -C -B [alive 1] -A 
+```
+
+Destruction runs in **reverse order** of construction. Later objects may depend on earlier ones, so they are torn down first. The lifetime module builds on this rule.
+
 <Trace
   id="ctor-dtor"
-  prompt="Watch the lifecycle."
-  code={"#include <cstdio>\nstruct Car {\n    char name;\n    Car(char n) : name(n) { std::printf(\"+%c \", name); }\n    ~Car() { std::printf(\"-%c \", name); }\n};\nint main() {\n    Car a('A');\n    {\n        Car b('B');\n    }\n    Car c('C');\n}"}
-  steps={[{"line": 8, "note": "A built"}, {"line": 10, "note": "B built inside the inner scope"}, {"line": 11, "note": "scope ends, so B is destroyed"}, {"line": 12, "note": "C built"}, {"line": 13, "note": "end of main: C then A"}]}
+  prompt="Enemies talk when they spawn and despawn."
+  code={"#include <cstdio>\nstruct Enemy {\n    char id;\n    Enemy(char n) : id(n) { std::printf(\"+%c \", id); }\n    ~Enemy() { std::printf(\"-%c \", id); }\n};\nint main() {\n    Enemy a('A');\n    {\n        Enemy b('B');\n    }\n    Enemy c('C');\n}"}
+  steps={[{"line": 8, "note": "slime A spawns"}, {"line": 10, "note": "B spawns inside the inner scope"}, {"line": 11, "note": "scope ends, so B despawns"}, {"line": 12, "note": "C spawns"}, {"line": 13, "note": "end of main: C, then A"}]}
   question="What does it print?"
   answer="+A +B -B +C -C -A"
-  explanation="Destructors run in reverse order of construction."
+  explanation="Destructors run in reverse order of construction, scope by scope."
   devices={["phone", "desktop"]}
 />
 
 <MCQ
   id="init-list"
-  prompt={"Why prefer `Car(int f) : fuel_(f) {}` over assigning `fuel_ = f;` in the body?"}
+  prompt="Why prefer `Enemy(int hp) : hp_(hp) {}` over assigning `hp_ = hp;` in the body?"
   options={["It's shorter, nothing more", "Members are initialised directly instead of default-built then assigned, and const or reference members can only be set this way", "It makes the class public", "It's required for every class"]}
   answer={1}
-  explanation="The body runs after all members already exist."
+  explanation="The body runs after all members already exist, so assignment builds the member twice. const and reference members can only be set in the list."
   devices={["phone", "desktop"]}
 />
 
-## this and const
+## this
 
-Inside a method, `this->fuel_` and plain `fuel_` mean the same thing. Mark a method `const` when it only reads.
+Inside a member function, `this` is a pointer to the object the function was called on. `hp_` and `this->hp_` mean the same thing. You need `this` explicitly in two cases:
+
+- a parameter has the same name as a member: `this->speed = speed;`
+- the object must hand itself to someone, for example `grid.register_entity(this);` or `return *this;` so calls can be chained
+
+## const methods: the HUD must not hurt the player
+
+The HUD only reads the player. Here is a real-looking bug: one `=` instead of `==`.
+
+```cpp
+#include <cstdio>
+
+class Player {
+public:
+    int hp() const { return hp_; }
+    bool should_flash() { return hp_ = 0; }   // meant ==
+private:
+    int hp_ = 80;
+};
+
+int main() {
+    Player p;
+    std::printf("hp before draw: %d\n", p.hp());
+    if (p.should_flash()) std::printf("flash!\n");
+    std::printf("hp after draw:  %d\n", p.hp());
+}
+```
+```text
+hp before draw: 80
+hp after draw:  0
+```
+
+Drawing the HUD killed the player. Marking `should_flash` as `const` (it is meant to only read) turns this into a compile error:
+
+```cpp
+class Player {
+public:
+    bool should_flash() const { return hp_ = 0; }
+private:
+    int hp_ = 80;
+};
+int main() { Player p; return p.should_flash(); }
+```
+```text
+game.cpp:3: error: assignment of member 'Player::hp_' in read-only object
+```
+
+Mark every method that only reads as `const`. Then a `const Player&` handed to the HUD can call only those.
 
 <SpotBug
   id="const-method"
   prompt="Which line fails to compile?"
-  code={"class Car {\n    int fuel_ = 10;\npublic:\n    int fuel() const { return fuel_; }\n    void refill() const { fuel_ = 100; }\n};"}
+  code={"class Player {\n    int stamina_ = 10;\npublic:\n    int stamina() const { return stamina_; }\n    void refill() const { stamina_ = 100; }\n};"}
   bugLine={5}
-  explanation="A const method can't modify members. Drop the const from refill."
+  explanation="A const method cannot modify members. refill changes stamina_, so it must not be const."
   devices={["phone", "desktop"]}
 />
+
+## When to use it, and when not
+
+- Give a class a constructor whenever some combination of fields would be invalid (an active enemy with 0 hp, a texture with no pixels).
+- Use the initializer list for every member, in declaration order.
+- Write a destructor only when the object must do something at the end (update a counter, release a resource). For plain data, the compiler-generated one is right.
+- Plain data like `Vec2` does not need a constructor. Default member initializers (`float x = 0;`) are enough.
+
+## Coding task: the shop wallet
+
+The shop needs the player's gold. Buying must never take gold below zero.
 
 <Code
   id="bank-account"
   devices={["desktop"]}
   language="cpp"
-  prompt="Write `class Account` with a constructor `Account(std::string owner, long balance)` using an initialiser list, `const std::string& owner() const`, `long balance() const`, and `bool withdraw(long amount)`. withdraw refuses (returns false) when the amount is more than the balance or negative."
-  starter={"#include <string>\nclass Account {\npublic:\n    Account(std::string owner, long balance) {}\n    const std::string& owner() const { static std::string s; return s; }\n    long balance() const { return 0; }\n    bool withdraw(long amount) { return false; }\n};\n"}
-  visibleTests={"#include \"check.h\"\nint main() {\n    Account a(\"Ana\", 100);\n    CHECK(a.owner() == \"Ana\" && a.balance() == 100);\n    return 0;\n}\n"}
-  tests={"#include \"check.h\"\nint main() {\n    Account a(\"Ana\", 100);\n    CHECK(a.owner() == \"Ana\" && a.balance() == 100);\n    CHECK(a.withdraw(30) && a.balance() == 70);\n    CHECK(!a.withdraw(71) && a.balance() == 70);\n    CHECK(!a.withdraw(-5) && a.balance() == 70);\n    CHECK(a.withdraw(70) && a.balance() == 0);\n    const Account b(\"Sweet\", 5);\n    CHECK(b.balance() == 5);\n    return 0;\n}\n"}
-  solution={"#include <string>\n#include <utility>\nclass Account {\n    std::string owner_;\n    long balance_;\npublic:\n    Account(std::string owner, long balance) : owner_(std::move(owner)), balance_(balance) {}\n    const std::string& owner() const { return owner_; }\n    long balance() const { return balance_; }\n    bool withdraw(long amount) {\n        if (amount < 0 || amount > balance_) return false;\n        balance_ -= amount;\n        return true;\n    }\n};\n"}
-  hints={["Store the owner and balance as private members.", "The hidden test calls balance() on a const object, so it must be a const method."]}
-  explanation="A class guards its own rules: no negative withdrawals, no overdrafts."
+  prompt="The shop needs a wallet. Write `class Wallet` with a constructor `Wallet(std::string owner, long gold)` that uses an initialiser list, `const std::string& owner() const`, `long gold() const`, and `bool spend(long amount)`. spend refuses (returns false and changes nothing) when the amount is negative or more than the gold you have."
+  starter={"#include <string>\nclass Wallet {\npublic:\n    Wallet(std::string owner, long gold) {}\n    const std::string& owner() const { static std::string s; return s; }\n    long gold() const { return 0; }\n    bool spend(long amount) { return false; }\n};\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    Wallet w(\"Ana\", 100);\n    CHECK(w.owner() == \"Ana\" && w.gold() == 100);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\nint main() {\n    Wallet w(\"Ana\", 100);\n    CHECK(w.owner() == \"Ana\" && w.gold() == 100);\n    CHECK(w.spend(30) && w.gold() == 70);\n    CHECK(!w.spend(71) && w.gold() == 70);\n    CHECK(!w.spend(-5) && w.gold() == 70);\n    CHECK(w.spend(70) && w.gold() == 0);\n    const Wallet merchant(\"Sweet\", 5);\n    CHECK(merchant.gold() == 5);\n    return 0;\n}\n"}
+  solution={"#include <string>\n#include <utility>\nclass Wallet {\n    std::string owner_;\n    long gold_;\npublic:\n    Wallet(std::string owner, long gold) : owner_(std::move(owner)), gold_(gold) {}\n    const std::string& owner() const { return owner_; }\n    long gold() const { return gold_; }\n    bool spend(long amount) {\n        if (amount < 0 || amount > gold_) return false;\n        gold_ -= amount;\n        return true;\n    }\n};\n"}
+  hints={["Store the owner and gold as private members.", "The hidden test calls gold() on a const Wallet, so it must be a const method."]}
+  explanation="The class guards its own rules: no negative prices, no buying on credit. The shop code just calls spend and checks the result."
+/>
+
+## Coding task: count live enemies
+
+The "wave cleared" banner shows when no enemies are alive. Make the count impossible to get wrong.
+
+<Code
+  id="live-enemy-count"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `class Enemy` with a constructor `Enemy(std::string name, int hp)` and a destructor that keep a count of live enemies in a global `int g_live` (declared for you; the tests define it). Add `const std::string& name() const` and `int hp() const`. If hp is 0 or less, store 1, so no enemy spawns dead."
+  starter={"#include <string>\nextern int g_live;\nclass Enemy {\npublic:\n    Enemy(std::string name, int hp) {}\n    const std::string& name() const { static std::string s; return s; }\n    int hp() const { return 0; }\n};\n"}
+  visibleTests={"#include \"check.h\"\nint g_live = 0;\nint main() {\n    { Enemy a(\"slime\", 30); CHECK(g_live == 1); }\n    CHECK(g_live == 0);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <vector>\nint g_live = 0;\nint main() {\n    {\n        Enemy a(\"slime\", 30);\n        CHECK(g_live == 1 && a.name() == \"slime\" && a.hp() == 30);\n        {\n            Enemy b(\"bat\", 0);\n            CHECK(g_live == 2 && b.hp() == 1);\n            Enemy c(\"bat\", -7);\n            CHECK(g_live == 3 && c.hp() == 1);\n        }\n        CHECK(g_live == 1);\n        std::vector<Enemy> wave;\n        wave.reserve(4);\n        for (int i = 0; i < 4; ++i) wave.emplace_back(\"slime\", 10 + i);\n        CHECK(g_live == 5 && wave[3].hp() == 13);\n        wave.clear();\n        CHECK(g_live == 1);\n    }\n    CHECK(g_live == 0);\n    return 0;\n}\n"}
+  solution={"#include <string>\n#include <utility>\nextern int g_live;\nclass Enemy {\npublic:\n    Enemy(std::string name, int hp) : name_(std::move(name)), hp_(hp > 0 ? hp : 1) { ++g_live; }\n    ~Enemy() { --g_live; }\n    const std::string& name() const { return name_; }\n    int hp() const { return hp_; }\nprivate:\n    std::string name_;\n    int hp_;\n};\n"}
+  hints={["++g_live in the constructor body, --g_live in the destructor.", "Clamp hp in the initializer list: `hp_(hp > 0 ? hp : 1)`."]}
+  explanation="Because the counter changes only in the constructor and destructor, it is right on every path: scope exits, vector clears and early returns. One hole is left: copying an Enemy runs the compiler-written copy constructor, which does not add 1, but the copy's destructor still subtracts 1. The lifetime module fixes exactly this with the rule of three."
 />

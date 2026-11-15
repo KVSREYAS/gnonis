@@ -1,38 +1,66 @@
 ---
 id: cpp-systems/06-layout/00-concepts
 title: "Concepts: Memory Layout and Caches"
-estMinutes: 8
+estMinutes: 12
 xp: 40
-fun: 1
-missionIntro: "How objects are laid out in bytes, why padding exists, and how CPU caches decide what is fast."
+fun: 2
+missionIntro: "Milestone 7 of Slime Siege: component layout. How a Particle is laid out in bytes, why padding exists, and how CPU caches decide whether 100,000 particles fit in a frame."
 keyIdeas:
   - "Alignment: a type of size N usually must start at an address that is a multiple of N."
   - "The compiler adds padding bytes between members to meet alignment."
   - "The CPU loads memory in 64-byte cache lines. Touching nearby data is cheap, far data is expensive."
   - "alignas and aligned new give stricter alignment when SIMD or cache lines need it."
 ---
-## Alignment and padding
+## Milestone 7: component layout
 
-Every type has a **size** (`sizeof`) and an **alignment** (`alignof`). Alignment is the number the object's address must be a multiple of. On x86-64: `char` 1, `int` 4, `double` 8, pointers 8.
+**What we build this module:** the data layout for the game's biggest arrays: 100,000 particles for explosions and rain, the 2048x2048 tile map, and the buffers the SIMD physics step will read.
 
-To meet alignment the compiler inserts **padding**: unused bytes.
+**Why the game needs it:** at 60 FPS a frame lasts 16.7 ms. Updating 100,000 particles is a few additions each, a trivial amount of arithmetic. What decides whether it takes 0.1 ms or 3 ms is how many bytes the CPU has to pull from memory, and in what order. So far we wrote structs by listing members in whatever order came to mind. This module shows what that costs.
+
+## The careless version: members in any order
 
 ```cpp
-struct A { char c; double d; int i; };
-// c at 0, 7 padding, d at 8, i at 16, 4 padding
-// sizeof(A) == 24
-struct B { double d; int i; char c; };
-// d at 0, i at 8, c at 12, 3 padding
-// sizeof(B) == 16
+#include <cstdio>
+
+struct Particle {          // members in the order we thought of them
+    bool   alive;
+    double age;
+    bool   glowing;
+    float  x, y;
+    bool   fading;
+};
+
+struct ParticlePacked {    // same members, largest first
+    double age;
+    float  x, y;
+    bool   alive, glowing, fading;
+};
+
+int main() {
+    std::printf("Particle:       %zu bytes, 100k = %zu KB\n", sizeof(Particle), 100000 * sizeof(Particle) / 1024);
+    std::printf("ParticlePacked: %zu bytes, 100k = %zu KB\n", sizeof(ParticlePacked), 100000 * sizeof(ParticlePacked) / 1024);
+}
+```
+```text
+Particle:       32 bytes, 100k = 3125 KB
+ParticlePacked: 24 bytes, 100k = 2343 KB
 ```
 
-The struct's size is rounded up to a multiple of its largest member's alignment, so arrays of it stay aligned. Ordering members from largest to smallest alignment usually removes most padding.
+Same data, a quarter less memory, just from reordering. Every frame reads the whole array, so the packed version also reads a quarter fewer bytes from memory.
+
+## Alignment and padding
+
+Every type has a **size** (`sizeof`) and an **alignment** (`alignof`). Alignment is the number the object's address must be a multiple of. On x86-64: `bool` and `char` 1, `float` and `int` 4, `double` and pointers 8.
+
+To meet alignment, the compiler inserts **padding**: unused bytes. In `Particle` above, `alive` is at offset 0, then 7 bytes of padding so that `age` starts at 8. `glowing` at 16, 3 bytes padding, `x` at 20, `y` at 24, `fading` at 28, then 3 more bytes to round the size up to a multiple of 8: 32.
+
+The size rounds up to a multiple of the largest member's alignment so that every element of an array is aligned too. Ordering members from largest to smallest alignment usually removes most padding.
 
 ![Byte map of struct members with padding](/diagrams/cpp-systems/06-layout/01-sizeof-padding-alignment.png)
 
 ## The memory hierarchy
 
-Main memory (DRAM) is slow compared with the CPU. A load that misses every cache can cost around 100 nanoseconds, hundreds of instructions' worth of time. So CPUs keep small fast copies:
+Main memory (DRAM) is slow compared with the CPU. A load that misses every cache costs around 100 nanoseconds, hundreds of instructions' worth of time. So CPUs keep small fast copies:
 
 | level | typical size | typical latency |
 | --- | --- | --- |
@@ -41,51 +69,77 @@ Main memory (DRAM) is slow compared with the CPU. A load that misses every cache
 | L3 | tens of MB shared | about 15 ns |
 | DRAM | GBs | about 80-100 ns |
 
-Data moves between these in **cache lines** of 64 bytes. Reading one `int` brings in the 64 bytes around it.
+Data moves between these in **cache lines** of 64 bytes. Reading one `float` brings in the 64 bytes around it. Hardware **prefetchers** notice sequential access and load the next lines before you ask, so a straight loop over an array is fast and following random pointers is slow.
 
-Hardware **prefetchers** notice sequential access patterns and load the next lines before you ask. That is why a straight loop over an array is fast and following random pointers is slow.
+## Locality: the tile map
 
-## Locality in practice
-
-**Spatial locality**: using data that is close in memory. **Temporal locality**: reusing the same data soon.
-
-Example with a 2D array stored row by row (row-major):
+The tile map is stored row by row (**row-major**): tile (x, y) is at index `y * W + x`. Two loops, same work:
 
 ```cpp
-float m[1024][1024];
-for (int i = 0; i < 1024; ++i)      // fast: walks along rows
-    for (int j = 0; j < 1024; ++j) s += m[i][j];
-for (int j = 0; j < 1024; ++j)      // slow: jumps 4 KB each step
-    for (int i = 0; i < 1024; ++i) s += m[i][j];
+#include <chrono>
+#include <cstdio>
+#include <vector>
+
+int main() {
+    const int W = 2048, H = 2048;
+    std::vector<int> tiles(W * H, 1);
+    auto time = [&](bool rows) {
+        auto t0 = std::chrono::steady_clock::now();
+        long walls = 0;
+        for (int a = 0; a < 2048; ++a)
+            for (int b = 0; b < 2048; ++b)
+                walls += rows ? tiles[a * W + b] : tiles[b * W + a];
+        auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+        std::printf("%s: %ld tiles in %.1f ms\n", rows ? "row by row      " : "column by column", walls, ms);
+    };
+    time(true);
+    time(false);
+}
+```
+```text
+row by row      : 4194304 tiles in 2.2 ms
+column by column: 4194304 tiles in 15.7 ms
 ```
 
-Both loops do the same arithmetic. The first uses all 16 floats in each cache line. The second uses one float per line, then moves on, so it can be several times slower.
+(One run on the course machine; your numbers will differ, the gap will not.) Row by row uses all 16 ints in each cache line. Column by column jumps 8 KB per step, uses 4 bytes of each 64-byte line, and gets little help from the prefetcher.
 
 ![Row-major walk vs column walk across cache lines](/diagrams/cpp-systems/06-layout/02-cache-lines-and-locality.png)
 
 ## Asking for more alignment
 
-Sometimes you need stricter alignment than the default:
+Sometimes the default is not enough:
 
-- SIMD loads such as `_mm_load_ps` need 16-byte aligned addresses
-- data used by different threads should sit on separate cache lines (64-byte aligned)
-
-Tools:
+- SIMD loads such as `_mm_load_ps` need 16-byte aligned addresses (32 for AVX).
+- Counters written by different threads should sit on separate cache lines (64-byte aligned).
 
 ```cpp
-struct alignas(64) Slot { std::atomic<int> v; };   // whole type
-alignas(32) float buf[8];                           // one variable
-float* p = static_cast<float*>(
-    std::aligned_alloc(64, 4096));  // size must be a multiple of 64
+struct alignas(64) WorkerStats { std::atomic<int> jobs_done; };   // whole type
+alignas(32) float velocities[8];                                     // one variable
+float* p = static_cast<float*>(std::aligned_alloc(64, 4096));       // size: multiple of 64
 std::free(p);
 ```
 
 Since C++17, `new` respects `alignas` on the type automatically. `std::aligned_alloc` memory must be released with `std::free`, not `delete`.
 
+## When to care, and when not
+
+- Care for types you have many of, iterated every frame: particles, tiles, enemies, bullets.
+- Do not reorder members of a class you have a dozen of (the Player, the Camera). Readability wins.
+- Measure first: the profiling module shows how. A layout change that does not show up in a profile is not worth the churn.
+
 <MCQ
   id="concept-check"
-  prompt="`struct S { char a; int b; char c; };` on x86-64. What is `sizeof(S)`?"
+  prompt="`struct S { char a; int b; char c; };` on x86-64 (a tile with a kind, an hp value and a flag). What is `sizeof(S)`?"
   options={["6", "8", "12", "16"]}
   answer={2}
   explanation="a at 0, 3 padding, b at 4, c at 8, then 3 padding to round up to a multiple of 4: 12."
+/>
+
+<MCQ
+  id="concept-row-major"
+  prompt="The tile map is stored as `tiles[y * W + x]`. Which loop order reads it sequentially?"
+  options={["for x { for y { tiles[y * W + x] } }", "for y { for x { tiles[y * W + x] } }", "Both are the same", "Neither: you need std::map"]}
+  answer={1}
+  explanation="With y in the outer loop, x moves through consecutive indices in the inner loop, so each cache line is used fully before moving on."
+  devices={["phone", "desktop"]}
 />

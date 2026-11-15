@@ -1,31 +1,113 @@
 ---
 id: cpp-systems/04-templates/03-constexpr-and-compile-time
 title: "constexpr, consteval and if constexpr"
-estMinutes: 8
+estMinutes: 13
 xp: 100
-fun: 4
-missionIntro: "Push work to compile time: lookup tables, checked constants, and branches that vanish per type."
+fun: 5
+missionIntro: "A sprite sheet whose tile size stops dividing evenly draws half-tiles on screen. Move the check and the XP table to compile time: constexpr, static_assert, consteval and if constexpr."
 keyIdeas:
   - "constexpr functions can run at compile time when given constant arguments. consteval functions must."
   - "if constexpr discards the untaken branch per instantiation, so it can contain code that wouldn't compile for that T."
   - "static_assert turns compile-time computations into tests."
 ---
 
-## if constexpr
+## The feature: sprite sheets and level-up tables
+
+The renderer cuts a 256x256 sprite sheet into square tiles. The art team switches from 32-pixel tiles to 48-pixel tiles, and someone updates the constant.
+
+## The careless version: a check that never runs
 
 ```cpp
-template <class T> constexpr std::size_t bytes_of() {
-  if constexpr (std::is_same_v<T, bool>) return 1;
-  else return sizeof(T);
+#include <cstdio>
+
+const int SHEET = 256;
+const int TILE  = 48;                         // was 32
+const int TILES_PER_ROW = SHEET / TILE;       // 5, with 16 pixels left over
+
+int main() {
+    // the renderer assumes the tiles fill the sheet exactly
+    int last_x = (TILES_PER_ROW - 1) * TILE;
+    std::printf("tiles per row: %d\n", TILES_PER_ROW);
+    std::printf("last tile starts at x=%d, sheet ends at x=%d: %d pixels unused\n",
+                last_x, SHEET, SHEET - (last_x + TILE));
 }
 ```
-The discarded branch is never instantiated.
+```text
+tiles per row: 5
+last tile starts at x=192, sheet ends at x=256: 16 pixels unused
+```
+
+## What went wrong
+
+256 is not a multiple of 48. The integer division silently rounded down, the rightmost 16 pixels of every row are never drawn, and tile indices computed by the art tool (which counted 6 per row, the last one cut off) no longer match the game's. Every sprite after the first row comes out shifted. Nobody notices until a tester reports that the slime looks like a bat.
+
+The rule "TILE must divide SHEET" was known when the constants were written. It could have been checked right then.
+
+## The fix: static_assert on constants
+
+`static_assert(condition, message)` is checked by the compiler. If it is false, the build fails:
+
+```cpp
+constexpr int SHEET = 256;
+constexpr int TILE  = 48;
+static_assert(SHEET % TILE == 0, "sprite sheet must be a whole number of tiles");
+constexpr int TILES_PER_ROW = SHEET / TILE;
+
+int main() { return TILES_PER_ROW; }
+```
+```text
+game.cpp:3: error: static assertion failed: sprite sheet must be a whole number of tiles
+```
+
+The mistake can no longer reach a tester, or a player. `constexpr` on a variable means its value is known while compiling, so it can be used in `static_assert`, as an array size, or as a template argument.
 
 ![Timeline: work moved from runtime into compile time; if constexpr pruning branches per type](/diagrams/cpp-systems/04-templates/03-constexpr-and-compile-time.png)
 
+## constexpr functions: tables built by the compiler
+
+A `constexpr` function can run while compiling when its arguments are constants. Loops, local variables and `std::array` are all allowed. Here the XP needed for each level is computed by the compiler and baked into the program:
+
+```cpp
+#include <array>
+#include <cstdio>
+
+constexpr std::array<int, 11> make_xp_table() {
+    std::array<int, 11> t{};
+    for (int lv = 1; lv <= 10; ++lv) t[lv] = t[lv - 1] + 100 * lv;   // 100, 300, 600, ...
+    return t;
+}
+
+constexpr auto XP = make_xp_table();          // computed while compiling
+static_assert(XP[3] == 600);                  // tested while compiling
+
+int main() {
+    int player_xp = 1234;
+    int lv = 0;
+    while (lv < 10 && player_xp >= XP[lv + 1]) ++lv;
+    std::printf("xp %d -> level %d (next at %d)\n", player_xp, lv, XP[lv + 1]);
+}
+```
+```text
+xp 1234 -> level 4 (next at 1500)
+```
+
+The table costs nothing at startup: it is stored in the executable as data. If the formula has a bug, the `static_assert` fails the build.
+
+## consteval and if constexpr
+
+- `consteval` makes a function that **must** run at compile time. Use it for things that would be wrong at runtime, like hashing an asset name to an id: `constexpr auto id = asset_id("slime.png");`.
+- `if constexpr (cond)` picks a branch while compiling, per template instantiation. The other branch is thrown away, so it may contain code that would not compile for that type:
+
+```cpp
+template <class T> constexpr std::size_t bytes_of() {
+  if constexpr (std::is_same_v<T, bool>) return 1;   // save files pack bools in 1 byte
+  else return sizeof(T);
+}
+```
+
 <Trace
   id="constexpr-trace"
-  prompt="What prints? (Everything here is computed at compile time.)"
+  prompt="What prints? (Everything here is computed at compile time: a triangular XP curve and a save-file size class.)"
   code={"#include <cstdio>\nconstexpr int tri(int n) { return n <= 0 ? 0 : n + tri(n - 1); }\ntemplate <class T> constexpr int kind() {\n    if constexpr (sizeof(T) == 1) return 1;\n    else if constexpr (sizeof(T) <= 4) return 4;\n    else return 8;\n}\nint main() {\n    static_assert(tri(4) == 10);\n    std::printf(\"%d %d%d%d\", tri(10), kind<char>(), kind<float>(), kind<double>());\n}"}
   steps={[{"line": 2, "note": "tri(10) = 55"}, {"line": 4, "note": "char: 1"}, {"line": 5, "note": "float: 4"}, {"line": 6, "note": "double: 8"}]}
   question="What does it print?"
@@ -36,26 +118,52 @@ The discarded branch is never instantiated.
 
 <MCQ
   id="consteval"
-  prompt="What does `consteval int f(int)` guarantee?"
+  prompt="The asset system's `consteval int asset_id(const char* name)`. What does consteval guarantee?"
   options={["It may run at compile time", "Every call must produce a compile-time constant, or the program is ill-formed", "It's inlined", "It runs once at startup"]}
   answer={1}
   explanation="consteval = immediate function."
   devices={["phone", "desktop"]}
 />
 
-## Bake a lookup table
+## When to use it, and when not
+
+- Use `constexpr` constants and `static_assert` for every rule that relates constants: tile sizes, buffer sizes, the number of entries in an enum and its name table.
+- Use `constexpr` functions for small tables (XP curves, sine tables, bit counts) and for helpers you want to test with `static_assert`.
+- Do not compute huge tables at compile time: compile time and the executable size grow. Generate megabytes of data with a tool, or at load time.
+- Use `consteval` only when a runtime call would be a mistake.
+
+## Coding task: the bit-count table
 
 Sources: [cppreference: constexpr](https://en.cppreference.com/w/cpp/language/constexpr), [if constexpr](https://en.cppreference.com/w/cpp/language/if)
+
+Tile auto-joining (walls that connect to their neighbours) stores which of the 8 neighbours are walls as one byte. The renderer needs the number of set bits for each of the 256 values.
 
 <Code
   id="constexpr-table"
   devices={["desktop"]}
   language="cpp"
-  prompt="Write `template<std::size_t N> constexpr std::array<std::uint32_t, N> popcount_table()`, where entry i is the number of set bits in i, computed without std::popcount (loop over the bits)."
+  prompt="Write `template<std::size_t N> constexpr std::array<std::uint32_t, N> popcount_table()`, where entry i is the number of set bits in i (how many neighbours of a wall tile are walls), computed without std::popcount (loop over the bits)."
   starter={"#include <array>\n#include <cstdint>\n#include <cstddef>\ntemplate <std::size_t N>\nconstexpr std::array<std::uint32_t, N> popcount_table() { return {}; }\n"}
   visibleTests={"#include \"check.h\"\n\nint main() {\n    constexpr auto t = popcount_table<16>();\n    static_assert(t[15] == 4);\n    return 0;\n}\n"}
   tests={"#include \"check.h\"\n\n#include <bit>\nint main() {\n    constexpr auto t = popcount_table<256>();\n    static_assert(t[0] == 0 && t[1] == 1 && t[255] == 8 && t[0b1011] == 3);\n    for (unsigned i = 0; i < 256; ++i) CHECK(t[i] == (unsigned)std::popcount(i));\n    return 0;\n}\n"}
   solution={"#include <array>\n#include <cstdint>\n#include <cstddef>\ntemplate <std::size_t N>\nconstexpr std::array<std::uint32_t, N> popcount_table() {\n    std::array<std::uint32_t, N> t{};\n    for (std::size_t i = 0; i < N; ++i) { std::size_t x = i; std::uint32_t c = 0; while (x) { c += x & 1; x >>= 1; } t[i] = c; }\n    return t;\n}\n"}
   hints={["Loops and mutation are fine inside constexpr since C++14."]}
   explanation="The static_assert proves the table was built by the compiler, not at runtime."
+/>
+
+## Coding task: the XP table
+
+The level-up screen needs the table and a lookup from XP to level. Designers tune `base`, so make it a parameter.
+
+<Code
+  id="xp-table"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `template<int MaxLevel> constexpr std::array<int, MaxLevel + 1> xp_table(int base)`, where entry 0 is 0 and entry lv is entry lv-1 plus base * lv. Also write `constexpr int level_for(const std::array<int, N>& t, int xp)` as a template over N, returning the highest level whose entry is at most xp."
+  starter={"#include <array>\n#include <cstddef>\ntemplate <int MaxLevel>\nconstexpr std::array<int, MaxLevel + 1> xp_table(int base) {\n    return {};\n}\ntemplate <std::size_t N>\nconstexpr int level_for(const std::array<int, N>& t, int xp) {\n    return 0;\n}\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    constexpr auto t = xp_table<5>(100);\n    CHECK(t[3] == 600);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\nint main() {\n    constexpr auto t = xp_table<10>(100);\n    CHECK(t.size() == 11);\n    CHECK(t[0] == 0 && t[1] == 100 && t[2] == 300 && t[3] == 600 && t[10] == 5500);\n    constexpr int lv = level_for(t, 1234);\n    CHECK(lv == 4);\n    CHECK(level_for(t, 0) == 0 && level_for(t, 99) == 0 && level_for(t, 100) == 1);\n    CHECK(level_for(t, 5500) == 10 && level_for(t, 999999) == 10);\n    constexpr auto u = xp_table<3>(7);\n    CHECK(u[1] == 7 && u[2] == 21 && u[3] == 42);\n    int runtime_xp = 650;\n    CHECK(level_for(t, runtime_xp) == 3);\n    return 0;\n}\n"}
+  solution={"#include <array>\n#include <cstddef>\ntemplate <int MaxLevel>\nconstexpr std::array<int, MaxLevel + 1> xp_table(int base) {\n    std::array<int, MaxLevel + 1> t{};\n    for (int lv = 1; lv <= MaxLevel; ++lv) t[lv] = t[lv - 1] + base * lv;\n    return t;\n}\ntemplate <std::size_t N>\nconstexpr int level_for(const std::array<int, N>& t, int xp) {\n    std::size_t lv = 0;\n    while (lv + 1 < N && t[lv + 1] <= xp) ++lv;\n    return static_cast<int>(lv);\n}\n"}
+  hints={["for (int lv = 1; lv <= MaxLevel; ++lv) t[lv] = t[lv - 1] + base * lv;", "level_for: start at 0 and step up while the next entry is <= xp and you are not at the last index."]}
+  explanation="Both functions run while compiling when given constants, which the tests prove with constexpr variables. The same functions also work at runtime for the player's current xp."
 />

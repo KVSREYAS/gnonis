@@ -1,25 +1,102 @@
 ---
 id: cpp-systems/05-stl/02-algorithms-and-ranges
 title: "Algorithms and Ranges"
-estMinutes: 8
+estMinutes: 13
 xp: 90
-fun: 4
-missionIntro: "Raw loops hide intent. Algorithms and C++20 ranges say what you mean, and the compiler still inlines everything."
+fun: 5
+missionIntro: "A hand-written nearest-enemy loop that starts its 'best so far' at the wrong value makes turrets shoot at nothing. Algorithms and C++20 ranges say what you mean, and the compiler still inlines everything."
 keyIdeas:
   - "Prefer algorithms to raw loops: std::sort, partition, nth_element, accumulate, transform (Sean Parent: \"no raw loops\")."
   - "nth_element is O(n) on average and finds the k-th element. partial_sort gives sorted top-k."
   - "C++20 ranges compose lazily: `v | views::filter(f) | views::transform(g)` allocates nothing."
 ---
 
-## Pipelines
+## The feature: turret targeting
 
+Each turret picks the nearest live enemy within range and fires at it. If there is none, it waits.
 
+## The careless version: a hand-written search
+
+```cpp
+#include <cstdio>
+#include <vector>
+
+struct Enemy { int id; float dist; int hp; };
+
+int pick_target(const std::vector<Enemy>& enemies, float range) {
+    int best = 0;                       // index of best so far
+    for (std::size_t i = 1; i < enemies.size(); ++i)
+        if (enemies[i].hp > 0 && enemies[i].dist < enemies[best].dist && enemies[i].dist <= range)
+            best = static_cast<int>(i);
+    return enemies[best].id;
+}
+
+int main() {
+    std::vector<Enemy> wave{{1, 2.0f, 0}, {2, 4.0f, 30}, {3, 12.0f, 30}};
+    std::printf("turret targets enemy %d\n", pick_target(wave, 5.0f));
+    std::vector<Enemy> far{{7, 50.0f, 30}};
+    std::printf("turret targets enemy %d\n", pick_target(far, 5.0f));
+}
+```
+```text
+turret targets enemy 1
+turret targets enemy 7
+```
+
+## What went wrong
+
+Two bugs, both from starting the search at element 0 without checking it:
+
+1. Enemy 1 is dead but closest. It was taken as the starting "best", and no live enemy beat its distance, so the turret shoots a corpse.
+2. Enemy 7 is out of range, but as the only element it is returned anyway. There is also no way to say "no target"; and an empty list would read `enemies[0]` out of bounds.
+
+Raw loops mix the *what* (nearest live enemy in range) with the *how* (indices, a best-so-far variable, a start value). Each detail is a place for a bug.
+
+## The fix: filter, then min_element
+
+```cpp
+#include <algorithm>
+#include <cstdio>
+#include <optional>
+#include <ranges>
+#include <vector>
+
+struct Enemy { int id; float dist; int hp; };
+
+std::optional<int> pick_target(const std::vector<Enemy>& enemies, float range) {
+    auto valid = enemies | std::views::filter([range](const Enemy& e) {
+        return e.hp > 0 && e.dist <= range;
+    });
+    auto it = std::ranges::min_element(valid, {}, &Enemy::dist);
+    if (it == valid.end()) return std::nullopt;
+    return it->id;
+}
+
+int main() {
+    std::vector<Enemy> wave{{1, 2.0f, 0}, {2, 4.0f, 30}, {3, 12.0f, 30}};
+    std::vector<Enemy> far{{7, 50.0f, 30}};
+    for (const auto* w : {&wave, &far}) {
+        if (auto t = pick_target(*w, 5.0f)) std::printf("turret targets enemy %d\n", *t);
+        else std::printf("turret waits\n");
+    }
+}
+```
+```text
+turret targets enemy 2
+turret waits
+```
+
+Each line says one thing: which enemies qualify, and that we want the one with the smallest `dist`. `min_element` on an empty range returns `end()`, which we turn into "no target" with `std::optional` (its own lesson comes soon).
+
+## Lazy pipelines
+
+`views::filter` did not build a new vector. Views are **lazy**: they compute each element only when something iterates over them. Chains like `filter | transform | take` allocate nothing.
 
 ![Lazy range pipeline: elements flow one at a time through filter, transform and take](/diagrams/cpp-systems/05-stl/02-algorithms-and-ranges.png)
 
 <Trace
   id="ranges-pipe"
-  prompt="A lazy pipeline."
+  prompt="A lazy pipeline over enemy hp values: keep the strong ones, square them, take two."
   code={"#include <cstdio>\n#include <ranges>\n#include <vector>\nint main() {\n    std::vector<int> v{5, 2, 8, 1, 9, 4};\n    auto big_sq = v | std::views::filter([](int x) { return x > 3; })\n                    | std::views::transform([](int x) { return x * x; })\n                    | std::views::take(2);\n    for (int x : big_sq) std::printf(\"%d \", x);\n}"}
   steps={[{"line": 6, "note": "keep 5, 8, 9, 4"}, {"line": 7, "note": "square: 25, 64, 81, 16"}, {"line": 8, "note": "take the first two"}]}
   question="What does it print?"
@@ -28,28 +105,56 @@ keyIdeas:
   devices={["phone", "desktop"]}
 />
 
+## Algorithms worth knowing
+
+Useful algorithms for games: `sort` and `stable_sort` (draw order by y), `partition` (live enemies to the front), `nth_element` (k-th smallest), `partial_sort` (top k), `accumulate` (total damage), `any_of` / `all_of` (is any enemy alive?).
+
 <MCQ
   id="nth"
-  prompt="You need the median of 10 million floats, and order doesn't matter otherwise. Best tool?"
+  prompt="The leaderboard needs the median score out of 10 million runs; order doesn't matter otherwise. Best tool?"
   options={["std::sort then index", "std::nth_element", "std::partial_sort of the whole range", "std::set"]}
   answer={1}
   explanation="Average O(n) versus O(n log n)."
   devices={["phone", "desktop"]}
 />
 
-## Top-k for sampling
+## When to use it, and when not
 
-Top-k sampling in an LLM needs the k largest logits. Sources: [cppreference: algorithm library](https://en.cppreference.com/w/cpp/algorithm), [Sean Parent, C++ Seasoning (GoingNative 2013)](https://www.youtube.com/watch?v=W2tWOdzgXHA)
+- Use algorithms when one exists for what you mean. The name documents the intent, and they handle the empty case.
+- A plain `for` loop is fine when the body does several unrelated things per element. Do not force it into a five-stage pipeline.
+- `views::filter` is re-evaluated each time you iterate the view. Iterate it once, or store the results.
+- Pass projections (`&Enemy::dist`) instead of writing comparison lambdas by hand.
+
+## Coding task: threat list
+
+The boss AI attacks the k most threatening targets first. Sources: [cppreference: algorithm library](https://en.cppreference.com/w/cpp/algorithm), [Sean Parent, C++ Seasoning (GoingNative 2013)](https://www.youtube.com/watch?v=W2tWOdzgXHA)
 
 <Code
   id="topk"
   devices={["desktop"]}
   language="cpp"
-  prompt="Write `std::vector<int> topk_indices(const std::vector<float>& logits, std::size_t k)`, returning the indices of the k largest values, sorted by value descending (ties: smaller index first). Use std::partial_sort or nth_element plus sort. k may exceed the size; clamp it."
+  prompt="Write `std::vector<int> topk_indices(const std::vector<float>& logits, std::size_t k)`, returning the indices of the k largest values, sorted by value descending (ties: smaller index first). Here the values are threat scores; the capstone reuses the same function on a neural network's outputs, hence the name. Use std::partial_sort or nth_element plus sort. k may exceed the size; clamp it."
   starter={"#include <vector>\n#include <algorithm>\n#include <numeric>\nstd::vector<int> topk_indices(const std::vector<float>& logits, std::size_t k) { return {}; }\n"}
   visibleTests={"#include \"check.h\"\n\nint main() {\n    auto r = topk_indices({0.1f, 0.9f, 0.5f}, 2);\n    CHECK(r.size() == 2 && r[0] == 1 && r[1] == 2);\n    return 0;\n}\n"}
   tests={"#include \"check.h\"\n\n#include <random>\nint main() {\n    auto r = topk_indices({0.1f, 0.9f, 0.5f}, 2);\n    CHECK(r.size() == 2 && r[0] == 1 && r[1] == 2);\n    CHECK(topk_indices({1, 1, 1}, 2) == std::vector<int>({0, 1}));\n    CHECK(topk_indices({3, 1}, 10) == std::vector<int>({0, 1}));\n    CHECK(topk_indices({}, 3).empty());\n    std::mt19937 g(1); std::uniform_real_distribution<float> d(-5, 5);\n    std::vector<float> big(50000); for (auto& x : big) x = d(g);\n    auto t = topk_indices(big, 50);\n    auto sorted = big; std::sort(sorted.begin(), sorted.end(), std::greater<>());\n    for (int i = 0; i < 50; ++i) CHECK(big[t[i]] == sorted[i]);\n    return 0;\n}\n"}
   solution={"#include <vector>\n#include <algorithm>\n#include <numeric>\nstd::vector<int> topk_indices(const std::vector<float>& logits, std::size_t k) {\n    std::vector<int> idx(logits.size());\n    std::iota(idx.begin(), idx.end(), 0);\n    k = std::min(k, idx.size());\n    std::partial_sort(idx.begin(), idx.begin() + k, idx.end(), [&](int a, int b) {\n        return logits[a] != logits[b] ? logits[a] > logits[b] : a < b;\n    });\n    idx.resize(k);\n    return idx;\n}\n"}
   hints={["Sort indices, not values: std::iota fills 0..n-1.", "The comparator looks values up through the index."]}
-  explanation="partial_sort is O(n log k), much cheaper than a full sort for k = 50 over a 128k vocabulary."
+  explanation="partial_sort is O(n log k), much cheaper than a full sort when you only need the top few out of many."
+/>
+
+## Coding task: draw order
+
+A top-down game draws sprites from back to front: smaller y first, so a slime lower on screen covers one above it. Sprites at the same y keep their spawn order, or they flicker.
+
+<Code
+  id="draw-order"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `std::vector<int> draw_order(const std::vector<Sprite>& sprites)` returning sprite ids in draw order: by y ascending, and for equal y in their original order. Skip sprites with visible == false."
+  starter={"#include <algorithm>\n#include <vector>\nstruct Sprite { int id; float y; bool visible; };\nstd::vector<int> draw_order(const std::vector<Sprite>& sprites) {\n    std::vector<int> ids;\n    for (const auto& s : sprites) ids.push_back(s.id);\n    return ids;\n}\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    auto r = draw_order({{1, 5, true}, {2, 1, true}});\n    CHECK(r.size() == 2 && r[0] == 2 && r[1] == 1);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\nint main() {\n    std::vector<Sprite> s;\n    for (int i = 0; i < 40; ++i) s.push_back({i, float(i % 3), i % 5 != 4});\n    auto r = draw_order(s);\n    std::vector<int> want;\n    for (int y = 0; y < 3; ++y)\n        for (int i = 0; i < 40; ++i)\n            if (i % 3 == y && i % 5 != 4) want.push_back(i);\n    CHECK(r == want);\n    CHECK(draw_order({}).empty());\n    CHECK(draw_order({{9, 1, false}}).empty());\n    auto t = draw_order({{1, 2.5f, true}, {2, -1, true}, {3, 2.5f, true}});\n    CHECK(t.size() == 3 && t[0] == 2 && t[1] == 1 && t[2] == 3);\n    return 0;\n}\n"}
+  solution={"#include <algorithm>\n#include <iterator>\n#include <vector>\nstruct Sprite { int id; float y; bool visible; };\nstd::vector<int> draw_order(const std::vector<Sprite>& sprites) {\n    std::vector<Sprite> vis;\n    std::ranges::copy_if(sprites, std::back_inserter(vis), &Sprite::visible);\n    std::ranges::stable_sort(vis, {}, &Sprite::y);\n    std::vector<int> ids;\n    for (const auto& s : vis) ids.push_back(s.id);\n    return ids;\n}\n"}
+  hints={["Copy the visible sprites (std::ranges::copy_if or a filter), then std::ranges::stable_sort by &Sprite::y.", "stable_sort keeps equal elements in their original order; plain sort does not promise that."]}
+  explanation="stable_sort with a projection states the rule exactly, including the tie-break, which is what stops sprites at the same height from swapping each frame."
 />

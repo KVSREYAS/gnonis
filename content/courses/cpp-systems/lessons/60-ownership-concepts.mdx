@@ -1,89 +1,128 @@
 ---
 id: cpp-systems/03-ownership/00-concepts
 title: "Concepts: Ownership and Smart Pointers"
-estMinutes: 8
+estMinutes: 13
 xp: 40
-fun: 1
-missionIntro: "Who frees heap memory, and how unique_ptr, shared_ptr and weak_ptr encode that answer in the type."
+fun: 2
+missionIntro: "Milestone 4 of Slime Siege: the enemy spawner and shared textures. Who owns each heap object, and how unique_ptr, shared_ptr and weak_ptr write the answer into the type."
 keyIdeas:
-  - "The owner of a heap object is the code responsible for deleting it."
-  - "unique_ptr: exactly one owner, no runtime cost over a raw pointer."
-  - "shared_ptr: many owners, a reference count in a control block, delete when the count hits zero."
-  - "weak_ptr observes a shared object without keeping it alive, which breaks reference cycles."
+  - "The owner of an object is the code responsible for destroying it. Smart pointers make the owner explicit and do the delete."
+  - "unique_ptr: exactly one owner, move-only, no overhead."
+  - "shared_ptr: several owners counted in a control block; the last one deletes."
+  - "weak_ptr observes a shared object without keeping it alive, and breaks reference cycles."
 ---
+## Milestone 4: the spawner and shared assets
+
+**What we build this module:** the enemy spawner, which creates enemies on the heap and destroys them when they die; the texture cache, where one slime texture is shared by forty slimes; and homing missiles that follow a target that may die mid-flight.
+
+**Why the game needs it:** these are exactly the cases where raw `new` and `delete` went wrong in the OOP module. Enemies are created in one place and destroyed in another (leaks, double deletes). Textures have many users and no single obvious owner (freed too early or never). Missiles point at things that die (dangling). Each case has a matching smart pointer, and choosing the right one is most of the design.
+
 ## The ownership question
 
-Memory from `new` lives on the **heap** until someone calls `delete`. A raw pointer `T*` does not say who that someone is. Three bugs follow:
+Memory from `new` lives on the heap until someone calls `delete`. A raw pointer `T*` does not say who that someone is. Three bugs follow:
 
 - nobody deletes: a **leak**
 - two places delete: a **double free**
 - one place deletes while another still uses it: **use after free**
 
-The **owner** of an object is the piece of code that is responsible for destroying it. Smart pointers are RAII classes that make the owner explicit in the type. Their destructor does the delete.
+The **owner** of an object is the code responsible for destroying it. **Smart pointers** are RAII classes that make the owner explicit in the type. Their destructor does the delete.
 
-Rule used in modern C++: raw pointers and references may observe, smart pointers own.
+The rule in modern C++: **raw pointers and references observe, smart pointers own.** An `Enemy*` parameter means "look at this enemy", never "you must delete this".
 
 ## std::unique_ptr: one owner
 
 `std::unique_ptr<T>` holds one pointer. Its destructor deletes the object.
 
-- It cannot be copied (that would create two owners).
+- It cannot be copied (that would make two owners).
 - It can be moved, which transfers ownership and leaves the source null.
-- It is the same size as a raw pointer when the deleter is the default, so it costs nothing extra.
+- With the default deleter it is the same size as a raw pointer and costs nothing extra.
 
 ```cpp
-auto p = std::make_unique<Widget>(3);
-auto q = std::move(p);   // q owns, p is now nullptr
-// q's destructor deletes the Widget
+#include <cstdio>
+#include <memory>
+#include <utility>
+
+struct Slime {
+    Slime() { std::printf("slime spawned\n"); }
+    ~Slime() { std::printf("slime destroyed\n"); }
+};
+
+int main() {
+    auto spawned = std::make_unique<Slime>();
+    auto arena = std::move(spawned);          // ownership moves to the arena
+    std::printf("spawner holds: %s\n", spawned ? "slime" : "nothing");
+}                                             // arena's destructor deletes it
+```
+```text
+slime spawned
+spawner holds: nothing
+slime destroyed
 ```
 
-A **custom deleter** lets it manage non-memory resources:
+A **custom deleter** lets it manage things that are not freed with `delete`: an SDL window (`SDL_DestroyWindow`), a C file (`fclose`), memory from `malloc` (`free`).
 
-```cpp
-std::unique_ptr<FILE, decltype(&fclose)> f(fopen("a", "r"), &fclose);
-```
-
-Use `unique_ptr` by default. Reach for shared ownership only when lifetimes genuinely cannot be ordered.
+Use `unique_ptr` by default. Reach for shared ownership only when lifetimes really cannot be ordered.
 
 ## std::shared_ptr: counted owners
 
-`std::shared_ptr<T>` lets several pointers own one object. Mechanism:
+`std::shared_ptr<T>` lets several pointers own one object:
 
-1. A separate heap block, the **control block**, stores a **strong count** (number of `shared_ptr`s), a **weak count**, and the deleter.
+1. A separate block, the **control block**, stores a **strong count** (number of `shared_ptr`s), a **weak count** and the deleter.
 2. Copying a `shared_ptr` increments the strong count. This is an atomic operation, so it is thread safe and slower than a plain add.
 3. Destroying one decrements it. When the strong count reaches 0, the object is deleted.
 4. When the weak count also reaches 0, the control block is freed.
 
-`std::make_shared<T>()` allocates the object and the control block in one allocation, which saves a heap call.
+`std::make_shared<T>()` allocates the object and the control block in one allocation.
+
+In the game: forty slime sprites each hold a `shared_ptr<Texture>` to the same texture. The texture is freed when the last slime sprite is gone, whichever that is.
 
 ![shared_ptr pointing to object and control block with counts](/diagrams/cpp-systems/03-ownership/02-shared-ptr-control-block.png)
 
 ## Cycles and std::weak_ptr
 
-If object A holds a `shared_ptr` to B and B holds one to A, each keeps the other's strong count at least 1. When outside pointers go away, both counts stay at 1 and neither is deleted. That is a leak called a **reference cycle**.
+If object A holds a `shared_ptr` to B and B holds one to A, each keeps the other's strong count at least 1. When all outside pointers go away, both counts stay at 1 and neither is deleted. That leak is a **reference cycle**. In the game: a squad leader owns its members, and each member points back at its leader.
 
-`std::weak_ptr<T>` points at the control block but only increments the weak count. It does not keep the object alive. To use the object, call `lock()`:
+`std::weak_ptr<T>` points at the control block but only increments the weak count. It does not keep the object alive. To use the object, call `lock()`, which returns a `shared_ptr` that is empty if the object is gone:
 
 ```cpp
-std::weak_ptr<Node> parent;
-if (auto p = parent.lock()) {   // shared_ptr, or empty if gone
-    p->visit();
-}
+if (auto target = missile.target.lock()) {   // still alive?
+    steer_toward(target->pos);
+}                                            // else: fly straight
 ```
 
-Usual pattern: parents own children with `shared_ptr` (or `unique_ptr`), children refer back to parents with `weak_ptr`.
+Usual pattern: owners hold `shared_ptr` (or `unique_ptr`), back-references and observers hold `weak_ptr`.
 
 ## More shared_ptr details
 
 - **make_shared vs new**: `std::shared_ptr<T>(new T)` makes two allocations (object, control block). `std::make_shared<T>()` makes one. The downside: with `make_shared`, the object's memory is only returned when the weak count also reaches zero, because both live in one block.
-- **Aliasing constructor**: `std::shared_ptr<int> p(owner, &owner->field);` shares `owner`'s control block (keeps the whole object alive) but points at one member.
-- **Thread safety**: the counts are atomic, so copying `shared_ptr`s in different threads is safe. Accessing the pointed-to object from several threads still needs your own synchronization.
+- **Aliasing constructor**: `std::shared_ptr<Frame> f(sheet, &sheet->frames[3]);` shares the sprite sheet's control block (keeps the whole sheet alive) but points at one frame.
+- **Thread safety**: the counts are atomic, so copying `shared_ptr`s on different threads is safe. Using the pointed-to object from several threads still needs your own locking.
 - **Passing**: pass `const std::shared_ptr<T>&` or plain `T&` when the function does not keep ownership. Passing by value costs an atomic increment and decrement.
+
+## Choosing the pointer
+
+| Situation in the game | Use |
+| --- | --- |
+| The spawner creates an enemy; the world list owns it | `std::unique_ptr<Enemy>` |
+| A function only looks at an enemy this frame | `Enemy&` or `Enemy*` |
+| Many sprites use one texture; no single owner | `std::shared_ptr<Texture>` |
+| A missile follows a target that may die | `std::weak_ptr<Enemy>` (or an id) |
+| A member points back at its squad leader | `std::weak_ptr<Squad>` |
+| A C library handle (window, file) | `std::unique_ptr<T, Deleter>` |
 
 <MCQ
   id="concept-check"
-  prompt="Two nodes hold `shared_ptr`s to each other and nothing else points to them. What happens?"
+  prompt="A squad leader and a squad member hold `shared_ptr`s to each other and nothing else points to them. What happens?"
   options={["Both are deleted at the end of scope", "Both leak, because each strong count stays at 1", "The program crashes on exit", "Only one is deleted"]}
   answer={1}
-  explanation="Each keeps the other's strong count above zero. Make one of the links a weak_ptr."
+  explanation="Each keeps the other's strong count above zero. Make the member's link back to the leader a weak_ptr."
+/>
+
+<MCQ
+  id="concept-pick-pointer"
+  prompt="The minimap draws every enemy this frame and keeps nothing. What should `draw_minimap` take?"
+  options={["std::vector<std::unique_ptr<Enemy>> by value", "std::vector<std::shared_ptr<Enemy>> by value", "const std::vector<std::unique_ptr<Enemy>>& (and use the enemies through it)", "std::vector<std::weak_ptr<Enemy>>"]}
+  answer={2}
+  explanation="It only observes, so it takes a const reference to the owning list. Taking unique_ptrs by value would steal ownership; shared or weak pointers would add counting it does not need."
+  devices={["phone", "desktop"]}
 />

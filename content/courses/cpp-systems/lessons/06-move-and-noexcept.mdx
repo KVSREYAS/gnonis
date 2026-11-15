@@ -1,25 +1,104 @@
 ---
 id: cpp-systems/02-move/02-move-and-noexcept
 title: "Moves, noexcept and vector Growth"
-estMinutes: 8
-xp: 100
+estMinutes: 15
+xp: 90
 fun: 5
-missionIntro: "std::vector only moves elements during reallocation if the move constructor is noexcept. Otherwise it copies."
+missionIntro: "The world streams in 64 KB chunks as the player explores, and every time the chunk list grows it secretly copies every chunk. One missing noexcept is the cause. Plus copy elision, and why `return std::move(x)` is a mistake."
 keyIdeas:
-  - "On reallocation std::vector uses std::move_if_noexcept to keep its strong exception guarantee."
-  - "A move constructor that isn't noexcept (and a copyable type) means every growth copies every element."
-  - "Mark move operations noexcept (Core Guidelines C.66), and `= default` gets it right automatically."
+  - "vector growth moves elements only if their move constructor is noexcept (std::move_if_noexcept); otherwise it copies them."
+  - "`= default` moves are noexcept when every member's move is. A user-declared destructor or copy removes the implicit moves."
+  - "Returning a local by value is free (copy elision or an automatic move). `return std::move(local);` blocks elision."
+  - "reserve() avoids reallocation entirely when you know the count."
 ---
 
-## Count the copies
+## The feature: streaming chunks
 
-Below, `Loud` counts copies. Its move constructor is NOT noexcept.
+The world is split into chunks of 256 by 256 tiles (64 KB each). As the player walks, the streamer loads chunks ahead of them and appends each one to `std::vector<Chunk> chunks`. Nobody knows in advance how many will be loaded.
+
+A `std::vector` keeps its elements in one block. When it is full, `push_back` allocates a bigger block (libstdc++ doubles it), transfers every existing element, and frees the old block. "Transfers" is the interesting word.
+
+## The careless version: a hand-written move without noexcept
+
+`Chunk` owns its tile buffer by hand and has a working move constructor. It just forgot one keyword.
+
+```cpp
+#include <cstdio>
+#include <cstring>
+#include <vector>
+
+long g_bytes_copied = 0;
+
+struct Chunk {
+    unsigned char* tiles;
+    static constexpr int kBytes = 256 * 256;
+    Chunk() : tiles(new unsigned char[kBytes]{}) {}
+    Chunk(const Chunk& o) : tiles(new unsigned char[kBytes]) {
+        std::memcpy(tiles, o.tiles, kBytes);
+        g_bytes_copied += kBytes;
+    }
+    Chunk(Chunk&& o) : tiles(o.tiles) { o.tiles = nullptr; }   // no noexcept
+    Chunk& operator=(const Chunk&) = delete;
+    ~Chunk() { delete[] tiles; }
+};
+
+int main() {
+    std::vector<Chunk> chunks;
+    for (int i = 0; i < 100; ++i) chunks.emplace_back();      // the player explores
+    std::printf("chunks: %zu, KB copied while growing: %ld\n", chunks.size(), g_bytes_copied / 1024);
+}
+```
+```text
+chunks: 100, KB copied while growing: 8128
+```
+
+## What went wrong
+
+The vector grew from 1 to 128 slots in doublings (1, 2, 4, ..., 128). At each step it transferred every existing chunk: 1 + 2 + 4 + ... + 64 = 127 chunks, and it **copied** each one, 64 KB at a time, even though `Chunk` has a perfectly good move constructor.
+
+Why: if the vector moved chunks and the tenth move threw an exception, the first nine old chunks would already be gutted and the vector could not go back to its old state. Vector promises the strong guarantee for `push_back`, so it only moves when the move is promised not to throw. It checks `std::is_nothrow_move_constructible`, and our move constructor promised nothing.
 
 ![Vector reallocation: copying every element versus moving pointers when the move constructor is noexcept](/diagrams/cpp-systems/02-move/02-move-and-noexcept.png)
 
+## The fix: noexcept
+
+```cpp
+#include <cstdio>
+#include <cstring>
+#include <type_traits>
+#include <vector>
+
+long g_bytes_copied = 0;
+
+struct Chunk {
+    unsigned char* tiles;
+    static constexpr int kBytes = 256 * 256;
+    Chunk() : tiles(new unsigned char[kBytes]{}) {}
+    Chunk(const Chunk& o) : tiles(new unsigned char[kBytes]) {
+        std::memcpy(tiles, o.tiles, kBytes);
+        g_bytes_copied += kBytes;
+    }
+    Chunk(Chunk&& o) noexcept : tiles(o.tiles) { o.tiles = nullptr; }
+    Chunk& operator=(const Chunk&) = delete;
+    ~Chunk() { delete[] tiles; }
+};
+static_assert(std::is_nothrow_move_constructible_v<Chunk>);   // guard against regressions
+
+int main() {
+    std::vector<Chunk> chunks;
+    for (int i = 0; i < 100; ++i) chunks.emplace_back();
+    std::printf("chunks: %zu, KB copied while growing: %ld\n", chunks.size(), g_bytes_copied / 1024);
+}
+```
+```text
+chunks: 100, KB copied while growing: 0
+```
+
+Stealing a pointer cannot fail, so the promise is true. The `static_assert` makes the build fail if someone later adds a member whose move can throw.
+
 <Trace
   id="growth-copies"
-  prompt="Push 5 elements into an empty vector (libstdc++ capacities 1, 2, 4, 8). How many copies?"
+  prompt="The same trap with a tiny type. Push 5 elements into an empty vector (libstdc++ capacities 1, 2, 4, 8). Loud's move constructor is not noexcept. How many copies?"
   code={"#include <cstdio>\n#include <vector>\nint copies = 0;\nstruct Loud {\n    Loud() = default;\n    Loud(const Loud&) { ++copies; }\n    Loud(Loud&&) {}\n};\nint main() {\n    std::vector<Loud> v;\n    for (int i = 0; i < 5; ++i) v.emplace_back();\n    std::printf(\"%d\", copies);\n}"}
   steps={[{"line": 7, "note": "move ctor without noexcept"}, {"line": 11, "note": "reallocations at sizes 1, 2 and 4 move 1 + 2 + 4 elements"}, {"line": 12, "note": "each of those uses the copy ctor"}]}
   question="What does it print?"
@@ -30,7 +109,7 @@ Below, `Loud` counts copies. Its move constructor is NOT noexcept.
 
 <Predict
   id="growth-copies-1000"
-  prompt="Same type, pushing 1,000 elements with libstdc++ doubling (1, 2, 4, …, 1024). How many copies in total?"
+  prompt="Same type, the streamer pushes 1,000 chunks with libstdc++ doubling (1, 2, 4, …, 1024). How many copies in total?"
   answer={1023}
   tolerance={{"mode": "absolute", "value": 0}}
   unit="copies"
@@ -38,19 +117,113 @@ Below, `Loud` counts copies. Its move constructor is NOT noexcept.
   devices={["phone", "desktop"]}
 />
 
-## Write noexcept moves
+## Two more ways to lose your moves
 
-Sources: [cppreference: std::move_if_noexcept](https://en.cppreference.com/w/cpp/utility/move_if_noexcept), Core Guidelines C.66
+**1. Declaring a destructor or copy.** Someone adds `~Chunk() { log("chunk unloaded"); }` to a rule-of-zero `Chunk` whose only member is a `std::vector`. The implicit moves disappear, every "move" is a copy, and vector growth copies again. Fix: `Chunk(Chunk&&) noexcept = default;` and `Chunk& operator=(Chunk&&) noexcept = default;`.
+
+**2. Members whose moves can throw.** A defaulted move constructor is `noexcept` only if every member's move is. Standard containers and `std::string` are fine. A member type with a throwing move, or a hand-written move missing `noexcept`, poisons the whole class.
+
+Both are silent: everything still compiles and works, only slower. The `static_assert(std::is_nothrow_move_constructible_v<Chunk>)` line catches both.
+
+## reserve: skip the growth entirely
+
+If you know how many chunks you will load (a level file lists them), call `reserve(n)` first. One allocation, no transfers at all:
+
+```cpp
+#include <cstdio>
+#include <vector>
+
+int main() {
+    std::vector<int> grown, reserved;
+    int grown_reallocs = 0, reserved_reallocs = 0;
+    reserved.reserve(1000);
+    for (int i = 0; i < 1000; ++i) {
+        auto c1 = grown.capacity();    grown.push_back(i);    grown_reallocs += grown.capacity() != c1;
+        auto c2 = reserved.capacity(); reserved.push_back(i); reserved_reallocs += reserved.capacity() != c2;
+    }
+    std::printf("reallocations: %d without reserve, %d with reserve\n", grown_reallocs, reserved_reallocs);
+}
+```
+```text
+reallocations: 11 without reserve, 0 with reserve
+```
+
+## Returning big objects: copy elision
+
+The loader returns a fresh `Level` by value. Is that a copy? No:
+
+```cpp
+#include <cstdio>
+#include <utility>
+
+struct Level {
+    Level() { std::printf("build "); }
+    Level(const Level&) { std::printf("copy "); }
+    Level(Level&&) noexcept { std::printf("move "); }
+};
+
+Level load_temp() { return Level(); }                   // prvalue: guaranteed elision
+Level load_named() { Level l; return l; }               // NRVO: usually elided
+Level load_bad() { Level l; return std::move(l); }      // blocks NRVO
+
+int main() {
+    std::printf("temp:  "); Level a = load_temp();  std::printf("\n");
+    std::printf("named: "); Level b = load_named(); std::printf("\n");
+    std::printf("moved: "); Level c = load_bad();   std::printf("\n");
+}
+```
+```text
+temp:  build 
+named: build 
+moved: build move 
+```
+
+- Returning a temporary (a **prvalue**) of the same type is **guaranteed** since C++17 to build directly in the caller's variable: no copy, no move.
+- Returning a named local is usually elided too (**NRVO**). If the compiler cannot, it moves automatically.
+- `return std::move(l);` turns the return into an xvalue, which **forbids** NRVO, so you pay a move you did not need. g++ warns with `-Wpessimizing-move`.
+
+So: return locals by value, plainly.
+
+## When to use it, and when not
+
+- Mark every hand-written move constructor and move assignment `noexcept` (they almost always only swap pointers). Add a `static_assert` for types stored in vectors.
+- Prefer the rule of zero, where defaulted moves get `noexcept` for free.
+- `reserve` when the count is known. Do not `reserve` in a loop with growing sizes: it can disable the doubling and make things slower.
+- Return by value. Never `return std::move(local);`.
+- If an element type is expensive to move as well (a big array inside the object), store `std::unique_ptr<T>` in the vector instead, so growth moves only pointers.
+
+Sources: [cppreference: std::move_if_noexcept](https://en.cppreference.com/w/cpp/utility/move_if_noexcept), [cppreference: copy elision](https://en.cppreference.com/w/cpp/language/copy_elision), Core Guidelines C.66
+
+## Coding task: noexcept moves for the heightmap
+
+The terrain heightmap is a hand-owned float buffer, like the careless Chunk above.
 
 <Code
   id="noexcept-moves"
   devices={["desktop"]}
   language="cpp"
-  prompt="Make `Tensor` (an owning float buffer) cheap to move: add noexcept move constructor and move assignment that steal the pointer and leave the source empty. Keep the existing copy."
+  prompt="The terrain heightmap `Tensor` owns a float buffer by hand. Make it cheap to move: add noexcept move constructor and move assignment that steal the pointer and leave the source empty (null pointer, size 0). Keep the existing copy."
   starter={"#include <cstddef>\n#include <algorithm>\n#include <utility>\nstruct Tensor {\n    float* p = nullptr; std::size_t n = 0;\n    explicit Tensor(std::size_t n_) : p(new float[n_]()), n(n_) {}\n    Tensor(const Tensor& o) : p(new float[o.n]), n(o.n) { std::copy(o.p, o.p + n, p); }\n    Tensor& operator=(const Tensor& o) { if (this != &o) { Tensor t(o); std::swap(p, t.p); std::swap(n, t.n); } return *this; }\n    ~Tensor() { delete[] p; }\n    // TODO: noexcept moves\n};\n"}
   visibleTests={"#include \"check.h\"\n\n#include <type_traits>\nint main() {\n    static_assert(std::is_nothrow_move_constructible_v<Tensor>);\n    return 0;\n}\n"}
   tests={"#include \"check.h\"\n\n#include <type_traits>\n#include <vector>\nint main() {\n    static_assert(std::is_nothrow_move_constructible_v<Tensor>);\n    static_assert(std::is_nothrow_move_assignable_v<Tensor>);\n    Tensor a(4); a.p[0] = 3.f; float* raw = a.p;\n    Tensor b = std::move(a);\n    CHECK(b.p == raw && a.p == nullptr && a.n == 0 && b.n == 4);\n    Tensor c(2); c = std::move(b);\n    CHECK(c.p == raw && c.n == 4 && b.p == nullptr);\n    std::vector<Tensor> v; v.reserve(1); v.emplace_back(8); float* first = v[0].p;\n    v.emplace_back(8);\n    CHECK(v[0].p == first);\n    return 0;\n}\n"}
   solution={"#include <cstddef>\n#include <algorithm>\n#include <utility>\nstruct Tensor {\n    float* p = nullptr; std::size_t n = 0;\n    explicit Tensor(std::size_t n_) : p(new float[n_]()), n(n_) {}\n    Tensor(const Tensor& o) : p(new float[o.n]), n(o.n) { std::copy(o.p, o.p + n, p); }\n    Tensor& operator=(const Tensor& o) { if (this != &o) { Tensor t(o); std::swap(p, t.p); std::swap(n, t.n); } return *this; }\n    Tensor(Tensor&& o) noexcept : p(std::exchange(o.p, nullptr)), n(std::exchange(o.n, 0)) {}\n    Tensor& operator=(Tensor&& o) noexcept { if (this != &o) { delete[] p; p = std::exchange(o.p, nullptr); n = std::exchange(o.n, 0); } return *this; }\n    ~Tensor() { delete[] p; }\n};\n"}
   hints={["std::exchange(o.p, nullptr) steals and nulls in one go."]}
-  explanation="The last test proves vector moved rather than copied during growth: the buffer pointer survived."
+  explanation="The last test proves the vector moved rather than copied during growth: the buffer pointer survived the reallocation."
+/>
+
+## Coding task: the chunk that lost its moves
+
+The first trap from "Two more ways to lose your moves", for real. The destructor counts how many non-empty chunks were unloaded, so moved-from chunks must stay out of the count.
+
+<Code
+  id="chunk-moves"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="`Chunk` has a logging destructor, which silently removed its implicit moves. Every vector growth now copies its tiles (`Chunk::copies` counts copies). Fix the class so that moves work again and are noexcept, without removing the destructor or the copy constructor, and so that copy assignment still works. Do not change what the destructor does."
+  starter={"#include <vector>\nextern int g_unloaded;\nstruct Chunk {\n    inline static int copies = 0;\n    std::vector<unsigned char> tiles;\n    Chunk() : tiles(4096) {}\n    Chunk(const Chunk& o) : tiles(o.tiles) { ++copies; }\n    ~Chunk() { if (!tiles.empty()) ++g_unloaded; }\n};\n"}
+  visibleTests={"#include \"check.h\"\n#include <utility>\nint g_unloaded = 0;\nint main() {\n    Chunk a;\n    Chunk b = std::move(a);\n    CHECK(Chunk::copies == 0);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <type_traits>\n#include <utility>\nint g_unloaded = 0;\nint main() {\n    CHECK(std::is_nothrow_move_constructible_v<Chunk>);\n    CHECK(std::is_nothrow_move_assignable_v<Chunk>);\n    {\n        std::vector<Chunk> chunks;\n        for (int i = 0; i < 50; ++i) chunks.emplace_back();\n        CHECK(Chunk::copies == 0);\n        Chunk a;\n        Chunk b = std::move(a);\n        CHECK(Chunk::copies == 0 && b.tiles.size() == 4096);\n        Chunk c;\n        c = b;\n        CHECK(Chunk::copies == 1 && c.tiles.size() == 4096);\n        c = std::move(b);\n        CHECK(Chunk::copies == 1);\n    }\n    CHECK(g_unloaded == 51);\n    return 0;\n}\n"}
+  solution={"#include <vector>\nextern int g_unloaded;\nstruct Chunk {\n    inline static int copies = 0;\n    std::vector<unsigned char> tiles;\n    Chunk() : tiles(4096) {}\n    Chunk(const Chunk& o) : tiles(o.tiles) { ++copies; }\n    Chunk& operator=(const Chunk& o) { tiles = o.tiles; ++copies; return *this; }\n    Chunk(Chunk&&) noexcept = default;\n    Chunk& operator=(Chunk&&) noexcept = default;\n    ~Chunk() { if (!tiles.empty()) ++g_unloaded; }\n};\n"}
+  hints={["Declare `Chunk(Chunk&&) noexcept = default;` and `Chunk& operator=(Chunk&&) noexcept = default;`.", "Once you declare a move, the implicit copy assignment is deleted, so also add `Chunk& operator=(const Chunk&)` (it must count a copy too)."]}
+  explanation="A user-declared destructor or copy suppresses the implicit moves. Asking for them back with = default restores cheap moves, and they are noexcept because std::vector's move is."
 />

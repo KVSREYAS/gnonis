@@ -1,55 +1,255 @@
 ---
 id: cpp-systems/oop/03-static-operators-and-friends
 title: "Static Members, Encapsulation, Operators and Friends"
-estMinutes: 8
+estMinutes: 13
 xp: 90
-fun: 4
-missionIntro: "Static members belong to the class, not to any one object. Operator overloading lets your types use + and ==, and a friend function can read private members."
+fun: 5
+missionIntro: "Every entity needs a unique id, positions need maths that reads like maths, and the debug overlay needs to print them. Static members, operator overloading and friends."
 keyIdeas:
-  - "A static data member is shared by every object of the class. Access it as `Car::count`."
-  - "Encapsulation: keep data private and expose getters and setters that enforce the rules."
-  - "Overload operators like `+`, `==` and `<<` so your types read naturally. A friend function can see private members."
+  - "A static data member is shared by every object of the class. Access it as `Enemy::alive`."
+  - "Encapsulation: keep data private and expose methods that enforce the rules."
+  - "Overload operators like `+`, `==` and `<<` so your types read naturally. `a + b` must not change `a`."
+  - "A friend function is not a member but can see private members. operator<< is the usual case."
 ---
 
-## Static members
+## The feature: entity ids
 
-One copy for the whole class, however many objects you create.
+Every entity in Slime Siege needs a unique id. The save file refers to entities by id ("bat 17 is chasing the player"), and the debug overlay prints it. Ids must never repeat during a run.
 
-![Three car objects all pointing at one shared static counter owned by the class](/diagrams/cpp-systems/oop/03-static-operators-and-friends.png)
+The first attempt puts the counter in the class as a normal member.
+
+## The careless version: a counter per object
+
+```cpp
+#include <cstdio>
+
+class Entity {
+public:
+    Entity() : id_(next_id_++) {}
+    int id() const { return id_; }
+private:
+    int next_id_ = 1;   // every Entity gets its OWN counter
+    int id_;
+};
+
+int main() {
+    Entity a, b, c;
+    std::printf("ids: %d %d %d\n", a.id(), b.id(), c.id());
+}
+```
+```text
+ids: 1 1 1
+```
+
+## What went wrong
+
+Every entity got id 1. `next_id_` is a normal data member, so each object has its own copy. Each new entity starts its own counter at 1, takes 1 as its id, and bumps only its own copy to 2. The next entity never sees that 2.
+
+The save file now has three entities called "1". Loading it would attach every bat's path to the same entity.
+
+The counter has to be one value **shared by the whole class**, not one per object.
+
+## The fix: a static member
+
+A `static` data member belongs to the class itself. There is exactly one copy no matter how many objects exist (even zero). Inside the class it is declared; `inline static` (C++17) lets you give it a value right there.
+
+```cpp
+#include <cstdio>
+
+class Entity {
+public:
+    Entity() : id_(next_id_++) {}
+    int id() const { return id_; }
+    static int spawned() { return next_id_ - 1; }   // static function: no this
+private:
+    inline static int next_id_ = 1;                 // one copy for the class
+    int id_;
+};
+
+int main() {
+    Entity a, b, c;
+    std::printf("ids: %d %d %d, spawned %d\n", a.id(), b.id(), c.id(), Entity::spawned());
+}
+```
+```text
+ids: 1 2 3, spawned 3
+```
+
+A **static member function** has no `this`, so it can use only static members. You call it on the class: `Entity::spawned()`.
+
+![Three enemy objects all pointing at one shared static counter owned by the class](/diagrams/cpp-systems/oop/03-static-operators-and-friends.png)
 
 <Trace
   id="static-count"
-  prompt="Counting live objects."
-  code={"#include <cstdio>\nstruct Car {\n    static int alive;\n    Car() { ++alive; }\n    ~Car() { --alive; }\n};\nint Car::alive = 0;\nint main() {\n    Car a, b;\n    {\n        Car c;\n        std::printf(\"%d \", Car::alive);\n    }\n    std::printf(\"%d\", Car::alive);\n}"}
-  steps={[{"line": 9, "note": "two cars"}, {"line": 11, "note": "third car"}, {"line": 12, "note": "prints 3"}, {"line": 13, "note": "c destroyed"}, {"line": 14, "note": "prints 2"}]}
+  prompt="Counting live enemies with a static member."
+  code={"#include <cstdio>\nstruct Enemy {\n    static int alive;\n    Enemy() { ++alive; }\n    ~Enemy() { --alive; }\n};\nint Enemy::alive = 0;\nint main() {\n    Enemy a, b;\n    {\n        Enemy c;\n        std::printf(\"%d \", Enemy::alive);\n    }\n    std::printf(\"%d\", Enemy::alive);\n}"}
+  steps={[{"line": 9, "note": "two enemies"}, {"line": 11, "note": "a third one"}, {"line": 12, "note": "prints 3"}, {"line": 13, "note": "c is destroyed at the end of the inner scope"}, {"line": 14, "note": "prints 2"}]}
   question="What does it print?"
   answer="3 2"
-  explanation="All Car objects share the same `alive` counter."
+  explanation="All Enemy objects share the same `alive` counter, so the constructor and destructor keep it right."
   devices={["phone", "desktop"]}
 />
+
+## Encapsulation: setters that keep rules
+
+The settings menu lets the player set the music volume. The audio code needs 0 to 100. A setter is the right tool here, because there is a rule to keep:
+
+```cpp
+#include <cstdio>
+
+class AudioSettings {
+public:
+    void set_volume(int v) { volume_ = v < 0 ? 0 : (v > 100 ? 100 : v); }
+    int volume() const { return volume_; }
+private:
+    int volume_ = 70;
+};
+
+int main() {
+    AudioSettings s;
+    s.set_volume(250);                 // slider bug sends 250
+    std::printf("%d\n", s.volume());
+}
+```
+```text
+100
+```
 
 <MCQ
   id="setter"
-  prompt="Why use `setSpeed(int s)` instead of a public `speed` member?"
+  prompt="Why use `set_volume(int v)` instead of a public `volume` member?"
   options={["Setters are faster", "The setter can enforce rules (e.g. clamp to 0..200) so the object never holds a bad value", "It's required by the compiler", "Public members can't be ints"]}
   answer={1}
-  explanation="That's encapsulation: the class protects its own invariants."
+  explanation="That is encapsulation: the class protects its own invariant, so a buggy slider cannot send 250 to the audio mixer."
   devices={["phone", "desktop"]}
 />
 
-## Operators and friends
+## The feature: Vec2 maths
 
-`a + b` on your type just calls `operator+(a, b)`. Declaring a function `friend` inside the class lets it read private members.
+Movement is maths: `pos = pos + vel * dt`. Without operators the same line reads `pos = add(pos, scale(vel, dt))`, and a two-line physics step becomes unreadable. **Operator overloading** means `a + b` on your type calls a function named `operator+`.
+
+The rule that matters: `+` must not change its operands. Here is what happens when it does.
+
+## The careless version: + that changes the left side
+
+```cpp
+#include <cstdio>
+
+struct Vec2 {
+    float x, y;
+    Vec2 operator+(Vec2 o) { x += o.x; y += o.y; return *this; }  // changes *this!
+};
+
+int main() {
+    Vec2 pos{0, 0}, vel{1, 0};
+    Vec2 predicted = pos + vel;        // where will the player be next frame?
+    std::printf("predicted x=%.0f, actual x=%.0f\n", predicted.x, pos.x);
+}
+```
+```text
+predicted x=1, actual x=1
+```
+
+Asking "where will the player be?" moved the player. The AI code calls this prediction every frame, so the player runs at double speed whenever an enemy is watching.
+
+## The fix: const operators that return a new value
+
+`operator+` is a `const` member that returns a fresh `Vec2`. If you want "add into this one", that is a different operator, `+=`, which returns a reference to `*this`.
+
+```cpp
+#include <cstdio>
+
+struct Vec2 {
+    float x = 0, y = 0;
+    Vec2 operator+(Vec2 o) const { return {x + o.x, y + o.y}; }
+    Vec2 operator*(float s) const { return {x * s, y * s}; }
+    Vec2& operator+=(Vec2 o) { x += o.x; y += o.y; return *this; }
+    bool operator==(const Vec2&) const = default;
+};
+
+int main() {
+    Vec2 pos{0, 0}, vel{4, 2};
+    Vec2 predicted = pos + vel * 0.5f;     // pos unchanged
+    pos += vel * 0.25f;                    // the real move
+    std::printf("predicted (%.1f, %.1f), pos (%.1f, %.1f), same=%d\n",
+                predicted.x, predicted.y, pos.x, pos.y, predicted == pos);
+}
+```
+```text
+predicted (2.0, 1.0), pos (1.0, 0.5), same=0
+```
+
+`= default` on `operator==` (C++20) asks the compiler to compare every member in order.
+
+## Friends: printing for the debug overlay
+
+The debug overlay prints entities with `std::cout << enemy`. That calls `operator<<(std::ostream&, const Enemy&)`. It cannot be a member of `Enemy`, because the left operand is the stream. But it needs the private fields.
+
+A **friend** declaration inside the class gives one outside function access to private members:
+
+```cpp
+#include <iostream>
+#include <string>
+#include <utility>
+
+class Enemy {
+public:
+    Enemy(std::string name, int hp) : name_(std::move(name)), hp_(hp) {}
+    friend std::ostream& operator<<(std::ostream& os, const Enemy& e) {
+        return os << e.name_ << "[" << e.hp_ << " hp]";
+    }
+private:
+    std::string name_;
+    int hp_;
+};
+
+int main() {
+    Enemy a("slime", 30), b("bat", 12);
+    std::cout << a << " " << b << "\n";
+}
+```
+```text
+slime[30 hp] bat[12 hp]
+```
+
+Returning the stream is what lets `<<` chain.
+
+## When to use it, and when not
+
+- **static**: for things that belong to the type, not one object: id counters, a shared config, a factory function. Avoid static state you must reset between tests or levels; it is a hidden global.
+- **Operators**: only where the meaning is obvious. `Vec2 + Vec2`, `Color * float`, `Tile == Tile`: yes. `Enemy + Enemy`: no, nobody knows what that means.
+- **friend**: for operators that need private access, mainly `<<`. If many unrelated functions need to be friends, the class's public interface is missing something.
+
+## Coding task: tile coordinates
+
+The tile map works in whole-number coordinates. The pathfinder adds offsets and compares tiles, and the debug overlay prints them.
 
 <Code
   id="money-ops"
   devices={["desktop"]}
   language="cpp"
-  prompt="Write `class Money` holding private `long cents_`, with constructor `Money(long cents)`, `long cents() const`, `operator+` and `operator==` (as members or friends), and a friend `std::ostream& operator<<(std::ostream&, const Money&)` printing like `$12.05`. Assume amounts are not negative."
-  starter={"#include <ostream>\nclass Money {\npublic:\n    Money(long cents) {}\n    long cents() const { return 0; }\n    Money operator+(const Money& o) const { return Money(0); }\n    bool operator==(const Money& o) const { return false; }\n    friend std::ostream& operator<<(std::ostream& os, const Money& m) { return os; }\n};\n"}
-  visibleTests={"#include \"check.h\"\n#include <sstream>\nint main() {\n    Money a(150), b(275);\n    CHECK((a + b).cents() == 425);\n    return 0;\n}\n"}
-  tests={"#include \"check.h\"\n#include <sstream>\nint main() {\n    Money a(150), b(275);\n    CHECK((a + b).cents() == 425);\n    CHECK(a + b == Money(425) && !(a == b));\n    std::ostringstream s; s << Money(1205) << ' ' << Money(7) << ' ' << Money(300);\n    CHECK(s.str() == \"$12.05 $0.07 $3.00\");\n    return 0;\n}\n"}
-  solution={"#include <ostream>\n#include <iomanip>\nclass Money {\n    long cents_;\npublic:\n    Money(long cents) : cents_(cents) {}\n    long cents() const { return cents_; }\n    Money operator+(const Money& o) const { return Money(cents_ + o.cents_); }\n    bool operator==(const Money& o) const { return cents_ == o.cents_; }\n    friend std::ostream& operator<<(std::ostream& os, const Money& m) {\n        return os << '$' << m.cents_ / 100 << '.' << std::setw(2) << std::setfill('0') << m.cents_ % 100;\n    }\n};\n"}
-  hints={["`cents_ % 100` needs two digits: std::setw(2) and std::setfill('0').", "operator<< is a friend so it can read cents_."]}
-  explanation="Overload operators only where the meaning is obvious. Money + Money is obvious; Car * Car is not."
+  prompt="Write `class Tile` for integer map coordinates. Private `int x_, y_`; constructor `Tile(int x, int y)`; `int x() const` and `int y() const`; `operator+` and `operator-` returning a new Tile; `operator==`; and a friend `std::ostream& operator<<(std::ostream&, const Tile&)` that prints like `(3, -2)`. Neither + nor - may change the left operand."
+  starter={"#include <ostream>\nclass Tile {\npublic:\n    Tile(int x, int y) {}\n    int x() const { return 0; }\n    int y() const { return 0; }\n    Tile operator+(const Tile& o) const { return Tile(0, 0); }\n    Tile operator-(const Tile& o) const { return Tile(0, 0); }\n    bool operator==(const Tile& o) const { return false; }\n    friend std::ostream& operator<<(std::ostream& os, const Tile& t) { return os; }\n};\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    Tile a(1, 2), b(3, 4);\n    CHECK((a + b).x() == 4 && (a + b).y() == 6);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <sstream>\nint main() {\n    Tile a(1, 2), b(3, 4);\n    Tile c = a + b;\n    CHECK(c.x() == 4 && c.y() == 6);\n    CHECK(a.x() == 1 && a.y() == 2);\n    Tile d = b - a;\n    CHECK(d == Tile(2, 2) && !(d == a));\n    CHECK(a + Tile(0, -5) == Tile(1, -3));\n    std::ostringstream s; s << Tile(3, -2) << ' ' << Tile(0, 0);\n    CHECK(s.str() == \"(3, -2) (0, 0)\");\n    return 0;\n}\n"}
+  solution={"#include <ostream>\nclass Tile {\n    int x_, y_;\npublic:\n    Tile(int x, int y) : x_(x), y_(y) {}\n    int x() const { return x_; }\n    int y() const { return y_; }\n    Tile operator+(const Tile& o) const { return Tile(x_ + o.x_, y_ + o.y_); }\n    Tile operator-(const Tile& o) const { return Tile(x_ - o.x_, y_ - o.y_); }\n    bool operator==(const Tile& o) const { return x_ == o.x_ && y_ == o.y_; }\n    friend std::ostream& operator<<(std::ostream& os, const Tile& t) {\n        return os << '(' << t.x_ << \", \" << t.y_ << ')';\n    }\n};\n"}
+  hints={["Make + and - const members that return Tile(x_ + o.x_, y_ + o.y_).", "operator<< is a friend so it can read x_ and y_ directly."]}
+  explanation="Pathfinding code can now say `next = here + Tile(1, 0)` and `if (next == goal)`, and the overlay prints `(3, -2)` with one `<<`."
+/>
+
+## Coding task: entity ids
+
+The id generator from the top of this lesson, including the case the careless version never thought about: copies.
+
+<Code
+  id="entity-ids"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `class Entity` that gives every new entity a unique id, starting at 1, using a static member. Add `int id() const` and a static function `static int created()` that returns how many entities have ever been created. Copying an entity must give the copy a NEW id too (write the copy constructor)."
+  starter={"class Entity {\npublic:\n    Entity() {}\n    int id() const { return 0; }\n    static int created() { return 0; }\n};\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    Entity a, b;\n    CHECK(a.id() == 1 && b.id() == 2);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\nint main() {\n    Entity a, b;\n    CHECK(a.id() == 1 && b.id() == 2 && Entity::created() == 2);\n    { Entity c; CHECK(c.id() == 3); }\n    Entity d;\n    CHECK(d.id() == 4 && Entity::created() == 4);\n    Entity e = a;\n    CHECK(e.id() == 5 && a.id() == 1 && Entity::created() == 5);\n    return 0;\n}\n"}
+  solution={"class Entity {\npublic:\n    Entity() : id_(next_++) {}\n    Entity(const Entity&) : id_(next_++) {}\n    Entity& operator=(const Entity&) { return *this; }\n    int id() const { return id_; }\n    static int created() { return next_ - 1; }\nprivate:\n    inline static int next_ = 1;\n    int id_;\n};\n"}
+  hints={["`inline static int next_ = 1;` and `id_(next_++)` in the constructor.", "The copy constructor `Entity(const Entity&)` takes a fresh id the same way, ignoring the other's id."]}
+  explanation="The static counter is shared by the whole class, so ids never repeat. Writing the copy constructor matters: the compiler-generated one would copy the id, and two entities in the save file would both be \"bat 17\"."
 />

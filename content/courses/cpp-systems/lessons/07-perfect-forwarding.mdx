@@ -1,53 +1,252 @@
 ---
 id: cpp-systems/02-move/03-perfect-forwarding
 title: "Perfect Forwarding"
-estMinutes: 8
-xp: 100
-fun: 4
-missionIntro: "Forwarding references plus std::forward pass arguments through with their value category intact. That's how emplace_back works."
+estMinutes: 14
+xp: 90
+fun: 5
+missionIntro: "`world.spawn<Bat>(\"cave bat\", 12, std::move(ai))` should build the bat in place, copying nothing. Variadic templates, forwarding references, std::forward and reference collapsing."
 keyIdeas:
-  - "`T&&` with T deduced is a forwarding reference: it binds anything (reference collapsing makes T = U& for lvalues)."
-  - "std::forward<T>(x) restores the original category: lvalues stay lvalues, rvalues become rvalues again."
-  - "emplace_back and make_unique forward constructor arguments to construct in place."
+  - "`template<class... Args>` accepts any number of arguments of any types (a variadic template)."
+  - "In a template, `T&&` with deduced T is a forwarding reference: it binds to lvalues and rvalues and remembers which."
+  - "`std::forward<T>(x)` passes x on with the caller's category: moved if it came in as an rvalue, copied otherwise."
+  - "Reference collapsing: any & wins, so T = int& makes `T&&` collapse to int&."
 ---
+
+## The feature: a spawn function
+
+The world keeps every entity in one list. Spawning should be one call that works for every entity type, with that type's own constructor arguments:
+
+```cpp
+world.spawn<Slime>("green slime", 30);
+world.spawn<Bat>("cave bat", 12, std::move(bat_brain));   // bat_brain is a std::unique_ptr
+world.spawn<Chest>(loot_table);                           // big vector, the caller keeps it
+```
+
+One function template, any entity type, any arguments, and no copies the caller did not ask for.
+
+## The careless version: take everything by value
+
+```cpp
+#include <cstdio>
+#include <memory>
+#include <string>
+#include <vector>
+
+int g_copies = 0;
+struct Name {                       // a string that counts its copies
+    std::string s;
+    Name(const char* c) : s(c) {}
+    Name(const Name& o) : s(o.s) { ++g_copies; }
+    Name(Name&&) noexcept = default;
+};
+
+struct Entity { virtual ~Entity() = default; };
+struct Slime : Entity {
+    Name name; int hp;
+    Slime(Name n, int h) : name(n), hp(h) {}
+};
+
+std::vector<std::unique_ptr<Entity>> world;
+
+template <class T, class... Args>
+T& spawn(Args... args) {                          // every argument copied in
+    auto p = std::make_unique<T>(args...);        // and copied again here
+    T& ref = *p;
+    world.push_back(std::move(p));
+    return ref;
+}
+
+int main() {
+    Name n("green slime");
+    spawn<Slime>(n, 30);
+    std::printf("copies for one spawn: %d\n", g_copies);
+}
+```
+```text
+copies for one spawn: 3
+```
+
+## What went wrong
+
+One spawn, three copies of the name: into spawn's parameter, into Slime's constructor parameter, into the member. The last one is Slime's own fault (`name(n)` should be `name(std::move(n))`). The first two are the spawn function's fault.
+
+Worse, the bat line does not compile at all: `std::unique_ptr` cannot be copied, and `spawn(Args... args)` tries to copy it. And inside `spawn`, even with `Args&&...`, the parameters have names, so they are lvalues and get copied when passed on.
+
+We want each argument to arrive at `T`'s constructor exactly as the caller passed it: lvalues as lvalues (copy, because the caller still needs them), rvalues as rvalues (move).
+
+## Variadic templates
+
+`template <class T, class... Args>` declares a **parameter pack** `Args`: zero or more types. `Args... args` declares one function parameter per type. `args...` expands the pack back into a comma-separated list.
+
+```cpp
+#include <cstdio>
+
+template <class... Args>
+int count_args(Args... args) { return sizeof...(args); }
+
+template <class... Args>
+void log_spawn(const char* type, Args... args) {
+    std::printf("spawn %s with %d arguments\n", type, count_args(args...));
+}
+
+int main() {
+    log_spawn("slime", "green slime", 30);
+    log_spawn("bat", "cave bat", 12, 2.5f);
+    log_spawn("marker");
+}
+```
+```text
+spawn slime with 2 arguments
+spawn bat with 3 arguments
+spawn marker with 0 arguments
+```
+
+`sizeof...(args)` is the number of arguments. A **fold expression** like `(std::printf("%d ", args), ...)` repeats an expression for each argument.
+
+## Forwarding references
+
+In a template where `T` is **deduced** from the argument, `T&&` is a **forwarding reference** (Scott Meyers called it a universal reference). It is not a plain rvalue reference:
+
+- pass an lvalue `Name n`: `T` is deduced as `Name&`, and the parameter becomes `Name&`
+- pass an rvalue `Name("x")`: `T` is deduced as `Name`, and the parameter becomes `Name&&`
+
+So it binds to anything, and `T` records what it was.
 
 ## Reference collapsing
 
-For `template<class T> void f(T&& x)`: passing an lvalue `int` deduces `T = int&`, and `int& &&` collapses to `int&`. Passing an rvalue deduces `T = int`.
+How does `T&&` become `Name&` when `T = Name&`? The parameter type is written `Name& &&`, a reference to a reference, and the compiler collapses it:
+
+| written | becomes |
+| --- | --- |
+| `T& &` | `T&` |
+| `T& &&` | `T&` |
+| `T&& &` | `T&` |
+| `T&& &&` | `T&&` |
+
+Any `&` wins. Only `&& &&` stays an rvalue reference.
 
 ![Reference collapsing table: & &, & &&, && &, && && and what each collapses to](/diagrams/cpp-systems/02-move/03-perfect-forwarding.png)
 
 <MCQ
   id="deduce-t"
-  prompt="`template<class T> void f(T&& x);` called as `int a = 0; f(a);`. What is T?"
+  prompt="`template<class T> void spawn_named(T&& name);` called as `std::string n = \"bat\"; spawn_named(n);`. What is T?"
   options={["int", "int&", "int&&", "const int&"]}
   answer={1}
   explanation="Lvalue argument: T = int&, and the parameter type int& && collapses to int&."
   devices={["phone", "desktop"]}
 />
 
+## The fix: std::forward
+
+`std::forward<T>(x)` casts `x` back to an rvalue **only if** `T` says the caller passed an rvalue. It is essentially `static_cast<T&&>(x)`, and the collapsing table does the rest.
+
+```cpp
+#include <cstdio>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+
+int g_copies = 0;
+struct Name {
+    std::string s;
+    Name(const char* c) : s(c) {}
+    Name(const Name& o) : s(o.s) { ++g_copies; }
+    Name(Name&&) noexcept = default;
+};
+
+struct Entity { virtual ~Entity() = default; };
+struct Slime : Entity {
+    Name name; int hp;
+    Slime(Name n, int h) : name(std::move(n)), hp(h) {}
+};
+struct Bat : Entity {
+    Name name; std::unique_ptr<int> brain;
+    Bat(Name n, std::unique_ptr<int> b) : name(std::move(n)), brain(std::move(b)) {}
+};
+
+std::vector<std::unique_ptr<Entity>> world;
+
+template <class T, class... Args>
+T& spawn(Args&&... args) {
+    auto p = std::make_unique<T>(std::forward<Args>(args)...);
+    T& ref = *p;
+    world.push_back(std::move(p));
+    return ref;
+}
+
+int main() {
+    Name n("green slime");
+    spawn<Slime>(n, 30);                         // lvalue: copied once (caller keeps n)
+    std::printf("lvalue name: %d copy\n", g_copies);
+    g_copies = 0;
+    spawn<Slime>(Name("blue slime"), 30);        // rvalue: moved all the way
+    auto brain = std::make_unique<int>(7);
+    Bat& b = spawn<Bat>("cave bat", std::move(brain));   // move-only argument works
+    std::printf("rvalue names: %d copies, bat brain %d, entities %zu\n", g_copies, *b.brain, world.size());
+}
+```
+```text
+lvalue name: 1 copy
+rvalue names: 0 copies, bat brain 7, entities 3
+```
+
+`std::make_unique` and `emplace_back` are written exactly this way internally.
+
 <CodeBlanks
   id="fwd-blanks"
-  prompt="Complete a forwarding factory."
+  prompt="Complete the forwarding factory the spawner uses."
   code={"template <class T, class... Args>\nT make(Args{{0}} args) {\n    return T(std::{{1}}<Args>(args)...);\n}"}
   blanks={[{"answer": "&&"}, {"answer": "forward"}]}
   explanation="Forwarding references plus std::forward<Args>."
   devices={["phone", "desktop"]}
 />
 
-## emplace without copies
+## std::move vs std::forward
+
+- `std::move(x)`: "I own x and I am done with it." Always casts to an rvalue. Use it on locals and on parameters you took by value or by `T&&` with a concrete type (like `Level&&`).
+- `std::forward<T>(x)`: "pass x on as it was given to me." Use it only on forwarding references (`T&&` with deduced `T`), and only once per argument: after forwarding an rvalue, `x` is moved-from.
+
+Mixing them up is a classic bug: `std::move` on a forwarding reference steals the caller's lvalue (their `Name n` comes back empty); forgetting `std::forward` copies every rvalue.
+
+## When to use it, and when not
+
+- Use forwarding for **factory and wrapper** functions that pass arguments through to a constructor or another function: `spawn`, `make_*`, `emplace`, event dispatch, logging wrappers.
+- Do not use `T&&` templates for ordinary functions that just want to read a value. `const T&` is clearer and works with everything.
+- For a function that **stores** one argument of a known type, taking it **by value and moving** is simpler than forwarding: `void set_name(std::string n) { name_ = std::move(n); }` costs one extra move at most.
 
 Sources: [cppreference: std::forward](https://en.cppreference.com/w/cpp/utility/forward), Meyers, *Effective Modern C++*, Items 24–30
+
+## Coding task: a logged event call
+
+The event system logs every handler call. The wrapper must pass arguments through untouched, including move-only ones and handlers that return references.
 
 <Code
   id="forward-wrapper"
   devices={["desktop"]}
   language="cpp"
-  prompt="Write `template<class F, class... Args> decltype(auto) call_logged(int& calls, F&& f, Args&&... args)`, which increments calls and then invokes f with perfectly forwarded args, returning whatever f returns (including references)."
+  prompt="The event system logs every handler call. Write `template<class F, class... Args> decltype(auto) call_logged(int& calls, F&& f, Args&&... args)`, which increments calls and then invokes f with perfectly forwarded args, returning whatever f returns (including references)."
   starter={"#include <utility>\ntemplate <class F, class... Args>\ndecltype(auto) call_logged(int& calls, F&& f, Args&&... args) {\n    ++calls;\n    return f(args...); // TODO: forward properly\n}\n"}
   visibleTests={"#include \"check.h\"\n\nint main() {\n    int calls = 0;\n    CHECK(call_logged(calls, [](int a, int b) { return a + b; }, 2, 3) == 5);\n    CHECK(calls == 1);\n    return 0;\n}\n"}
   tests={"#include \"check.h\"\n\n#include <memory>\n#include <string>\nint main() {\n    int calls = 0;\n    CHECK(call_logged(calls, [](int a, int b) { return a + b; }, 2, 3) == 5);\n    auto p = std::make_unique<int>(42);\n    auto take = [](std::unique_ptr<int> q) { return *q; };\n    CHECK(call_logged(calls, take, std::move(p)) == 42);\n    CHECK(p == nullptr);\n    int x = 1;\n    auto ref = [](int& r) -> int& { return r; };\n    call_logged(calls, ref, x) = 9;\n    CHECK(x == 9 && calls == 3);\n    return 0;\n}\n"}
   solution={"#include <utility>\n#include <functional>\ntemplate <class F, class... Args>\ndecltype(auto) call_logged(int& calls, F&& f, Args&&... args) {\n    ++calls;\n    return std::invoke(std::forward<F>(f), std::forward<Args>(args)...);\n}\n"}
   hints={["Without std::forward, the unique_ptr argument would be an lvalue and wouldn't compile.", "decltype(auto) keeps int& returns as references."]}
-  explanation="This is the shape of std::invoke wrappers, thread pools and logging decorators."
+  explanation="This is the shape of std::invoke wrappers, job systems and logging decorators. decltype(auto) keeps an int& return as a reference, so `call_logged(...) = 9` writes through it."
+/>
+
+## Coding task: the entity spawner
+
+The spawner from this lesson, starting from the classic mix-up: std::move where std::forward belongs.
+
+<Code
+  id="spawner-forward"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="The current spawner calls std::move on every argument, so spawning from a name the caller wants to keep empties the caller's name. Fix `template <class T, class... Args> T& spawn(std::vector<std::unique_ptr<Entity>>& world, Args&&... args)` so that it creates a T with the arguments perfectly forwarded to T's constructor, appends it to world, and returns a reference to the new T. `Entity`, `Slime` and `Bat` are given; Name counts its copies in `Name::copies`."
+  starter={"#include <memory>\n#include <string>\n#include <utility>\n#include <vector>\nstruct Name {\n    inline static int copies = 0;\n    std::string s;\n    Name(const char* c) : s(c) {}\n    Name(const Name& o) : s(o.s) { ++copies; }\n    Name(Name&&) noexcept = default;\n};\nstruct Entity { virtual ~Entity() = default; };\nstruct Slime : Entity {\n    Name name; int hp;\n    Slime(Name n, int h) : name(std::move(n)), hp(h) {}\n};\nstruct Bat : Entity {\n    Name name; std::unique_ptr<int> brain;\n    Bat(Name n, std::unique_ptr<int> b) : name(std::move(n)), brain(std::move(b)) {}\n};\ntemplate <class T, class... Args>\nT& spawn(std::vector<std::unique_ptr<Entity>>& world, Args&&... args) {\n    auto p = std::make_unique<T>(std::move(args)...);\n    T& ref = *p;\n    world.push_back(std::move(p));\n    return ref;\n}\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    std::vector<std::unique_ptr<Entity>> world;\n    Name keep(\"blue slime\");\n    Slime& s = spawn<Slime>(world, keep, 20);\n    CHECK(s.hp == 20 && keep.s == \"blue slime\");\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\nint main() {\n    std::vector<std::unique_ptr<Entity>> world;\n    Slime* first = &spawn<Slime>(world, \"green slime\", 30);\n    CHECK(first != nullptr && world.size() == 1);\n    CHECK(first->hp == 30 && first->name.s == \"green slime\");\n    Name::copies = 0;\n    Name keep(\"blue slime\");\n    spawn<Slime>(world, keep, 20);\n    CHECK(Name::copies == 1 && keep.s == \"blue slime\");\n    spawn<Slime>(world, Name(\"red slime\"), 10);\n    CHECK(Name::copies == 1);\n    auto brain = std::make_unique<int>(7);\n    Bat* b = &spawn<Bat>(world, \"cave bat\", std::move(brain));\n    CHECK(b != nullptr && brain == nullptr && *b->brain == 7 && world.size() == 4);\n    CHECK(world.back().get() == b);\n    return 0;\n}\n"}
+  solution={"#include <memory>\n#include <string>\n#include <utility>\n#include <vector>\nstruct Name {\n    inline static int copies = 0;\n    std::string s;\n    Name(const char* c) : s(c) {}\n    Name(const Name& o) : s(o.s) { ++copies; }\n    Name(Name&&) noexcept = default;\n};\nstruct Entity { virtual ~Entity() = default; };\nstruct Slime : Entity {\n    Name name; int hp;\n    Slime(Name n, int h) : name(std::move(n)), hp(h) {}\n};\nstruct Bat : Entity {\n    Name name; std::unique_ptr<int> brain;\n    Bat(Name n, std::unique_ptr<int> b) : name(std::move(n)), brain(std::move(b)) {}\n};\ntemplate <class T, class... Args>\nT& spawn(std::vector<std::unique_ptr<Entity>>& world, Args&&... args) {\n    auto p = std::make_unique<T>(std::forward<Args>(args)...);\n    T& ref = *p;\n    world.push_back(std::move(p));\n    return ref;\n}\n"}
+  hints={["std::move always casts to an rvalue, even when the caller passed an lvalue.", "`std::make_unique<T>(std::forward<Args>(args)...)`", "Take the reference with `T& ref = *p;` before moving p into the vector."]}
+  explanation="One template spawns every entity type. Lvalues are copied once (the caller keeps them), rvalues are moved, and move-only arguments like unique_ptr just work."
 />

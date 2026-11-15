@@ -1,0 +1,169 @@
+---
+id: cpp-systems/05-stl/06-optional-and-variant
+title: "optional, variant and visit"
+estMinutes: 15
+xp: 90
+fun: 5
+missionIntro: "A lookup that returns -1 for 'not found' gets used as an index, and an event struct with a type tag gets read as the wrong kind. std::optional says 'maybe a value'; std::variant says 'exactly one of these', and std::visit makes you handle every case."
+keyIdeas:
+  - "std::optional<T> holds a T or nothing. Check it before use; value_or gives a default."
+  - "std::variant<A, B, C> holds exactly one of its types and remembers which."
+  - "std::visit calls the right overload for whatever the variant holds; a missing case is a compile error."
+  - "Use variant for a closed set of types known at compile time; use virtual functions when new types are added often."
+---
+
+## The feature: finding things that might not exist
+
+The game constantly asks questions that may have no answer: which enemy has id 42 (it may have died)? Which inventory slot holds a key (maybe none)? What is under the mouse cursor (maybe nothing)?
+
+## The careless version: a magic "not found" value
+
+```cpp
+#include <cstdio>
+#include <vector>
+
+struct Enemy { int id; int hp; };
+
+int find_enemy(const std::vector<Enemy>& enemies, int id) {
+    for (std::size_t i = 0; i < enemies.size(); ++i)
+        if (enemies[i].id == id) return static_cast<int>(i);
+    return -1;                                   // not found
+}
+
+int main() {
+    std::vector<Enemy> enemies{{10, 20}, {11, 20}};
+    int target = 42;                             // the arrow's target died last frame
+    int i = find_enemy(enemies, target);
+    enemies[i].hp -= 15;                         // forgot to check for -1
+    std::printf("hit enemy %d\n", enemies[i].id);
+}
+```
+```text
+==1==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x50200000000c at pc 0x56535d23b6d3 bp 0x7ffea48f6430 sp 0x7ffea48f6428
+SUMMARY: AddressSanitizer: heap-buffer-overflow game.cpp:16 in main
+```
+
+## What went wrong
+
+`-1` is a perfectly valid `int`, so nothing stopped the caller from using it as an index. `enemies[-1]` writes just before the vector's buffer. ASan caught it; without ASan, the write lands in the allocator's bookkeeping and the game crashes later, somewhere unrelated, when that memory is freed.
+
+The return type said "here is an index". It should have said "here is an index, or nothing".
+
+## The fix: std::optional
+
+```cpp
+#include <cstdio>
+#include <optional>
+#include <vector>
+
+struct Enemy { int id; int hp; };
+
+std::optional<std::size_t> find_enemy(const std::vector<Enemy>& enemies, int id) {
+    for (std::size_t i = 0; i < enemies.size(); ++i)
+        if (enemies[i].id == id) return i;
+    return std::nullopt;
+}
+
+int main() {
+    std::vector<Enemy> enemies{{10, 20}, {11, 20}};
+    for (int target : {11, 42}) {
+        if (auto i = find_enemy(enemies, target)) {
+            enemies[*i].hp -= 15;
+            std::printf("hit enemy %d, hp now %d\n", enemies[*i].id, enemies[*i].hp);
+        } else {
+            std::printf("target %d is gone, arrow flies on\n", target);
+        }
+    }
+    std::optional<int> bonus;
+    std::printf("bonus xp: %d\n", bonus.value_or(0));
+}
+```
+```text
+hit enemy 11, hp now 5
+target 42 is gone, arrow flies on
+bonus xp: 0
+```
+
+- `if (auto i = ...)` tests whether there is a value. `*i` reads it.
+- `value_or(d)` gives the value or a default.
+- `.value()` throws `std::bad_optional_access` if empty; `*i` on an empty optional is undefined behaviour, so only use `*` after checking.
+
+## The second feature: an event queue
+
+The network code and the combat code push events into one queue that the game processes each frame: damage, heal, spawn. Each kind has different data.
+
+The careless version is one struct with a `type` tag and every possible field, where most fields are unused for each type and nothing stops `handle()` reading `heal.amount` from a damage event. Adding a new event type means finding every `switch` and hoping you did not miss one.
+
+## std::variant and std::visit
+
+`std::variant<Damage, Heal, Spawn>` holds exactly one of the three, and knows which. `std::visit` calls the matching function:
+
+```cpp
+#include <cstdio>
+#include <string>
+#include <variant>
+#include <vector>
+
+struct Damage { int target; int amount; };
+struct Heal   { int target; int amount; };
+struct Spawn  { std::string kind; float x, y; };
+using Event = std::variant<Damage, Heal, Spawn>;
+
+template <class... Fs> struct overloaded : Fs... { using Fs::operator()...; };
+
+int main() {
+    std::vector<Event> queue{Damage{7, 25}, Spawn{"slime", 4, 2}, Heal{1, 10}};
+    for (const Event& e : queue) {
+        std::visit(overloaded{
+            [](const Damage& d) { std::printf("enemy %d takes %d\n", d.target, d.amount); },
+            [](const Heal& h)   { std::printf("player %d heals %d\n", h.target, h.amount); },
+            [](const Spawn& s)  { std::printf("spawn %s at %.0f,%.0f\n", s.kind.c_str(), s.x, s.y); },
+        }, e);
+    }
+    std::printf("sizeof(Event) = %zu\n", sizeof(Event));
+}
+```
+```text
+enemy 7 takes 25
+spawn slime at 4,2
+player 1 heals 10
+sizeof(Event) = 48
+```
+
+`overloaded` is a small helper that merges several lambdas into one object with several `operator()`s. If you add a `Teleport` event to the variant and forget its lambda, `std::visit` does not compile: the compiler finds the missing case for you.
+
+A variant is as big as its largest member plus a tag (here the `std::string` in `Spawn` sets the size). There is no heap allocation.
+
+## When to use them, and when not
+
+- Return `std::optional<T>` when "no result" is normal: lookups, parsing a number from a config line.
+- Do not use optional for errors that need an explanation (why did the save file fail to load?). Use an exception, or an error type.
+- Use `std::variant` for a closed set of types known at compile time: events, messages, UI states.
+- Use virtual functions when new types are added often or by other teams: adding a type to a variant means recompiling every `visit`.
+- `std::get<Damage>(e)` throws `std::bad_variant_access` if the variant holds something else; `std::get_if<Damage>(&e)` returns a null pointer instead.
+
+<MCQ
+  id="optional-or-variant"
+  prompt="Parsing a level file line returns either a parsed Tile, or an error message with the line number. Which type fits best?"
+  options={["std::optional<Tile>", "std::variant<Tile, ParseError>", "int, with -1 for errors", "Tile*, null for errors"]}
+  answer={1}
+  explanation="optional can only say 'nothing', not why. A variant of the result and an error type carries the explanation. (C++23's std::expected is this pattern with a nicer interface.)"
+  devices={["phone", "desktop"]}
+/>
+
+## Coding task: process the event queue
+
+Each frame, the game applies queued events to the player and the enemies.
+
+<Code
+  id="event-queue"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Given `using Event = std::variant<Damage, Heal, Spawn>`, write `int process(const std::vector<Event>& q, std::vector<int>& hp)`. Damage{target, amount} subtracts amount from hp[target]; Heal{target, amount} adds amount but never above 100; Spawn{hp} appends a new entry with that hp. Ignore Damage and Heal whose target index is out of range. Return the number of events applied (ignored ones do not count). Use std::visit or std::get_if."
+  starter={"#include <algorithm>\n#include <variant>\n#include <vector>\nstruct Damage { int target; int amount; };\nstruct Heal { int target; int amount; };\nstruct Spawn { int hp; };\nusing Event = std::variant<Damage, Heal, Spawn>;\nint process(const std::vector<Event>& q, std::vector<int>& hp) {\n    return 0;\n}\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    std::vector<int> hp{50};\n    CHECK(process({Damage{0, 20}}, hp) == 1 && hp[0] == 30);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\nint main() {\n    std::vector<int> hp{50, 90};\n    std::vector<Event> q{Damage{0, 20}, Heal{1, 30}, Spawn{40}, Damage{2, 5}, Damage{5, 99}, Heal{-1, 10}, Heal{0, 5}};\n    CHECK(process(q, hp) == 5);\n    CHECK(hp.size() == 3 && hp[0] == 35 && hp[1] == 100 && hp[2] == 35);\n    CHECK(process({}, hp) == 0);\n    std::vector<int> none;\n    CHECK(process({Damage{0, 1}, Spawn{10}, Damage{0, 1}}, none) == 2 && none.size() == 1 && none[0] == 9);\n    return 0;\n}\n"}
+  solution={"#include <algorithm>\n#include <variant>\n#include <vector>\nstruct Damage { int target; int amount; };\nstruct Heal { int target; int amount; };\nstruct Spawn { int hp; };\nusing Event = std::variant<Damage, Heal, Spawn>;\ntemplate <class... Fs> struct overloaded : Fs... { using Fs::operator()...; };\nint process(const std::vector<Event>& q, std::vector<int>& hp) {\n    int applied = 0;\n    auto ok = [&hp](int t) { return t >= 0 && t < static_cast<int>(hp.size()); };\n    for (const Event& e : q) {\n        bool done = std::visit(overloaded{\n            [&](const Damage& d) { if (!ok(d.target)) return false; hp[d.target] -= d.amount; return true; },\n            [&](const Heal& h) { if (!ok(h.target)) return false; hp[h.target] = std::min(100, hp[h.target] + h.amount); return true; },\n            [&](const Spawn& s) { hp.push_back(s.hp); return true; },\n        }, e);\n        if (done) ++applied;\n    }\n    return applied;\n}\n"}
+  hints={["std::visit with an overloaded set of lambdas, each returning bool (applied or not).", "Check target with `d.target >= 0 && d.target < (int)hp.size()`.", "Heal: hp[t] = std::min(100, hp[t] + amount)."]}
+  explanation="Each event type gets its own small handler, and the variant guarantees one of them runs. Adding a new event type makes this function fail to compile until you handle it."
+/>

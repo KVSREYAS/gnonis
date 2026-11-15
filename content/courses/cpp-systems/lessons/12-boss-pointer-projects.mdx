@@ -4,7 +4,7 @@ title: "Module test: Smart-pointer ownership"
 estMinutes: 12
 xp: 220
 fun: 5
-missionIntro: "unique_ptr, shared_ptr and weak_ptr in a timed test. Then build a tiny shared pointer from scratch."
+missionIntro: "unique_ptr, shared_ptr and weak_ptr in a timed test. Then build the tiny shared pointer the texture cache could run on."
 kind: boss
 keyIdeas:
   - "unique_ptr: exclusive, 8 bytes, free with stateless deleters."
@@ -14,7 +14,7 @@ keyIdeas:
 
 ## Module test
 
-Six timed questions on Smart-pointer ownership. 3 wrong answers end the test. Then a coding task: build Shared<T>.
+Milestone 4 check: the spawner owns its enemies, textures are shared across levels, and missiles track targets that may die. Six timed questions on smart-pointer ownership. 3 wrong answers end the test. Then a coding task: build Shared<T>.
 
 <Boss
   id="projects"
@@ -29,13 +29,13 @@ Six timed questions on Smart-pointer ownership. 3 wrong answers end the test. Th
 
 ## Coding task: build Shared<T>
 
-A single-threaded shared pointer: no control block tricks, just a heap-allocated count.
+To see there is no magic in the texture cache, build a single-threaded shared pointer. No control block tricks, just a heap-allocated count next to the object pointer.
 
 <Code
   id="mini-shared"
   devices={["desktop"]}
   language="cpp"
-  prompt="Implement `Shared<T>`, constructed from `T*` (it takes ownership). Copy increments a heap-allocated `long` count, move steals, and the destructor decrements and deletes both the object and the count at zero. Provide `use_count()` (0 when empty), `get()` and `operator*`."
+  prompt="Implement `Shared<T>` (think `Shared<Texture>`), constructed from `T*` (it takes ownership). Copy increments a heap-allocated `long` count, move steals, and the destructor decrements and deletes both the object and the count at zero. Provide `use_count()` (0 when empty), `get()` and `operator*`."
   starter={"template <class T>\nclass Shared {\npublic:\n    explicit Shared(T* p = nullptr) : p_(p), c_(p ? new long(1) : nullptr) {}\n    // TODO: copy, move, destructor, use_count, get, operator*\nprivate:\n    T* p_;\n    long* c_;\n};\n"}
   visibleTests={"#include \"check.h\"\n\nint main() {\n    Shared<int> a(new int(5));\n    Shared<int> b = a;\n    CHECK(a.use_count() == 2 && *b == 5);\n    return 0;\n}\n"}
   tests={"#include \"check.h\"\n\n#include <utility>\nint alive = 0;\nstruct Obj { Obj() { ++alive; } ~Obj() { --alive; } };\nint main() {\n    {\n        Shared<Obj> a(new Obj);\n        { Shared<Obj> b = a; CHECK(a.use_count() == 2); }\n        CHECK(a.use_count() == 1);\n        Shared<Obj> c = std::move(a);\n        CHECK(a.use_count() == 0 && a.get() == nullptr && c.use_count() == 1);\n        Shared<Obj> d(new Obj); CHECK(alive == 2);\n        d = c; CHECK(alive == 1 && c.use_count() == 2);\n        d = d; CHECK(d.use_count() == 2);\n    }\n    CHECK(alive == 0);\n    Shared<int> e; CHECK(e.use_count() == 0);\n    return 0;\n}\n"}

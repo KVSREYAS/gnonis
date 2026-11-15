@@ -1,16 +1,60 @@
 ---
 id: cpp-systems/08-ub/00-concepts
 title: "Concepts: Undefined Behaviour"
-estMinutes: 8
+estMinutes: 13
 xp: 40
-fun: 1
-missionIntro: "What undefined behaviour means, why the optimizer exploits it, and how to find it with sanitizers."
+fun: 2
+missionIntro: "Milestone 9 of Slime Siege: crash hunting in the release build. What undefined behaviour means, why the optimizer exploits it, and how to find it with sanitizers."
 keyIdeas:
   - "Undefined behaviour (UB): the standard places no requirements on what the program does."
   - "The optimizer assumes UB never happens and transforms code based on that assumption."
   - "Strict aliasing: you may not read an object through a pointer to an unrelated type."
   - "std::bit_cast and memcpy are the legal ways to reinterpret bytes."
 ---
+## Milestone 9: crash hunting in release
+
+**What we build this module:** nothing new. The game is feature-complete enough for a test build, and the testers report bugs that never happen in the debug build: a score that stops going up, a save file that loads wrong values, a crash on one level after 20 minutes. This module is about finding and fixing them.
+
+**Why the game needs it:** almost every "only in release" bug is **undefined behaviour**. The debug build happens to do what you meant; the optimized build does something else, and both are allowed. Knowing the common kinds, and running the sanitizers, turns hours of guessing into one stack trace.
+
+## The careless version: an overflow check that gets deleted
+
+The score is an `int`. To stop it wrapping around to negative, someone added a check:
+
+```cpp
+#include <climits>
+#include <cstdio>
+
+__attribute__((noinline)) bool would_overflow(int score, int bonus) {
+    int sum = score + bonus;
+    return sum < score;                      // "if it wrapped, the sum is smaller"
+}
+
+int main() {
+    int score = INT_MAX - 10;
+    std::printf("overflow check says: %s\n", would_overflow(score, 100) ? "would overflow" : "safe to add");
+}
+```
+
+Debug build (`-O0`):
+
+```text
+overflow check says: would overflow
+```
+
+
+Release build (`-O2`), same source:
+
+```text
+overflow check says: safe to add
+```
+
+## What went wrong
+
+Signed integer overflow is undefined behaviour. The compiler may assume it never happens. If `score + bonus` never overflows, then for a positive bonus it is always larger than `score`, so `sum < score` simplifies to `bonus < 0`. The check was deleted. In the debug build the addition wrapped (what the hardware does), so the check "worked" by luck.
+
+The fix is to check before adding, without overflowing: `bonus > 0 && score > INT_MAX - bonus`. Or use `__builtin_add_overflow`, or a wider type.
+
 ## What UB is
 
 The C++ standard sorts program behaviour into kinds. The dangerous one is **undefined behaviour**: an operation for which the standard sets no rules at all. Anything may happen, including "works in debug, breaks in release".
@@ -26,30 +70,21 @@ Common cases:
 
 Unsigned overflow is **not** UB. It wraps modulo 2^N.
 
+![Catalogue of common UB cases](/diagrams/cpp-systems/08-ub/01-ub-catalogue.png)
+
 ## Why the optimizer makes it worse
 
-The compiler is allowed to assume your program has no UB. It uses that to remove checks and simplify code.
+The compiler uses "no UB happens" as a fact when simplifying. Another example:
 
 ```cpp
-bool will_overflow(int x) {
-    return x + 1 < x;    // signed overflow is UB...
-}
-// ...so the compiler may assume x + 1 > x and compile this to: return false;
-```
-
-Another:
-
-```cpp
-int f(int* p) {
-    int v = *p;          // if p were null this is UB
-    if (!p) return 0;    // so this check can be deleted
+int hp_of(Enemy* e) {
+    int v = e->hp;       // if e were null this is UB
+    if (!e) return 0;    // so this check can be deleted
     return v;
 }
 ```
 
 The result is not a crash at the bad line. It is code that does something you never wrote, sometimes far from the cause. That is why UB must be prevented, not just tested for.
-
-![Catalogue of common UB cases](/diagrams/cpp-systems/08-ub/01-ub-catalogue.png)
 
 ## Aliasing and bit_cast
 
@@ -58,16 +93,11 @@ Two pointers **alias** when they refer to the same memory. The **strict aliasing
 ```cpp
 float f = 1.0f;
 uint32_t bits = *reinterpret_cast<uint32_t*>(&f);  // UB
+uint32_t a = std::bit_cast<uint32_t>(f);           // C++20, legal
+uint32_t b; std::memcpy(&b, &f, sizeof b);         // legal, compiles to one move
 ```
 
-Legal ways to look at the bytes:
-
-```cpp
-uint32_t a = std::bit_cast<uint32_t>(f);   // C++20, same size required
-uint32_t b; std::memcpy(&b, &f, sizeof b); // compiles to one move
-```
-
-Both give `0x3F800000` for 1.0f and cost nothing at runtime.
+Save files and network packets are full of this: bytes that must become floats and ints. `memcpy` and `bit_cast` are the legal ways.
 
 ## Finding UB with sanitizers
 
@@ -78,22 +108,31 @@ A **sanitizer** is a compiler mode that adds runtime checks to your program.
 - **ThreadSanitizer** (`-fsanitize=thread`): data races. Cannot be combined with ASan.
 
 ```bash
-g++ -std=c++20 -g -O1 -fsanitize=address,undefined app.cpp
+g++ -std=c++20 -g -O1 -fsanitize=address,undefined game.cpp
 ./a.out   # prints the exact line and a stack trace on the first error
 ```
 
-They slow the program by roughly 2-15 times, so use them in tests and CI, not production. Note that this site's runner does not enable sanitizers, so run them locally.
+They slow the program by roughly 2-15 times, so use them in test builds and CI, not in the shipped game. This site's runner does not enable sanitizers, so run them locally.
 
 ## Type punning and std::launder
 
-**Type punning** means reading the bytes of an object as a different type, such as the bits of a float as an integer. In C++ the legal methods are `std::memcpy`, `std::bit_cast`, and access through `char`, `unsigned char` or `std::byte`. Writing one member of a `union` and reading another is UB in C++ (GCC allows it as an extension, but do not rely on it).
+**Type punning** means reading the bytes of an object as a different type. In C++ the legal methods are `std::memcpy`, `std::bit_cast`, and access through `char`, `unsigned char` or `std::byte`. Writing one member of a `union` and reading another is UB in C++ (GCC allows it as an extension, but do not rely on it).
 
-`std::launder(p)` is a rare tool: when you create a new object in storage that held an old object (with placement `new`) and the old object had `const` or reference members, `std::launder` gives a pointer the compiler must treat as pointing to the new object. You will meet it in custom allocators and containers, almost never elsewhere.
+`std::launder(p)` is a rare tool: when you create a new object with placement `new` in storage that held an old object with `const` or reference members, `std::launder` gives a pointer the compiler must treat as pointing to the new object. You will meet it in custom allocators and containers, almost never elsewhere.
 
 <MCQ
   id="concept-check"
-  prompt="Which of these is undefined behaviour?"
+  prompt="Which of these is undefined behaviour in the score code?"
   options={["unsigned u = 0; u - 1;", "int x = INT_MAX; x + 1;", "std::bit_cast<uint32_t>(1.0f)", "Reading a float through an unsigned char*"]}
   answer={1}
   explanation="Signed overflow is UB. Unsigned arithmetic wraps, bit_cast is legal, and char-type access is allowed."
+/>
+
+<MCQ
+  id="concept-debug-release"
+  prompt="A bug appears only in the release build and disappears when you add a printf to look at it. What is the most likely cause?"
+  options={["A compiler bug", "Undefined behaviour: the optimized code depends on how the compiler arranged things, and the printf changed that", "The release build has fewer features", "The printf fixed the bug"]}
+  answer={1}
+  explanation="Bugs that move when you add logging are the classic sign of UB (uninitialized reads, out-of-bounds writes, overflow). Compiler bugs exist but are far rarer. Run the sanitizers."
+  devices={["phone", "desktop"]}
 />

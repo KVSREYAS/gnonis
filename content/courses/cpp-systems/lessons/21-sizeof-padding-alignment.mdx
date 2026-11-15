@@ -1,25 +1,86 @@
 ---
 id: cpp-systems/06-layout/01-sizeof-padding-alignment
 title: "sizeof, Padding and Alignment"
-estMinutes: 7
+estMinutes: 12
 xp: 90
-fun: 3
-missionIntro: "Every type has an alignment. The compiler pads structs to keep members aligned, and member order changes the size."
+fun: 5
+missionIntro: "A save file written by dumping the Particle struct to disk breaks when someone adds a member, and the struct is nearly half padding. Every type has an alignment; the compiler pads structs to keep members aligned, and member order changes the size."
 keyIdeas:
   - "Each member sits at an offset that's a multiple of its alignment, and the struct size rounds up to the largest alignment."
   - "Ordering members from largest to smallest alignment minimises padding."
   - "alignas raises alignment, for example alignas(64) to give an object its own cache line."
 ---
 
-## Measure it
+## The feature: the enemy component
 
+Each enemy has a small "state" component the AI updates every frame. A wave can hold 50,000 of them, and the AI walks all of them every frame.
 
+## The careless version
+
+```cpp
+#include <cstddef>
+#include <cstdio>
+
+struct EnemyState {
+    bool     aggro;      // chasing the player?
+    double   last_seen;  // time the player was last seen
+    bool     stunned;
+    int      target_id;
+    bool     fleeing;
+    short    path_step;
+};
+
+int main() {
+    std::printf("sizeof %zu, alignof %zu\n", sizeof(EnemyState), alignof(EnemyState));
+    std::printf("offsets: aggro %zu, last_seen %zu, stunned %zu, target_id %zu, fleeing %zu, path_step %zu\n",
+        offsetof(EnemyState, aggro), offsetof(EnemyState, last_seen), offsetof(EnemyState, stunned),
+        offsetof(EnemyState, target_id), offsetof(EnemyState, fleeing), offsetof(EnemyState, path_step));
+    std::printf("useful bytes: %zu\n", sizeof(bool) * 3 + sizeof(double) + sizeof(int) + sizeof(short));
+}
+```
+```text
+sizeof 32, alignof 8
+offsets: aggro 0, last_seen 8, stunned 16, target_id 20, fleeing 24, path_step 26
+useful bytes: 17
+```
+
+## What went wrong
+
+17 useful bytes take 32. `aggro` sits at 0, but `last_seen` is a `double`, which must start at a multiple of 8: 7 bytes of padding. `target_id` must start at a multiple of 4: 3 more. At the end, the size rounds up to a multiple of 8. Nearly half the struct is padding, so 50,000 enemies drag 750 KB of nothing through the cache every frame.
+
+The second problem shows up later: someone writes the save file with `fwrite(&state, sizeof state, 1, f)`. The padding bytes contain whatever was in memory, and adding a member shifts every offset, so old save files no longer load.
+
+## The fix: order by alignment
+
+```cpp
+#include <cstdio>
+
+struct EnemyState {
+    double   last_seen;   // 8-byte members first
+    int      target_id;   // then 4
+    short    path_step;   // then 2
+    bool     aggro;       // then 1
+    bool     stunned;
+    bool     fleeing;
+};
+
+int main() {
+    std::printf("sizeof %zu\n", sizeof(EnemyState));
+}
+```
+```text
+sizeof 24
+```
+
+Same members, 24 bytes instead of 32. Only 7 bytes of padding are left (at the end, so arrays stay 8-aligned).
 
 ![Byte-by-byte layout of struct A versus struct B, padding bytes shaded grey](/diagrams/cpp-systems/06-layout/01-sizeof-padding-alignment.png)
 
+For save files, write each field explicitly in a fixed order and size (and a version number), never the raw struct.
+
 <Trace
   id="padding"
-  prompt="x86-64: int is 4-aligned, double is 8-aligned."
+  prompt="x86-64: int is 4-aligned, double is 8-aligned. Lay out four small components."
   code={"#include <cstdio>\n#include <cstddef>\nstruct A { char c; int i; char d; };\nstruct B { int i; char c; char d; };\nstruct C { char c; double x; int i; };\nstruct alignas(64) D { int counter; };\nint main() {\n    std::printf(\"%zu %zu %zu %zu %zu\", sizeof(A), sizeof(B), sizeof(C), offsetof(C, x), sizeof(D));\n}"}
   steps={[{"line": 3, "note": "c@0, pad 3, i@4, d@8, pad to 12"}, {"line": 4, "note": "i@0, c@4, d@5, pad to 8"}, {"line": 5, "note": "c@0, pad 7, x@8, i@16, pad to 24"}, {"line": 6, "note": "alignas(64) rounds size to 64"}]}
   question="What does it print?"
@@ -30,7 +91,7 @@ keyIdeas:
 
 <Predict
   id="reorder-c"
-  prompt={"Reorder `struct C { char c; double x; int i; }` optimally (double, int, char). New sizeof?"}
+  prompt="Reorder `struct C { char c; double x; int i; }` optimally (double, int, char). New sizeof?"
   answer={16}
   tolerance={{"mode": "absolute", "value": 0}}
   unit="bytes"
@@ -38,17 +99,40 @@ keyIdeas:
   devices={["phone", "desktop"]}
 />
 
-## Why alignment
+## Why alignment exists
 
-Misaligned loads can be slower, split across cache lines, or fault on some ISAs. SIMD loads like `_mm256_load_ps` require 32-byte alignment.
+A misaligned load can be slower, can span two cache lines, and on some CPUs faults. SIMD loads like `_mm256_load_ps` require 32-byte alignment. The compiler pads so that every member of every object is aligned without you thinking about it.
 
 Sources: [cppreference: object alignment](https://en.cppreference.com/w/cpp/language/object#Alignment), [The Lost Art of Structure Packing (Eric S. Raymond)](http://www.catb.org/esr/structure-packing/)
 
 <MCQ
   id="alignof-q"
-  prompt="alignof(std::max_align_t) on x86-64 Linux, which is also what malloc guarantees?"
+  prompt="alignof(std::max_align_t) on x86-64 Linux, which is also what malloc guarantees for the particle buffers?"
   options={["4", "8", "16", "64"]}
   answer={2}
   explanation="16 bytes on x86-64 glibc, so plain new/malloc memory isn't 32- or 64-byte aligned."
   devices={["phone", "desktop"]}
+/>
+
+## When to use it, and when not
+
+- Reorder members in structs you store by the thousand. Check with `sizeof` and a `static_assert(sizeof(EnemyState) == 24)` so a later edit cannot silently grow it.
+- Do not use `#pragma pack` or `__attribute__((packed))` to remove padding in hot structs: misaligned members are slower to read, and taking their address is dangerous. Use packing only for file and network formats, and even there prefer explicit serialization.
+- Smaller types help too: an `int` hp that never exceeds 1,000 fits in a `short`.
+
+## Coding task: pack the particle
+
+The particle system holds 100,000 of these. Make each one smaller without changing what it stores.
+
+<Code
+  id="particle-pack"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Reorder the members of `struct Particle` so that sizeof(Particle) is 24 instead of 32. Keep every member, its name and its type. Then add `static_assert(sizeof(Particle) == 24);` after the struct, so a future edit cannot grow it back."
+  starter={"#include <cstdint>\nstruct Particle {\n    bool         alive;\n    double       age;\n    bool         glowing;\n    float        x;\n    std::uint8_t color;\n    float        y;\n};\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    CHECK(sizeof(Particle) == 24);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <type_traits>\nint main() {\n    CHECK(sizeof(Particle) == 24);\n    Particle p{};\n    p.alive = true; p.age = 1.5; p.glowing = false; p.x = 2.0f; p.color = 200; p.y = -3.0f;\n    CHECK(p.alive && p.age == 1.5 && !p.glowing && p.x == 2.0f && p.color == 200 && p.y == -3.0f);\n    CHECK((std::is_same_v<decltype(p.age), double> && std::is_same_v<decltype(p.color), std::uint8_t>));\n    CHECK((std::is_same_v<decltype(p.x), float> && std::is_same_v<decltype(p.alive), bool>));\n    return 0;\n}\n"}
+  solution={"#include <cstdint>\nstruct Particle {\n    double       age;\n    float        x;\n    float        y;\n    bool         alive;\n    bool         glowing;\n    std::uint8_t color;\n};\nstatic_assert(sizeof(Particle) == 24);\n"}
+  hints={["The members are age (double, 8 bytes), x and y (float, 4 each), alive and glowing (bool, 1 each) and color (uint8_t, 1).", "Largest alignment first: age, then x and y, then the three 1-byte members. 19 bytes, rounded up to a multiple of 8."]}
+  explanation="8 + 4 + 4 + 3 = 19 bytes, rounded up to 24 for the double's alignment. The original order took 32 bytes, 13 of them padding. The static_assert turns the size into a checked contract."
 />

@@ -1,34 +1,172 @@
 ---
 id: cpp-systems/01-lifetime/03-lifetime-and-dangling
 title: "Lifetimes and Dangling References"
-estMinutes: 7
+estMinutes: 14
 xp: 90
-fun: 3
-missionIntro: "string_view, references and iterators don't own anything. If the owner is destroyed first, the view refers to freed memory."
+fun: 5
+missionIntro: "The boss name on the health bar turns to garbage, and the homing missile chases freed memory. string_view, references and pointers don't own anything: if the owner dies first, they dangle."
 keyIdeas:
   - "Non-owning types (T&, T*, string_view, span, iterators) must not outlive what they point to."
+  - "A std::vector moves its elements when it grows, so pointers and references to elements dangle after push_back."
   - "Binding a temporary to const T& (or T&&) extends its lifetime only for that direct binding."
-  - "Returning a reference or view to a local or a temporary dangles: it compiles, then it's undefined behaviour."
+  - "Store ids or indices, not pointers, for things that can die or move. Return owning values when in doubt."
 ---
 
-## Views don't own
+## The feature: the boss health bar
 
-`std::string_view` is a pointer and a length. If the `std::string` it views dies or reallocates, the view dangles. The same goes for spans, iterators after `push_back`, and references to vector elements.
+When the boss appears, the HUD shows its name above a health bar. The name is built at spawn time ("Slime King, Lv 12"). The HUD stores it in a `std::string_view`, a cheap read-only view of text.
+
+`std::string_view` is just a pointer to characters and a length. It does not own the text. It is great for passing text to functions without copying, and dangerous to store.
+
+## The careless version: a view of a temporary
+
+```cpp
+#include <cstdio>
+#include <string>
+#include <string_view>
+
+std::string boss_title(int level) {
+    return "Slime King, Lv " + std::to_string(level);
+}
+
+struct Hud {
+    std::string_view boss_name;     // non-owning
+};
+
+int main() {
+    Hud hud;
+    hud.boss_name = boss_title(12);   // view of a temporary string
+    std::string label(hud.boss_name); // the HUD copies the text to draw it
+    std::printf("%s\n", label.c_str());
+}
+```
+```text
+==1==ERROR: AddressSanitizer: heap-use-after-free on address 0x503000000040 at pc 0x7f564c4f2936 bp 0x7ffd39346ac0 sp 0x7ffd39346280
+READ of size 17 at 0x503000000040 thread T0
+SUMMARY: AddressSanitizer: heap-use-after-free ../../../../src/libsanitizer/sanitizer_common/sanitizer_common_interceptors_memintrinsics.inc:115 in memcpy
+```
+
+## What went wrong
+
+`boss_title(12)` returns a temporary `std::string`. Its text lives in a heap buffer (the title is too long for the small-string buffer inside the string object). The view points into that buffer.
+
+The temporary dies at the end of the full expression, the `;` on that line. Its destructor frees the buffer. One line later the HUD reads freed memory. In a normal build the bar might show the right name, garbage, or the name of whatever was allocated next. AddressSanitizer reports the exact line.
+
+The general rule: a **non-owning** thing (`T&`, `T*`, `std::string_view`, `std::span`, an iterator) must never outlive the object it refers to. Nothing in the language checks that for you.
 
 ![A string_view pointing into a std::string's heap buffer that has been freed](/diagrams/cpp-systems/01-lifetime/03-lifetime-and-dangling.png)
+
+## The fix: own what you store
+
+Views are for **parameters** and short local use. Members that must stay valid store an owning `std::string`:
+
+```cpp
+#include <cstdio>
+#include <string>
+#include <string_view>
+
+std::string boss_title(int level) { return "Slime King, Lv " + std::to_string(level); }
+
+void draw_label(std::string_view text) {       // view as a parameter: fine
+    std::printf("[%.*s]\n", int(text.size()), text.data());
+}
+
+struct Hud {
+    std::string boss_name;                     // owns its copy
+};
+
+int main() {
+    Hud hud;
+    hud.boss_name = boss_title(12);            // moved into the member
+    draw_label(hud.boss_name);
+}
+```
+```text
+[Slime King, Lv 12]
+```
+
+During the call `draw_label(hud.boss_name)`, the string is alive for the whole call, so the view is safe.
 
 <SpotBug
   id="sv-dangle"
   prompt="Which line creates the dangling view?"
-  code={"#include <string>\n#include <string_view>\nstd::string make_name() { return \"Carl Johnson\"; }\nint main() {\n    std::string_view sv = make_name();\n    return sv.size();\n}"}
+  code={"#include <string>\n#include <string_view>\nstd::string boss_name() { return \"The Slime King, Devourer of Tiles\"; }\nint main() {\n    std::string_view sv = boss_name();\n    return sv.size();\n}"}
   bugLine={5}
-  explanation="make_name() returns a temporary string that dies at the end of the full expression. sv points into freed memory. Lifetime extension doesn't apply to views."
+  explanation="boss_name() returns a temporary string that dies at the end of the full expression. sv points into freed memory. Lifetime extension does not apply to views."
   devices={["phone", "desktop"]}
 />
 
+## The second bug: a reference into a growing vector
+
+The homing missile locks onto an enemy by keeping a reference to it. Then the spawner adds more enemies:
+
+```cpp
+#include <cstdio>
+#include <vector>
+
+struct Enemy { int id; float x; };
+
+int main() {
+    std::vector<Enemy> enemies = {{1, 5.0f}, {2, 9.0f}};
+    Enemy& target = enemies[0];            // missile locks on enemy 1
+    enemies.push_back({3, 12.0f});         // spawner adds one: vector grows
+    std::printf("missile flies to x=%.1f\n", target.x);
+}
+```
+```text
+==1==ERROR: AddressSanitizer: heap-use-after-free on address 0x502000000014 at pc 0x555e5a8536c0 bp 0x7ffc4ae18490 sp 0x7ffc4ae18488
+READ of size 4 at 0x502000000014 thread T0
+SUMMARY: AddressSanitizer: heap-use-after-free game.cpp:10 in main
+```
+
+A `std::vector` keeps its elements in one block. When it is full and you `push_back`, it allocates a bigger block, moves every element there, and frees the old block. Every pointer, reference and iterator to an element now points into freed memory.
+
+## The fix: refer by id
+
+Things that can move or die should be referred to by a stable **id**, looked up when needed. The lookup can fail, and the code must handle that (the target died: the missile flies straight).
+
+```cpp
+#include <cstdio>
+#include <vector>
+
+struct Enemy { int id; float x; };
+
+Enemy* find(std::vector<Enemy>& v, int id) {
+    for (auto& e : v) if (e.id == id) return &e;
+    return nullptr;
+}
+
+int main() {
+    std::vector<Enemy> enemies = {{1, 5.0f}, {2, 9.0f}};
+    int target_id = 1;                     // missile stores the id
+    enemies.push_back({3, 12.0f});
+    if (Enemy* t = find(enemies, target_id))   // look up each frame
+        std::printf("missile flies to x=%.1f\n", t->x);
+    enemies.erase(enemies.begin());        // enemy 1 dies
+    if (!find(enemies, target_id)) std::printf("target gone, fly straight\n");
+}
+```
+```text
+missile flies to x=5.0
+target gone, fly straight
+```
+
+The pointer from `find` is used immediately and never stored, so it cannot go stale. (The ownership module shows `std::weak_ptr`, which does the same job for heap objects.)
+
+## Temporaries and lifetime extension
+
+A **temporary** normally dies at the `;` that ends its full expression. One exception: binding a temporary **directly** to a `const T&` (or `T&&`) local extends its life to the end of that reference's scope:
+
+```cpp
+const std::string& title = boss_title(12);   // OK: temporary lives as long as title
+std::string_view view = boss_title(12);      // dangles: a view is not a reference
+```
+
+The extension only applies to that direct binding. It does not pass through a function that takes a reference and returns it.
+
 <MCQ
   id="extension"
-  prompt="Which of these keeps the temporary alive until the end of the scope?"
+  prompt="Which of these keeps the temporary boss title alive until the end of the scope?"
   options={["`std::string_view v = std::string(\"x\");`", "`const std::string& r = std::string(\"x\");`", "`auto* p = &std::string(\"x\");` (doesn't compile)", "`std::string& r = std::string(\"x\");` (doesn't compile)"]}
   answer={1}
   explanation="Binding a prvalue directly to a const lvalue reference (or an rvalue reference) extends its lifetime to the reference's lifetime."
@@ -37,15 +175,39 @@ keyIdeas:
 
 ## Return by value
 
-When in doubt, return owning values. Copy elision and moves make it cheap.
+When in doubt, return owning values: `std::string boss_title()`, not `const std::string&` or `std::string_view`. The move module shows why that is cheap: the compiler builds the result directly in the caller (copy elision) or moves it.
 
 Sources: [cppreference: reference initialization, lifetime](https://en.cppreference.com/w/cpp/language/reference_initialization), Core Guidelines F.43, [CppCon 2018: Nicolai Josuttis, string_view](https://www.youtube.com/watch?v=sVIi9y_sZ5o)
 
 <MCQ
   id="return-ref"
-  prompt={"`const std::string& longest(const std::string& a, const std::string& b)` is called as `auto& r = longest(\"x\", \"yy\");`. Is `r` safe to use on the next line?"}
+  prompt="The HUD picks the longer of two labels: `const std::string& longest(const std::string& a, const std::string& b)` is called as `auto& r = longest(\"HP\", \"SHIELD\");`. Is `r` safe to use on the next line?"
   options={["Yes", "No: the two temporary strings die at the end of the full expression, so r dangles", "Only with -O2", "Only if the strings are short (SSO)"]}
   answer={1}
   explanation="The temporaries are bound to the parameters, not to r. Their lifetime ends at the semicolon."
   devices={["phone", "desktop"]}
+/>
+
+## When to use it, and when not
+
+- **Views and references as parameters**: yes. The caller keeps the object alive for the whole call.
+- **Views and references as members, or stored across frames**: only when you can prove the owner outlives the holder (a reference to the `Game` object that owns everything). Otherwise store an owning value or an id.
+- **Pointers to vector elements**: only between changes to the vector. Call `reserve()` up front if you must, or use indices.
+- **Pointers to things that can die** (enemies, projectiles): store an id or a `std::weak_ptr`.
+
+## Coding task: missiles that lock on by id
+
+Build the id lookup the homing missile uses. The tests spawn 100 enemies to force the vector to grow many times.
+
+<Code
+  id="missile-lock"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `class World` holding `std::vector<Enemy> enemies` (Enemy is given). Add `int spawn(float x)` that appends an enemy with the next id (1, 2, 3, ...) and returns the id, `Enemy* find(int id)` that returns a pointer to the living enemy with that id or nullptr, and `void kill(int id)` that erases it. Then write `float missile_target_x(World& w, int target_id, float fallback)`: the target's x if it is alive, otherwise fallback."
+  starter={"#include <vector>\nstruct Enemy { int id; float x; };\nclass World {\npublic:\n    std::vector<Enemy> enemies;\n    int spawn(float x) { enemies.push_back({0, x}); return 0; }\n    Enemy* find(int id) { return nullptr; }\n    void kill(int id) {}\n};\nfloat missile_target_x(World& w, int target_id, float fallback) { return fallback; }\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    World w;\n    int a = w.spawn(5.0f);\n    CHECK(w.find(a) != nullptr && w.find(a)->x == 5.0f);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\nint main() {\n    World w;\n    int a = w.spawn(5.0f);\n    int b = w.spawn(9.0f);\n    CHECK(a == 1 && b == 2);\n    for (int i = 0; i < 100; ++i) w.spawn(float(i));\n    CHECK(w.find(a) != nullptr && w.find(a)->x == 5.0f);\n    CHECK(missile_target_x(w, b, -1.0f) == 9.0f);\n    w.kill(a);\n    CHECK(w.find(a) == nullptr && w.enemies.size() == 101);\n    CHECK(missile_target_x(w, a, -1.0f) == -1.0f);\n    CHECK(w.find(b) != nullptr && w.find(b)->x == 9.0f);\n    int c = w.spawn(1.5f);\n    CHECK(c == 103 && w.find(c)->x == 1.5f);\n    CHECK(w.find(999) == nullptr);\n    return 0;\n}\n"}
+  solution={"#include <vector>\nstruct Enemy { int id; float x; };\nclass World {\npublic:\n    std::vector<Enemy> enemies;\n    int spawn(float x) { enemies.push_back({next_id_, x}); return next_id_++; }\n    Enemy* find(int id) {\n        for (auto& e : enemies) if (e.id == id) return &e;\n        return nullptr;\n    }\n    void kill(int id) { std::erase_if(enemies, [id](const Enemy& e) { return e.id == id; }); }\nprivate:\n    int next_id_ = 1;\n};\nfloat missile_target_x(World& w, int target_id, float fallback) {\n    Enemy* t = w.find(target_id);\n    return t ? t->x : fallback;\n}\n"}
+  hints={["Keep `int next_id_ = 1;` in World.", "find loops over enemies and returns &e on a match. Never store that pointer.", "kill can use std::erase_if (C++20) or a loop with erase."]}
+  explanation="Ids stay valid while the vector grows, shrinks and reorders. The pointer from find is used at once and never kept, so it cannot dangle."
 />

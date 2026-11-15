@@ -1,0 +1,221 @@
+---
+id: cpp-systems/oop/06-stack-heap-and-pointers
+title: "Stack, Heap and Raw Pointers"
+estMinutes: 14
+xp: 90
+fun: 5
+missionIntro: "A fireball must keep flying after the function that cast it returns. Where objects live (stack or heap), what a pointer is, and the three classic ways new and delete go wrong."
+keyIdeas:
+  - "Locals live on the stack and die when their scope ends. Objects made with new live on the heap until delete."
+  - "A pointer holds an address. `&x` takes an address, `*p` and `p->` reach the object, nullptr means no object."
+  - "Forgetting delete leaks. Deleting twice, or using an object after delete, is undefined behaviour and often a crash."
+  - "AddressSanitizer (-fsanitize=address) catches all three and points at the line."
+---
+
+## The feature: fireballs
+
+The player presses a key and casts a fireball. The function `cast_fireball()` runs once, but the fireball must keep flying for the next 2 seconds, long after that function has returned. The game loop updates it every frame.
+
+So the fireball object has to **outlive the function that created it**. To see why that is a problem, you need to know where C++ objects live.
+
+## Two places objects live
+
+- **The stack.** Every function call gets a block of memory for its local variables. When the function returns, the whole block is reused by the next call. Locals are created and destroyed automatically and very fast. Their lifetime is their scope.
+- **The heap** (also called the free store). A large pool of memory you request explicitly with `new`. An object made with `new` stays alive until you `delete` it, no matter which function is running. Getting heap memory is slower than the stack, and remembering to give it back is your job.
+
+A fireball made as a local in `cast_fireball()` is on the stack, so it dies when the function returns.
+
+![Stack frame for cast_fireball disappears on return while a heap fireball stays alive](/diagrams/cpp-systems/oop/06-stack-heap-and-pointers.png)
+
+## Pointers in one card
+
+A **pointer** is a variable that holds the address of an object.
+
+```cpp
+#include <cstdio>
+
+struct Fireball { float x = 0; int damage = 25; };
+
+int main() {
+    Fireball f;
+    Fireball* p = &f;          // & takes the address of f
+    p->x = 3.5f;               // -> reaches a member through the pointer
+    (*p).damage = 40;          // * gives the object itself; same as p->damage
+    std::printf("x=%.1f damage=%d\n", f.x, f.damage);
+    Fireball* none = nullptr;  // points at nothing
+    if (none == nullptr) std::printf("no target\n");
+}
+```
+```text
+x=3.5 damage=40
+no target
+```
+
+A pointer does not own or protect the object. It is only an address. If the object dies, the pointer still holds the old address. That is called a **dangling** pointer.
+
+## The careless version: return a pointer to a local
+
+```cpp
+#include <cstdio>
+
+struct Fireball { float x = 0; int damage = 25; };
+
+Fireball* cast_fireball() {
+    Fireball f;          // lives on cast_fireball's stack frame
+    f.damage = 40;
+    return &f;           // address of something about to die
+}
+
+int main() {
+    Fireball* fb = cast_fireball();
+    std::printf("damage %d\n", fb->damage);
+}
+```
+
+g++ warns: `function returns address of local variable`. It goes further: since using that address is undefined behaviour anyway, GCC compiles `return &f;` as returning a null pointer. Built with the sanitizers, the run stops at the read:
+
+```text
+game.cpp:13:16: runtime error: member access within null pointer of type 'struct Fireball'
+```
+
+Other compilers, or other optimization levels, return the real dead address instead, and the program may print 40, 0 or garbage depending on what reused that stack memory. It "works" until it doesn't, which is the worst kind of bug.
+
+## The fix: create it on the heap
+
+`new Fireball` creates the object on the heap and returns a pointer to it. It survives the return. Now the game owns it and must `delete` it when the fireball hits something or times out.
+
+```cpp
+#include <cstdio>
+
+struct Fireball {
+    float x = 0;
+    int damage = 25;
+    ~Fireball() { std::printf("fireball gone\n"); }
+};
+
+Fireball* cast_fireball() {
+    Fireball* f = new Fireball;   // heap: lives until delete
+    f->damage = 40;
+    return f;
+}
+
+int main() {
+    Fireball* fb = cast_fireball();
+    std::printf("damage %d\n", fb->damage);
+    delete fb;                    // runs ~Fireball, returns the memory
+    fb = nullptr;                 // so nobody uses the old address
+}
+```
+```text
+damage 40
+fireball gone
+```
+
+## Mistake 1: forgetting delete (a leak)
+
+The fireball hits a wall. The collision code removes the pointer from the list but forgets `delete`. Nothing crashes. The memory is just never returned.
+
+```cpp
+#include <vector>
+
+struct Fireball { float x = 0, y = 0, vx = 0, vy = 0; int damage = 25; };
+
+int main() {
+    std::vector<Fireball*> live;
+    for (int frame = 0; frame < 100; ++frame) {
+        live.push_back(new Fireball);   // one cast per frame
+        live.pop_back();                // "hit a wall": removed, never deleted
+    }
+}
+```
+```text
+==1==ERROR: LeakSanitizer: detected memory leaks
+Direct leak of 2000 byte(s) in 100 object(s) allocated from:
+SUMMARY: AddressSanitizer: 2000 byte(s) leaked in 100 allocation(s).
+```
+
+100 fireballs, 20 bytes each, gone. A real game casts thousands per level and runs for hours, so a leak like this slowly eats memory until the game stutters or the OS kills it. LeakSanitizer (part of ASan) found it.
+
+## Mistake 2: deleting twice
+
+The fireball hits a slime and a wall in the same frame. Both handlers delete it.
+
+```cpp
+struct Fireball { int damage = 25; };
+
+void on_hit_enemy(Fireball* f) { delete f; }
+void on_hit_wall(Fireball* f)  { delete f; }
+
+int main() {
+    Fireball* f = new Fireball;
+    on_hit_enemy(f);
+    on_hit_wall(f);      // same address, second delete
+}
+```
+```text
+==1==ERROR: AddressSanitizer: attempting double-free on 0x502000000010 in thread T0:
+SUMMARY: AddressSanitizer: double-free ../../../../src/libsanitizer/asan/asan_new_delete.cpp:164 in operator delete(void*, unsigned long)
+```
+
+Without ASan, glibc often catches this too and aborts with `free(): double free detected`. Sometimes it doesn't, and the heap is silently corrupted until a crash somewhere unrelated.
+
+## Mistake 3: use after delete
+
+The homing missile keeps a raw pointer to its target. The target dies and is deleted. Next frame the missile reads the target's position.
+
+```cpp
+#include <cstdio>
+
+struct Bat { float x = 5, y = 7; };
+
+int main() {
+    Bat* bat = new Bat;
+    Bat* missile_target = bat;   // second pointer to the same bat
+    delete bat;                  // the bat dies
+    bat = nullptr;               // this pointer is safe now, the other one is not
+    std::printf("%.1f\n", missile_target->x);
+}
+```
+```text
+==1==ERROR: AddressSanitizer: heap-use-after-free on address 0x502000000010 at pc 0x55a625fa62da bp 0x7ffc234967f0 sp 0x7ffc234967e8
+SUMMARY: AddressSanitizer: heap-use-after-free game.cpp:10 in main
+```
+
+Setting `bat = nullptr` did nothing for `missile_target`. Every copy of a raw pointer has to know when the object dies. The ownership module fixes this properly with `std::unique_ptr` and `std::weak_ptr`.
+
+## Arrays: new[] needs delete[]
+
+`new Fireball[8]` creates 8 objects in a row and returns a pointer to the first. It must be released with `delete[]`, not `delete`. Mixing them is undefined behaviour. In modern code you almost never write `new[]`: `std::vector<Fireball>` does the same thing and frees itself.
+
+<SpotBug
+  id="wrong-delete"
+  prompt="The particle buffer is freed when the level ends. Which line is undefined behaviour?"
+  code={"struct Spark { float x, y, life; };\nint main() {\n    Spark* sparks = new Spark[512];\n    sparks[0].life = 1.0f;\n    delete sparks;\n}"}
+  bugLine={5}
+  explanation="Memory from new[] must be released with delete[]. Plain delete on an array is undefined behaviour, and ASan reports it as alloc-dealloc-mismatch. Better still, use std::vector and write no delete at all."
+  devices={["phone", "desktop"]}
+/>
+
+## When to use it, and when not
+
+- Use **stack** objects by default. They are fast and clean themselves up. Most game objects that only live during one function (a temporary `Vec2`, a raycast result) belong there.
+- Use the **heap** when an object must outlive its scope, when its size is only known at run time, or when it is too big for the stack (a 4 MB level grid).
+- Raw `new` and `delete` are shown here so you understand what goes wrong. Real code wraps heap objects in owners: `std::vector`, `std::unique_ptr`, `std::shared_ptr`. Those come in the next modules.
+- Raw pointers are still fine for **non-owning** access: "look at this enemy" without being responsible for deleting it.
+
+## Coding task: fix the fireball leak
+
+The list that owns the live fireballs. The tests count live fireballs, so every missing delete shows up.
+
+<Code
+  id="fireball-pool"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="The fireball list leaks. `Fireball` is given: it counts live fireballs in a global `g_live`. Write `class FireballList` that owns raw `Fireball*` pointers in a `std::vector`. `void cast(float x)` creates a fireball with `new`. `void remove_hit(float wall_x)` removes and deletes every fireball whose x is greater than or equal to wall_x. `std::size_t size() const`. The destructor must delete every remaining fireball. Copying a FireballList must not compile (delete the copy operations), so two lists can never delete the same fireballs."
+  starter={"#include <cstddef>\n#include <vector>\nextern int g_live;\nstruct Fireball {\n    float x;\n    explicit Fireball(float x0) : x(x0) { ++g_live; }\n    ~Fireball() { --g_live; }\n};\nclass FireballList {\npublic:\n    void cast(float x) { list_.push_back(new Fireball(x)); }\n    void remove_hit(float wall_x) {\n        std::vector<Fireball*> keep;\n        for (Fireball* f : list_)\n            if (f->x < wall_x) keep.push_back(f);   // hit ones are dropped... but never deleted\n        list_ = keep;\n    }\n    std::size_t size() const { return list_.size(); }\nprivate:\n    std::vector<Fireball*> list_;\n};\n"}
+  visibleTests={"#include \"check.h\"\nint g_live = 0;\nint main() {\n    {\n        FireballList l;\n        l.cast(1); l.cast(9);\n        l.remove_hit(5);\n        CHECK(l.size() == 1 && g_live == 1);\n    }\n    CHECK(g_live == 0);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <type_traits>\nint g_live = 0;\nint main() {\n    {\n        FireballList l;\n        for (int i = 0; i < 10; ++i) l.cast(float(i));\n        CHECK(l.size() == 10 && g_live == 10);\n        l.remove_hit(7);\n        CHECK(l.size() == 7 && g_live == 7);\n        l.remove_hit(100);\n        CHECK(l.size() == 7 && g_live == 7);\n        l.remove_hit(0);\n        CHECK(l.size() == 0 && g_live == 0);\n        l.cast(3);\n    }\n    CHECK(g_live == 0);\n    CHECK(!std::is_copy_constructible_v<FireballList>);\n    CHECK(!std::is_copy_assignable_v<FireballList>);\n    return 0;\n}\n"}
+  solution={"#include <cstddef>\n#include <vector>\nextern int g_live;\nstruct Fireball {\n    float x;\n    explicit Fireball(float x0) : x(x0) { ++g_live; }\n    ~Fireball() { --g_live; }\n};\nclass FireballList {\npublic:\n    FireballList() = default;\n    FireballList(const FireballList&) = delete;\n    FireballList& operator=(const FireballList&) = delete;\n    ~FireballList() { for (Fireball* f : list_) delete f; }\n    void cast(float x) { list_.push_back(new Fireball(x)); }\n    void remove_hit(float wall_x) {\n        std::vector<Fireball*> keep;\n        for (Fireball* f : list_) {\n            if (f->x >= wall_x) delete f;\n            else keep.push_back(f);\n        }\n        list_ = keep;\n    }\n    std::size_t size() const { return list_.size(); }\nprivate:\n    std::vector<Fireball*> list_;\n};\n"}
+  hints={["Loop over the vector, delete the hit ones, and keep the rest in a new vector.", "The destructor loops and deletes every pointer.", "`FireballList(const FireballList&) = delete;` and the same for operator=."]}
+  explanation="Every new has exactly one delete, in exactly one owner. Deleting the copy operations stops the double-delete you would get if two lists held the same pointers. This is a hand-written version of what std::vector<std::unique_ptr<Fireball>> does for free."
+/>

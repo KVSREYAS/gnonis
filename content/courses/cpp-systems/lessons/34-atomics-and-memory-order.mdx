@@ -1,25 +1,109 @@
 ---
 id: cpp-systems/09-concurrency/02-atomics-and-memory-order
 title: "Atomics and Memory Ordering"
-estMinutes: 9
+estMinutes: 15
 xp: 110
 fun: 5
-missionIntro: "std::atomic makes single operations indivisible. memory_order decides what other memory becomes visible along with them."
+missionIntro: "The loader sets a plain bool when the level is ready, and the main thread may see the flag before the level data. std::atomic makes single operations indivisible; memory_order decides what other memory becomes visible along with them."
 keyIdeas:
   - "seq_cst (the default) is one global order and the easiest to reason about."
   - "release/acquire: everything written before a release-store is visible to a thread whose acquire-load reads that value. This is the message-passing pattern."
   - "relaxed gives atomicity only, which suits counters but never flags that guard other data."
 ---
 
-## Message passing
+## The feature: "level ready" and the progress bar
 
+The loader thread builds the next `Level` and then signals that it is ready. Meanwhile it bumps a "files loaded" counter that the main thread draws as a progress bar.
 
+## The careless version: a plain flag
+
+```cpp
+#include <chrono>
+#include <cstdio>
+#include <thread>
+#include <vector>
+
+struct Level { std::vector<int> tiles; };
+
+Level* next_level = nullptr;
+bool ready = false;                       // plain bool
+int files_loaded = 0;                     // plain int
+
+int main() {
+    std::thread loader([] {
+        for (int i = 0; i < 10; ++i) ++files_loaded;
+        next_level = new Level{std::vector<int>(1024, 1)};
+        ready = true;
+    });
+    for (int frame = 0; frame < 1000 && !ready; ++frame)       // main loop: draw progress
+        std::this_thread::sleep_for(std::chrono::microseconds(100));
+    if (ready) std::printf("level has %zu tiles\n", next_level->tiles.size());
+    loader.join();
+    delete next_level;
+}
+```
+```text
+level has 1024 tiles
+WARNING: ThreadSanitizer: data race (pid=1)
+SUMMARY: ThreadSanitizer: data race game.cpp:16 in operator()
+WARNING: ThreadSanitizer: data race (pid=1)
+SUMMARY: ThreadSanitizer: data race game.cpp:20 in main
+WARNING: ThreadSanitizer: data race (pid=1)
+SUMMARY: ThreadSanitizer: data race /usr/include/c++/14/bits/stl_vector.h:993 in std::vector<int, std::allocator<int> >::size() const
+WARNING: ThreadSanitizer: data race (pid=1)
+SUMMARY: ThreadSanitizer: data race /usr/include/c++/14/bits/stl_vector.h:993 in std::vector<int, std::allocator<int> >::size() const
+```
+
+## What went wrong
+
+ThreadSanitizer reports a **data race**: one thread writes `ready` while the other reads it, with nothing ordering the two. That is undefined behaviour, and in practice it breaks in two ways:
+
+1. **Reordering.** The compiler or CPU may make `ready = true` visible before the writes that built the level. The main thread then reads `next_level` while it is still null or half-built.
+2. **Hoisting.** In a loop like `while (!ready) {}`, the compiler may read `ready` once and never again, because nothing in the loop could change a plain `bool`. The main thread then waits forever.
+
+The output line may print correctly here. That is luck, not correctness, and TSan tells you so.
+
+## The fix: atomics with release and acquire
+
+```cpp
+#include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <thread>
+#include <vector>
+
+struct Level { std::vector<int> tiles; };
+
+Level* next_level = nullptr;
+std::atomic<bool> ready{false};
+std::atomic<int> files_loaded{0};
+
+int main() {
+    std::jthread loader([] {
+        for (int i = 0; i < 10; ++i) files_loaded.fetch_add(1, std::memory_order_relaxed);   // just a count
+        next_level = new Level{std::vector<int>(1024, 1)};
+        ready.store(true, std::memory_order_release);              // publish everything above
+    });
+    while (!ready.load(std::memory_order_acquire))                 // see everything before the release
+        std::this_thread::sleep_for(std::chrono::microseconds(100));
+    std::printf("level has %zu tiles, %d files loaded\n", next_level->tiles.size(), files_loaded.load());
+    loader.join();
+    delete next_level;
+}
+```
+```text
+level has 1024 tiles, 10 files loaded
+```
+
+TSan is quiet. The **release** store on `ready` and the **acquire** load that reads `true` form a pair: every write the loader made before the release (building the level, setting `next_level`) is visible to the main thread after the acquire. That is the **message-passing** pattern.
 
 ![Producer release-store and consumer acquire-load forming a synchronizes-with edge that carries payload=42](/diagrams/cpp-systems/09-concurrency/02-atomics-and-memory-order.png)
 
+The progress counter uses `relaxed`: the main thread only needs a value that is not torn, not any ordering with other data.
+
 <Trace
   id="acq-rel"
-  prompt="Release-store publishes data, and acquire-load receives it."
+  prompt="The level-ready pattern, small: release-store publishes data, and acquire-load receives it."
   code={"#include <atomic>\n#include <cstdio>\n#include <thread>\nint payload = 0;\nstd::atomic<bool> ready{false};\nint main() {\n    std::thread producer([] {\n        payload = 42;\n        ready.store(true, std::memory_order_release);\n    });\n    while (!ready.load(std::memory_order_acquire)) {}\n    std::printf(\"%d\", payload);\n    producer.join();\n}"}
   steps={[{"line": 8, "note": "plain write, sequenced before the release"}, {"line": 9, "note": "release: publishes everything above it"}, {"line": 11, "note": "acquire sees true, so it synchronises with the release"}, {"line": 12, "note": "payload is guaranteed to be 42"}]}
   question="What does it print?"
@@ -30,7 +114,7 @@ keyIdeas:
 
 <MCQ
   id="relaxed-ok"
-  prompt="Where is memory_order_relaxed appropriate?"
+  prompt="Where is memory_order_relaxed appropriate in the game?"
   options={["A ready flag guarding a buffer", "A statistics counter read only at the end, after join", "A spinlock", "Double-checked locking"]}
   answer={1}
   explanation="Only atomicity is needed, with no ordering of other data."
@@ -39,26 +123,52 @@ keyIdeas:
 
 <Predict
   id="lost-updates"
-  prompt={"Two threads each do `++x` 1,000,000 times on a plain int with no sync. The standard says the final value is…? Enter -1 for \"undefined behaviour\"."}
+  prompt="Two loader threads each do `++files_loaded` 1,000,000 times on a plain int with no sync. The standard says the final value is…? Enter -1 for \"undefined behaviour\"."
   answer={-1}
   tolerance={{"mode": "absolute", "value": 0}}
   explanation="A data race is UB. In practice you see numbers below 2,000,000, but the standard gives no guarantee at all."
   devices={["phone", "desktop"]}
 />
 
-## Spinlock
+## When to use it, and when not
+
+- Use `std::atomic` for single values shared between threads: flags, counters, a pointer to published data.
+- Use release/acquire for "I finished writing X, you may read it". Use relaxed only for counters and statistics nobody uses to decide what else to read.
+- When unsure, use the default (`seq_cst`). It is never less correct.
+- If several values must change together (a position and a velocity), an atomic per value is not enough: use a mutex.
+
+## Coding task: a spinlock
 
 Sources: [cppreference: std::memory_order](https://en.cppreference.com/w/cpp/atomic/memory_order), Herb Sutter, [atomic<> Weapons (C++ and Beyond 2012)](https://herbsutter.com/2013/02/11/atomic-weapons-the-c-memory-model-and-modern-hardware/), Williams ch. 5
+
+The audio mixer guards a tiny critical section (swap two buffer pointers) many times per second. A spinlock is the simplest lock built from one atomic.
 
 <Code
   id="spinlock"
   devices={["desktop"]}
   language="cpp"
-  prompt="Implement `class Spinlock` with lock()/unlock() using std::atomic_flag or std::atomic<bool>. Use acquire on lock success and release on unlock, and spin on a relaxed load before retrying the exchange (test-and-test-and-set). Also add `bool try_lock()`. It must work with std::lock_guard."
+  prompt="Implement `class Spinlock` with lock()/unlock() using std::atomic_flag or std::atomic<bool>. Use acquire on lock success and release on unlock, and spin on a relaxed load before retrying the exchange (test-and-test-and-set). Also add `bool try_lock()`. It must work with std::lock_guard (the audio mixer's buffer swap uses it)."
   starter={"#include <atomic>\nclass Spinlock {\npublic:\n    void lock() {}\n    bool try_lock() { return false; }\n    void unlock() {}\n};\n"}
   visibleTests={"#include \"check.h\"\n\n#include <mutex>\nint main() {\n    Spinlock s; { std::lock_guard g(s); }\n    return 0;\n}\n"}
   tests={"#include \"check.h\"\n\n#include <mutex>\n#include <thread>\n#include <vector>\nint main() {\n    Spinlock s; long n = 0;\n    {\n        std::vector<std::jthread> ts;\n        for (int t = 0; t < 4; ++t) ts.emplace_back([&] { for (int i = 0; i < 20000; ++i) { std::lock_guard g(s); ++n; } });\n    }\n    CHECK(n == 80000);\n    CHECK(s.try_lock() && !s.try_lock()); s.unlock(); CHECK(s.try_lock()); s.unlock();\n    return 0;\n}\n"}
   solution={"#include <atomic>\nclass Spinlock {\n    std::atomic<bool> held_{false};\npublic:\n    void lock() {\n        for (;;) {\n            if (!held_.exchange(true, std::memory_order_acquire)) return;\n            while (held_.load(std::memory_order_relaxed)) {}\n        }\n    }\n    bool try_lock() { return !held_.load(std::memory_order_relaxed) && !held_.exchange(true, std::memory_order_acquire); }\n    void unlock() { held_.store(false, std::memory_order_release); }\n};\n"}
   hints={["exchange(true) returns the old value: false means you got the lock.", "Spinning on load avoids hammering the cache line with writes."]}
   explanation="In real code, prefer std::mutex (it parks waiting threads). Spinlocks only win for very short critical sections."
+/>
+
+## Coding task: publish the level
+
+The loader thread finishes a level and hands it over; the main loop checks once per frame and takes it.
+
+<Code
+  id="level-slot"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `class LevelSlot` that hands a finished Level from the loader thread to the main thread. `void publish(Level* lv)` stores the pointer so that everything the loader wrote to *lv is visible to a reader. `Level* try_take()` returns the published level and empties the slot (returns nullptr if nothing is published). Use one std::atomic<Level*> with release on publish and acquire (or acq_rel) on take."
+  starter={"#include <atomic>\n#include <vector>\nstruct Level { std::vector<int> tiles; };\nclass LevelSlot {\npublic:\n    void publish(Level* lv) {}\n    Level* try_take() { return nullptr; }\nprivate:\n    std::atomic<Level*> slot_{nullptr};\n};\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    LevelSlot s;\n    Level lv{{1, 2, 3}};\n    s.publish(&lv);\n    CHECK(s.try_take() == &lv && s.try_take() == nullptr);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <thread>\nint main() {\n    LevelSlot s;\n    CHECK(s.try_take() == nullptr);\n    Level a{{1, 2, 3}};\n    s.publish(&a);\n    CHECK(s.try_take() == &a && s.try_take() == nullptr);\n    for (int round = 0; round < 50; ++round) {\n        Level* got = nullptr;\n        std::jthread loader([&s, round] {\n            Level* lv = new Level{std::vector<int>(256, round)};\n            s.publish(lv);\n        });\n        while (!(got = s.try_take())) std::this_thread::yield();\n        CHECK(got->tiles.size() == 256 && got->tiles[255] == round);\n        delete got;\n    }\n    return 0;\n}\n"}
+  solution={"#include <atomic>\n#include <vector>\nstruct Level { std::vector<int> tiles; };\nclass LevelSlot {\npublic:\n    void publish(Level* lv) { slot_.store(lv, std::memory_order_release); }\n    Level* try_take() { return slot_.exchange(nullptr, std::memory_order_acq_rel); }\nprivate:\n    std::atomic<Level*> slot_{nullptr};\n};\n"}
+  hints={["publish: slot_.store(lv, std::memory_order_release).", "try_take: slot_.exchange(nullptr, std::memory_order_acq_rel) returns the old pointer and empties the slot in one step."]}
+  explanation="exchange makes \"read and empty\" one indivisible operation, so a level can never be taken twice. The release/acquire pair makes the loader's writes to the level visible to whoever takes it."
 />

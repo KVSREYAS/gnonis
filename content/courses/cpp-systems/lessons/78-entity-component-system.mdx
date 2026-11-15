@@ -1,0 +1,158 @@
+---
+id: cpp-systems/07-dod/05-entity-component-system
+title: "Entity-Component-System"
+estMinutes: 16
+xp: 100
+fun: 5
+missionIntro: "The designers want a flying turret, and the class hierarchy has no place for it. An ECS stores game objects as ids plus dense arrays of components, and systems loop over the arrays. Build the core: a sparse-set component pool."
+keyIdeas:
+  - "An entity is an id. A component is plain data. A system is a loop over entities that have certain components."
+  - "Each component type lives in its own dense array, so systems walk contiguous memory."
+  - "A sparse set maps entity id to dense index and back, giving O(1) add, remove (swap-and-pop) and lookup."
+  - "Behaviour comes from which components an entity has, not from its class, so new combinations need no new types."
+---
+
+## The feature: new enemy types without new classes
+
+The designers keep inventing enemies: a slime that flies, a turret that walks, a bat that shoots, a ghost that drops loot. In the OOP module, each enemy kind was a class.
+
+## The careless version: a class per combination
+
+A bat that flies and shoots inherits from both `Flying` and `Shooting`:
+
+```cpp
+#include <cstdio>
+
+struct Enemy    { int hp = 30; };
+struct Flying   : Enemy { float altitude = 5; };
+struct Shooting : Enemy { int ammo = 10; };
+struct ShootingBat : Flying, Shooting { };
+
+void hit_by_arrow(Shooting& s) { s.hp -= 30; }               // combat code sees shooters
+int  health_bar(const Flying& f) { return f.hp; }           // the UI draws flyers' bars
+
+int main() {
+    ShootingBat bat;
+    hit_by_arrow(bat);
+    std::printf("combat says hp %d, health bar shows hp %d\n",
+                static_cast<Shooting&>(bat).hp, health_bar(bat));
+    std::printf("sizeof(ShootingBat) = %zu: two Enemy parts inside\n", sizeof(ShootingBat));
+}
+```
+```text
+combat says hp 0, health bar shows hp 30
+sizeof(ShootingBat) = 16: two Enemy parts inside
+```
+
+## What went wrong
+
+`ShootingBat` contains **two** `Enemy` sub-objects, one through each base, each with its own `hp`. The arrow killed one of them; the health bar reads the other. The bat is dead and alive at once. Virtual inheritance fixes the duplicate but adds its own cost and complexity, and the real problem remains: every new combination (a walking turret, a flying turret) needs a new class, and shared behaviour gets copied between branches.
+
+The hierarchy forces one question ("what is it?") when the game cares about another ("what can it do?"). And the update loop is still a scattered, virtual call per object, which the previous lessons showed is slow.
+
+## The fix: entities, components, systems
+
+- An **entity** is an id: `using Entity = std::uint32_t;`.
+- A **component** is a plain struct of data: `Position`, `Velocity`, `Health`, `Flying`, `Weapon`.
+- Each component type is stored in its own **pool**: a dense array of that component, plus a record of which entity owns each element.
+- A **system** is a loop: the movement system visits every entity that has both Position and Velocity.
+
+A flying turret is an entity with `Position`, `Weapon` and `Flying`. The weapon system and the flying system already handle it. No new type.
+
+## The sparse set
+
+A component pool needs: add a component to entity e, remove it, test whether e has one, get it, and iterate all of them quickly. A **sparse set** does each in O(1):
+
+- `dense`: the components, packed with no gaps. Systems iterate this.
+- `owner[i]`: which entity owns `dense[i]`.
+- `index[e]`: where entity e's component sits in `dense`, or "none". Indexed by entity id, so it has gaps: it is the sparse part.
+
+Removing swaps the last element into the hole and pops, then fixes `index` for the moved entity. The dense array never has gaps.
+
+![Sparse set: index array by entity id pointing into a packed dense array of Health components, with swap-and-pop removal](/diagrams/cpp-systems/07-dod/05-entity-component-system.png)
+
+```cpp
+#include <cstdint>
+#include <cstdio>
+#include <vector>
+
+using Entity = std::uint32_t;
+constexpr std::uint32_t NONE = UINT32_MAX;
+
+template <class T>
+struct Pool {
+    std::vector<T> dense;
+    std::vector<Entity> owner;
+    std::vector<std::uint32_t> index;          // index[entity] -> position in dense, or NONE
+
+    void add(Entity e, T value) {
+        if (e >= index.size()) index.resize(e + 1, NONE);
+        index[e] = static_cast<std::uint32_t>(dense.size());
+        dense.push_back(value);
+        owner.push_back(e);
+    }
+    bool has(Entity e) const { return e < index.size() && index[e] != NONE; }
+    T& get(Entity e) { return dense[index[e]]; }
+};
+
+struct Position { float x, y; };
+struct Velocity { float dx, dy; };
+
+int main() {
+    Pool<Position> pos;
+    Pool<Velocity> vel;
+    pos.add(0, {0, 0});  vel.add(0, {1, 0});   // entity 0: a slime that moves
+    pos.add(1, {5, 5});                        // entity 1: a turret, does not move
+    pos.add(2, {9, 1});  vel.add(2, {0, -2});  // entity 2: a bat
+
+    // the movement system: every entity with Velocity and Position
+    for (std::size_t i = 0; i < vel.dense.size(); ++i) {
+        Entity e = vel.owner[i];
+        if (!pos.has(e)) continue;
+        pos.get(e).x += vel.dense[i].dx;
+        pos.get(e).y += vel.dense[i].dy;
+    }
+    for (Entity e = 0; e < 3; ++e)
+        std::printf("entity %u at %.0f,%.0f%s\n", e, pos.get(e).x, pos.get(e).y, vel.has(e) ? "" : " (no velocity)");
+}
+```
+```text
+entity 0 at 1,0
+entity 1 at 5,5 (no velocity)
+entity 2 at 9,-1
+```
+
+The system loops over the smaller pool (`Velocity`) and checks the other. The turret is never visited, and no class decided that: it simply has no `Velocity`.
+
+## When to use it, and when not
+
+- Use an ECS when you have many objects mixing many behaviours, and per-frame loops over them dominate: most action and strategy games.
+- For a game with a handful of object kinds and a few hundred objects, plain classes are simpler and fast enough.
+- Mature libraries exist (EnTT, flecs). Building the core yourself, as here, is the way to understand what they do and what they cost.
+- Entity ids get reused after an entity dies. Real ECS libraries add a **generation** counter to each id so that a stale id cannot refer to the new entity in the same slot.
+
+<MCQ
+  id="ecs-remove"
+  prompt="Pool<Health> holds components for entities 4, 9 and 2, in that dense order. You remove entity 4 by swap-and-pop. What does the dense order become, and what must be updated?"
+  options={["9, 2, and nothing else", "2, 9, and index[2] must change from 2 to 0", "9, 2, and index[9] and index[2] both shift down by one", "4 stays as a hole"]}
+  answer={1}
+  explanation="The last element (entity 2) moves into slot 0, the array shrinks, and entity 2's index entry is updated to 0. Entity 4's index becomes NONE. Nothing else moves."
+  devices={["phone", "desktop"]}
+/>
+
+## Coding task: the component pool
+
+Add removal, which is where sparse sets are easy to get wrong.
+
+<Code
+  id="sparse-set"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Complete `template<class T> class Pool`. `void add(Entity e, T v)` (if e already has one, overwrite it), `bool has(Entity e) const`, `T& get(Entity e)`, `bool remove(Entity e)` (swap-and-pop; returns false if e had none), `std::size_t size() const`, and `const std::vector<Entity>& entities() const` returning the owner of each dense slot. After any sequence of calls, get(e) must return e's component, and the dense arrays must have no gaps."
+  starter={"#include <cstddef>\n#include <cstdint>\n#include <vector>\nusing Entity = std::uint32_t;\ntemplate <class T>\nclass Pool {\npublic:\n    void add(Entity e, T v) {\n        if (e >= index_.size()) index_.resize(e + 1, NONE);\n        index_[e] = static_cast<std::uint32_t>(dense_.size());\n        dense_.push_back(v);\n        owner_.push_back(e);\n    }\n    bool has(Entity e) const { return e < index_.size() && index_[e] != NONE; }\n    T& get(Entity e) { return dense_[index_[e]]; }\n    bool remove(Entity e) { return false; }\n    std::size_t size() const { return dense_.size(); }\n    const std::vector<Entity>& entities() const { return owner_; }\nprivate:\n    static constexpr std::uint32_t NONE = UINT32_MAX;\n    std::vector<T> dense_;\n    std::vector<Entity> owner_;\n    std::vector<std::uint32_t> index_;\n};\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    Pool<int> hp;\n    hp.add(4, 40); hp.add(9, 90);\n    CHECK(hp.remove(4) && !hp.has(4) && hp.get(9) == 90 && hp.size() == 1);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <algorithm>\nint main() {\n    Pool<int> hp;\n    hp.add(4, 40); hp.add(9, 90); hp.add(2, 20);\n    CHECK(hp.size() == 3 && hp.get(2) == 20);\n    CHECK(hp.remove(4));\n    CHECK(!hp.has(4) && hp.size() == 2 && hp.get(9) == 90 && hp.get(2) == 20);\n    CHECK(hp.entities()[0] == 2 && hp.entities()[1] == 9);\n    CHECK(!hp.remove(4) && !hp.remove(77) && hp.size() == 2);\n    CHECK(hp.remove(9) && hp.size() == 1 && hp.get(2) == 20 && !hp.has(9));\n    CHECK(hp.remove(2) && hp.size() == 0 && !hp.has(2));\n    hp.add(2, 5);\n    hp.add(2, 6);\n    CHECK(hp.size() == 1 && hp.get(2) == 6);\n    Pool<int> p;\n    for (Entity e = 0; e < 100; ++e) p.add(e, int(e) * 10);\n    for (Entity e = 0; e < 100; e += 3) CHECK(p.remove(e));\n    CHECK(p.size() == 66);\n    for (Entity e = 0; e < 100; ++e) {\n        if (e % 3 == 0) CHECK(!p.has(e));\n        else CHECK(p.has(e) && p.get(e) == int(e) * 10);\n    }\n    auto ents = p.entities();\n    std::sort(ents.begin(), ents.end());\n    CHECK(std::adjacent_find(ents.begin(), ents.end()) == ents.end() && ents.size() == 66);\n    return 0;\n}\n"}
+  solution={"#include <cstddef>\n#include <cstdint>\n#include <utility>\n#include <vector>\nusing Entity = std::uint32_t;\ntemplate <class T>\nclass Pool {\npublic:\n    void add(Entity e, T v) {\n        if (has(e)) { dense_[index_[e]] = std::move(v); return; }\n        if (e >= index_.size()) index_.resize(e + 1, NONE);\n        index_[e] = static_cast<std::uint32_t>(dense_.size());\n        dense_.push_back(std::move(v));\n        owner_.push_back(e);\n    }\n    bool has(Entity e) const { return e < index_.size() && index_[e] != NONE; }\n    T& get(Entity e) { return dense_[index_[e]]; }\n    bool remove(Entity e) {\n        if (!has(e)) return false;\n        std::uint32_t i = index_[e];\n        std::size_t last = dense_.size() - 1;\n        dense_[i] = std::move(dense_[last]);\n        owner_[i] = owner_[last];\n        index_[owner_[i]] = i;\n        dense_.pop_back();\n        owner_.pop_back();\n        index_[e] = NONE;\n        return true;\n    }\n    std::size_t size() const { return dense_.size(); }\n    const std::vector<Entity>& entities() const { return owner_; }\nprivate:\n    static constexpr std::uint32_t NONE = UINT32_MAX;\n    std::vector<T> dense_;\n    std::vector<Entity> owner_;\n    std::vector<std::uint32_t> index_;\n};\n"}
+  hints={["remove: let i = index[e] and last = dense.size() - 1. Move dense[last] and owner[last] into slot i, set index[owner[i]] = i, pop both arrays, then set index[e] = NONE.", "Set index[e] = NONE after fixing the moved entity: if e was the last element, the moved entity is e itself."]}
+  explanation="The dense arrays stay packed, so systems iterate contiguous memory. The order of the last two steps in remove matters when the removed entity is the last element, which the tests check."
+/>

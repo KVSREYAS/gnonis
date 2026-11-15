@@ -1,31 +1,139 @@
 ---
 id: cpp-systems/04-templates/02-concepts-and-constraints
 title: "Concepts and Constraints"
-estMinutes: 8
+estMinutes: 13
 xp: 100
-fun: 2
-missionIntro: "C++20 concepts name requirements on template parameters. You get readable errors and overloading on capabilities."
+fun: 5
+missionIntro: "An area-damage template that accepts anything gives a wall of errors when someone passes a tile. C++20 concepts state what the type needs, give a short error, and pick overloads by capability."
 keyIdeas:
   - "A concept is a named compile-time predicate: `template<class T> concept Number = std::integral<T> || std::floating_point<T>;`."
   - "requires-expressions check that expressions are valid: `requires(T t) { t.size(); }`."
   - "Constrained overloads are picked by the most specialised constraint that's satisfied."
 ---
 
-## Writing constraints
+## The feature: damage for any enemy type
+
+The engine has several unrelated enemy types (`Slime`, `Bat`, `Turret`) that are not in one class hierarchy: they live in separate arrays for speed. A template `damage_all(list, dmg)` should work on a list of any of them.
+
+A new teammate calls it on the level's tile list by mistake.
+
+## The careless version: an unconstrained template
 
 ```cpp
-template <class T>
-concept HasSize = requires(const T& t) { { t.size() } -> std::convertible_to<std::size_t>; };
+#include <vector>
 
-template <HasSize C> auto count(const C& c) { return c.size(); }
+struct Slime { int hp = 20; void take_damage(int d) { hp -= d; } bool alive() const { return hp > 0; } };
+struct Tile  { int kind = 0; };
+
+template <class List>
+int damage_all(List& list, int dmg) {
+    int kills = 0;
+    for (auto& e : list) {
+        e.take_damage(dmg);
+        if (!e.alive()) ++kills;
+    }
+    return kills;
+}
+
+int main() {
+    std::vector<Slime> slimes(3);
+    std::vector<Tile> tiles(100);
+    damage_all(slimes, 25);
+    damage_all(tiles, 25);           // oops
+}
 ```
-Pass an `int` and the error says *constraints not satisfied: HasSize<int>*, not a template stack trace.
+```text
+game.cpp:10: error: 'struct Tile' has no member named 'take_damage'
+game.cpp:11: error: 'struct Tile' has no member named 'alive'
+```
+
+## What went wrong
+
+The template accepted `std::vector<Tile>` without complaint. Only when the compiler instantiated the body did it find that `Tile` has no `take_damage`, so the errors point inside `damage_all` (lines 10 and 11), at code the caller never wrote. Here that is two lines; with real engine templates calling templates several levels deep, it becomes pages, and the caller has to read the library's internals to find out what it wanted.
+
+The template had requirements all along (each element needs `take_damage(int)` and `alive()`), but they were only written implicitly, in the body.
+
+## The fix: a concept
+
+A **concept** names those requirements, and the template states them up front:
+
+```cpp
+#include <concepts>
+#include <vector>
+
+struct Slime { int hp = 20; void take_damage(int d) { hp -= d; } bool alive() const { return hp > 0; } };
+struct Tile  { int kind = 0; };
+
+template <class T>
+concept Damageable = requires(T e, int dmg) {
+    e.take_damage(dmg);
+    { e.alive() } -> std::convertible_to<bool>;
+};
+
+template <class List>
+    requires Damageable<typename List::value_type>
+int damage_all(List& list, int dmg) {
+    int kills = 0;
+    for (auto& e : list) {
+        e.take_damage(dmg);
+        if (!e.alive()) ++kills;
+    }
+    return kills;
+}
+
+int main() {
+    std::vector<Slime> slimes(3);
+    std::vector<Tile> tiles(100);
+    damage_all(slimes, 25);
+    damage_all(tiles, 25);           // oops
+}
+```
+```text
+game.cpp:28: error: no matching function for call to 'damage_all(std::vector<Tile>&, int)'
+game.cpp:15: note: constraints not satisfied
+game.cpp:9: note: the required expression 'e.take_damage(dmg)' is invalid
+game.cpp:10: note: the required expression 'e.alive()' is invalid
+```
+
+Now the error is at the call (line 28), says the constraints are not satisfied, and lists exactly which requirements `Tile` does not meet.
+
+## requires-expressions and overloads
+
+A `requires(params) { ... }` expression lists expressions that must compile. `{ expr } -> concept<...>` also checks the result type.
+
+Concepts also choose overloads. The engine can have a general `knockback(e)` and a special one for things that can fly:
+
+```cpp
+#include <concepts>
+#include <cstdio>
+
+struct Slime { const char* name = "slime"; };
+struct Bat   { const char* name = "bat"; void fly_up() {} };
+
+template <class T> concept Enemy  = requires(T e) { e.name; };
+template <class T> concept Flying = Enemy<T> && requires(T e) { e.fly_up(); };
+
+void knockback(Enemy auto& e)  { std::printf("%s slides back\n", e.name); }
+void knockback(Flying auto& e) { std::printf("%s is thrown upward\n", e.name); }
+
+int main() {
+    Slime s; Bat b;
+    knockback(s);
+    knockback(b);     // both match; Flying includes Enemy, so it is more specific
+}
+```
+```text
+slime slides back
+bat is thrown upward
+```
+
+`Flying` is defined as `Enemy<T> && ...`, so it **subsumes** `Enemy`: anything Flying is also an Enemy. When both overloads match, the more constrained one wins.
 
 ![Concept subsumption: integral containing signed_integral; the most constrained satisfied overload wins](/diagrams/cpp-systems/04-templates/02-concepts-and-constraints.png)
 
 <MCQ
   id="which-overload"
-  prompt="`void f(std::integral auto)` and `void f(std::signed_integral auto)` both exist. Which runs for `f(-3)`?"
+  prompt="`void f(std::integral auto)` and `void f(std::signed_integral auto)` both exist. Which runs for `f(-3)` (a negative damage number, a heal)?"
   options={["The integral one", "The signed_integral one, because it's more constrained (it subsumes integral)", "Ambiguous", "Compile error"]}
   answer={1}
   explanation="signed_integral is defined in terms of integral, so it subsumes it and wins."
@@ -34,26 +142,52 @@ Pass an `int` and the error says *constraints not satisfied: HasSize<int>*, not 
 
 <CodeBlanks
   id="concept-blanks"
-  prompt="Complete a concept for types you can add and that produce the same type."
+  prompt="Complete a concept for types you can add and that produce the same type, such as Vec2 or a Stats struct."
   code={"template <class T>\nconcept Addable = {{0}}(T a, T b) {\n    { a + b } -> std::{{1}}<T>;\n};"}
   blanks={[{"answer": "requires"}, {"answer": "same_as"}]}
   explanation="requires-expression plus a compound requirement."
   devices={["phone", "desktop"]}
 />
 
-## Constrain a kernel
+## When to use it, and when not
+
+- Constrain templates that other people call: engine APIs, utility headers. The error moves to the caller and names the problem.
+- Use the standard ones first: `std::integral`, `std::floating_point`, `std::ranges::range`, `std::invocable`.
+- Do not write a concept for every template. A small private helper used in two places does not need one.
+- A concept checks that code compiles, not that it is correct. `Damageable` accepts a `take_damage` that heals.
+
+## Coding task: constrain a stat sum
 
 Sources: [cppreference: constraints and concepts](https://en.cppreference.com/w/cpp/language/constraints), Bjarne Stroustrup, *A Tour of C++* (3rd ed.), ch. 8
+
+The stats screen sums damage dealt, gold earned and time played. All are ranges of numbers, of different types.
 
 <Code
   id="concept-sum"
   devices={["desktop"]}
   language="cpp"
-  prompt="Define `concept Numeric` (std::integral or std::floating_point) and `concept NumericRange`: a type R with std::ranges::begin/end whose `std::ranges::range_value_t<R>` is Numeric. Then write `auto sum_all(const NumericRange auto& r)` returning the sum as range_value_t<R>."
+  prompt="Define `concept Numeric` (std::integral or std::floating_point) and `concept NumericRange`: a type R with std::ranges::begin/end whose `std::ranges::range_value_t<R>` is Numeric. Then write `auto sum_all(const NumericRange auto& r)` returning the sum as range_value_t<R> (gold as int, play time as double)."
   starter={"#include <concepts>\n#include <ranges>\ntemplate <class T> concept Numeric = true; // TODO\ntemplate <class R> concept NumericRange = true; // TODO\nauto sum_all(const NumericRange auto& r) { return 0; }\n"}
   visibleTests={"#include \"check.h\"\n\n#include <vector>\nint main() {\n    std::vector<int> v{1, 2, 3};\n    CHECK(sum_all(v) == 6);\n    return 0;\n}\n"}
   tests={"#include \"check.h\"\n\n#include <vector>\n#include <array>\n#include <string>\n#include <type_traits>\nint main() {\n    std::vector<int> v{1, 2, 3};\n    CHECK(sum_all(v) == 6);\n    std::array<double, 3> a{0.5, 0.25, 0.25};\n    CHECK(sum_all(a) == 1.0);\n    static_assert(std::is_same_v<decltype(sum_all(a)), double>);\n    static_assert(!NumericRange<std::vector<std::string>>);\n    static_assert(!NumericRange<int>);\n    static_assert(NumericRange<std::vector<float>>);\n    return 0;\n}\n"}
   solution={"#include <concepts>\n#include <ranges>\ntemplate <class T> concept Numeric = std::integral<T> || std::floating_point<T>;\ntemplate <class R> concept NumericRange = std::ranges::range<R> && Numeric<std::ranges::range_value_t<R>>;\nauto sum_all(const NumericRange auto& r) {\n    std::ranges::range_value_t<std::remove_cvref_t<decltype(r)>> s{};\n    for (const auto& x : r) s += x;\n    return s;\n}\n"}
   hints={["std::ranges::range<R> covers begin/end.", "Use std::remove_cvref_t on decltype(r)."]}
   explanation="The static_asserts prove the constraint rejects strings and non-ranges at compile time."
+/>
+
+## Coding task: area damage for any enemy
+
+The fireball from the deduction lesson, now for any enemy list, with its requirements written down.
+
+<Code
+  id="aoe-concept"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `concept Damageable` (has `take_damage(int)` and `alive()` convertible to bool) and `template<class List> requires Damageable<typename List::value_type> int damage_all(List& list, int dmg)`, which damages every element and returns how many are dead afterwards that were alive before."
+  starter={"#include <concepts>\ntemplate <class T>\nconcept Damageable = true;   // TODO: real requirements\ntemplate <class List>\n    requires Damageable<typename List::value_type>\nint damage_all(List& list, int dmg) {\n    return 0;\n}\n"}
+  visibleTests={"#include \"check.h\"\n#include <vector>\nstruct Slime { int hp; void take_damage(int d) { hp -= d; } bool alive() const { return hp > 0; } };\nint main() {\n    std::vector<Slime> s{{10}, {30}};\n    CHECK(damage_all(s, 20) == 1);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <array>\n#include <vector>\nstruct Slime { int hp; void take_damage(int d) { hp -= d; } bool alive() const { return hp > 0; } };\nstruct Turret { int armor, hp; void take_damage(int d) { if (d > armor) hp -= d - armor; } int alive() const { return hp > 0; } };\nstruct Tile { int kind; };\nstruct Ghost { void take_damage(int) {} };\nint main() {\n    CHECK(Damageable<Slime> && Damageable<Turret>);\n    CHECK(!Damageable<Tile> && !Damageable<Ghost> && !Damageable<int>);\n    std::vector<Slime> s{{10}, {30}, {20}};\n    CHECK(damage_all(s, 20) == 2);\n    CHECK(s[0].hp == -10 && s[1].hp == 10 && s[2].hp == 0);\n    CHECK(damage_all(s, 20) == 1);\n    CHECK(damage_all(s, 20) == 0);\n    std::array<Turret, 2> t{{{5, 10}, {50, 10}}};\n    CHECK(damage_all(t, 15) == 1 && t[1].hp == 10);\n    return 0;\n}\n"}
+  solution={"#include <concepts>\ntemplate <class T>\nconcept Damageable = requires(T e, int d) {\n    e.take_damage(d);\n    { e.alive() } -> std::convertible_to<bool>;\n};\ntemplate <class List>\n    requires Damageable<typename List::value_type>\nint damage_all(List& list, int dmg) {\n    int kills = 0;\n    for (auto& e : list) {\n        bool was = e.alive();\n        e.take_damage(dmg);\n        if (was && !e.alive()) ++kills;\n    }\n    return kills;\n}\n"}
+  hints={["requires(T e, int d) { e.take_damage(d); { e.alive() } -> std::convertible_to<bool>; }", "Count an element only if it was alive before the hit and is not alive after."]}
+  explanation="The concept documents what damage_all needs and rejects a list of tiles at the call. Counting only enemies that were alive before stops corpses from being counted twice."
 />

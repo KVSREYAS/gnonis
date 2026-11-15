@@ -1,25 +1,82 @@
 ---
 id: cpp-systems/06-layout/02-cache-lines-and-locality
 title: "Cache Lines and Locality"
-estMinutes: 8
+estMinutes: 14
 xp: 100
 fun: 5
-missionIntro: "Memory moves in 64-byte cache lines. Touch memory sequentially and the hardware prefetcher loads the next lines before you ask for them."
+missionIntro: "Enemies stored as a linked list of heap nodes take dozens of times longer to update than the same enemies in a vector. Memory moves in 64-byte cache lines; touch it sequentially and the prefetcher loads the next lines before you ask."
 keyIdeas:
   - "x86-64 cache lines are 64 bytes, so one miss brings in 16 floats."
   - "Rough latencies: L1 ~1 ns, L2 ~4 ns, L3 ~10–20 ns, DRAM ~80–100 ns."
   - "Row-major arrays should be traversed row by row. Column order strides across lines and wastes most of each one."
 ---
 
-## Count the lines
+## The feature: updating every enemy each frame
 
+Each frame, every enemy moves by its velocity. That is two additions per enemy: no real work. The question is only how fast we can walk over the enemies.
 
+## The careless version: a list of heap nodes
+
+A list looks natural for enemies: they are added and removed all the time, and a list does that without moving anything. Here 1,000,000 enemies are updated as a `std::list` (one heap node each, allocated in a shuffled order as they would be after a few minutes of spawning and dying) and as a `std::vector`:
+
+```cpp
+#include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <list>
+#include <memory>
+#include <random>
+#include <vector>
+
+struct Enemy { float x, y, vx, vy; };
+
+template <class C>
+double update_ms(C& enemies) {
+    auto t0 = std::chrono::steady_clock::now();
+    for (int frame = 0; frame < 10; ++frame)
+        for (auto& e : enemies) { e.x += e.vx; e.y += e.vy; }
+    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / 10;
+}
+
+int main() {
+    const int N = 1'000'000;
+    std::vector<Enemy> vec(N, Enemy{0, 0, 1, 1});
+    // build the list by inserting at random positions, so its nodes are scattered in memory
+    std::list<Enemy> lst;
+    std::vector<std::list<Enemy>::iterator> its;
+    std::mt19937 rng(1);
+    for (int i = 0; i < N; ++i) {
+        auto pos = its.empty() ? lst.end() : its[rng() % its.size()];
+        its.push_back(lst.insert(pos, Enemy{0, 0, 1, 1}));
+    }
+    std::printf("list:   %.2f ms per frame\n", update_ms(lst));
+    std::printf("vector: %.2f ms per frame\n", update_ms(vec));
+}
+```
+```text
+list:   49.38 ms per frame
+vector: 0.84 ms per frame
+```
+
+(One run on the course machine; your numbers will differ, but the list stays many times slower.)
+
+## What went wrong
+
+Both loops do the same two additions per enemy. The list version spends its time waiting for memory. Each node is a separate heap block, and after random inserts, the next node is somewhere unrelated in memory. Every `++it` is a load whose address depends on the previous load, so the CPU cannot fetch ahead, and most of those loads miss the cache.
+
+The vector's enemies are packed back to back: one 64-byte cache line holds four 16-byte enemies, and the prefetcher sees the sequential pattern and loads lines before the loop needs them. The list also wastes memory: each 16-byte enemy carries two 8-byte pointers plus the allocator's header.
+
+At 60 FPS the frame budget is 16.7 ms. On this run the list version alone used about three frames' worth of time for two additions per enemy.
+
+## Cache lines
+
+Memory moves between DRAM and the CPU in **cache lines** of 64 bytes. A miss to DRAM costs around 100 ns; a hit in L1 about 1 ns. The rule that follows: **use all of each line you load, and load lines in an order the prefetcher can predict.**
 
 ![Row-major matrix with row traversal hitting consecutive 64-byte lines versus column traversal hitting a new line each time](/diagrams/cpp-systems/06-layout/02-cache-lines-and-locality.png)
 
 <Predict
   id="lines-1m"
-  prompt="Summing 1,000,000 contiguous floats. How many distinct 64-byte cache lines are touched (assume an aligned start)?"
+  prompt="Summing 1,000,000 contiguous floats (particle ages). How many distinct 64-byte cache lines are touched (assume an aligned start)?"
   answer={62500}
   tolerance={{"mode": "absolute", "value": 0}}
   unit="lines"
@@ -29,7 +86,7 @@ keyIdeas:
 
 <Predict
   id="miss-cost"
-  prompt="A loop takes 1,000,000 cache misses to DRAM at ~100 ns each, fully serialised (pointer chasing). Roughly how many milliseconds?"
+  prompt="A loop over a scattered list takes 1,000,000 cache misses to DRAM at ~100 ns each, fully serialised (pointer chasing). Roughly how many milliseconds?"
   answer={100}
   tolerance={{"mode": "relative", "value": 0.05}}
   unit="ms"
@@ -39,28 +96,56 @@ keyIdeas:
 
 ## Traversal order
 
-For `float a[N][N]`, `a[i][j]` and `a[i][j+1]` are neighbours. `a[i+1][j]` is N×4 bytes away.
+For a 2D array `float a[N][N]` (or a tile map `tiles[y * W + x]`), `a[i][j]` and `a[i][j+1]` are neighbours in memory, while `a[i+1][j]` is N×4 bytes away. Walk the last index in the inner loop.
 
 Sources: Ulrich Drepper, [What Every Programmer Should Know About Memory](https://people.freebsd.org/~lstewart/articles/cpumemory.pdf), Scott Meyers, [CPU Caches and Why You Care](https://www.youtube.com/watch?v=WDIkqP4JbkE)
 
 <MCQ
   id="row-col"
-  prompt="Summing a 4096×4096 float matrix column by column instead of row by row. Typical result?"
+  prompt="Summing a 4096×4096 tile map column by column instead of row by row. Typical result?"
   options={["Same speed", "Several times slower: each access lands on a new cache line, and only 4 of its 64 bytes are used", "Faster, because columns are contiguous", "Compile error"]}
   answer={1}
   explanation="Column-order access uses 1/16 of each line and defeats the prefetcher's stride detection at large strides."
   devices={["phone", "desktop"]}
 />
 
+## When to care, and when not
+
+- Store anything iterated every frame in contiguous arrays (`std::vector`, `std::array`). Remove by swapping with the last element, or by `erase_if` once per frame.
+- Use ids or indices to refer between objects, not pointers to separately allocated nodes.
+- A `std::list` or `std::map` is fine for small or rarely walked collections (the list of open menus).
+- Locality matters most when the data does not fit in cache. For 100 enemies, everything is in L1 anyway.
+
+## Coding task: rotate the map tile
+
+The map editor rotates a square region of tiles. Transposing it is the core step, and the naive version is a column walk on one side.
+
 <Code
   id="transpose-blocked"
   devices={["desktop"]}
   language="cpp"
-  prompt="Write `void transpose(const float* src, float* dst, int n, int block)`, transposing an n×n row-major matrix (dst[j*n+i] = src[i*n+j]) using block×block tiles so both reads and writes stay cache-friendly. n need not be a multiple of block."
+  prompt="Write `void transpose(const float* src, float* dst, int n, int block)`, transposing an n×n row-major matrix (dst[j*n+i] = src[i*n+j], the core of rotating a square block of tiles) using block×block tiles so both reads and writes stay cache-friendly. n need not be a multiple of block."
   starter={"void transpose(const float* src, float* dst, int n, int block) {\n    // TODO: tiled loops\n}\n"}
   visibleTests={"#include \"check.h\"\n\nint main() {\n    float s[4] = {1, 2, 3, 4}, d[4] = {};\n    transpose(s, d, 2, 1);\n    CHECK(d[1] == 3 && d[2] == 2);\n    return 0;\n}\n"}
   tests={"#include \"check.h\"\n\n#include <vector>\nint main() {\n    for (int n : {1, 7, 64, 100}) for (int b : {1, 8, 16, 32}) {\n        std::vector<float> s(n * n), d(n * n, -1);\n        for (int i = 0; i < n * n; ++i) s[i] = (float)i;\n        transpose(s.data(), d.data(), n, b);\n        for (int i = 0; i < n; ++i) for (int j = 0; j < n; ++j) CHECK(d[j * n + i] == s[i * n + j]);\n    }\n    return 0;\n}\n"}
   solution={"#include <algorithm>\nvoid transpose(const float* src, float* dst, int n, int block) {\n    for (int ii = 0; ii < n; ii += block)\n        for (int jj = 0; jj < n; jj += block)\n            for (int i = ii; i < std::min(ii + block, n); ++i)\n                for (int j = jj; j < std::min(jj + block, n); ++j)\n                    dst[j * n + i] = src[i * n + j];\n}\n"}
   hints={["Two outer loops over tiles, two inner loops within a tile.", "Clamp the inner bounds with std::min."]}
   explanation="With block = 16 (64 bytes of floats), each tile's reads and writes fit in L1."
+/>
+
+## Coding task: a flat tile map
+
+A `std::vector<std::vector<int>>` tile map has a separate heap block per row. One flat vector keeps the whole map contiguous.
+
+<Code
+  id="flat-tilemap"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `class TileMap` storing w*h ints in one `std::vector<int>` in row-major order. `TileMap(int w, int h, int fill)`, `int& at(int x, int y)` (and a const overload), `int width() const`, `int height() const`, `void fill_rect(int x0, int y0, int x1, int y1, int v)` setting every tile with x0 <= x < x1 and y0 <= y < y1 (clamped to the map, rows in the outer loop), and `int count(int v) const`."
+  starter={"#include <algorithm>\n#include <vector>\nclass TileMap {\npublic:\n    TileMap(int w, int h, int fill) : w_(w), h_(h) {}\n    int& at(int x, int y) { return dummy_; }\n    int at(int x, int y) const { return dummy_; }\n    int width() const { return w_; }\n    int height() const { return h_; }\n    void fill_rect(int x0, int y0, int x1, int y1, int v) {}\n    int count(int v) const { return 0; }\nprivate:\n    int w_, h_;\n    int dummy_ = 0;\n};\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    TileMap m(4, 3, 0);\n    m.at(3, 2) = 7;\n    CHECK(m.at(3, 2) == 7 && m.at(0, 0) == 0);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\nint main() {\n    TileMap m(4, 3, 1);\n    CHECK(m.width() == 4 && m.height() == 3 && m.count(1) == 12);\n    m.at(3, 2) = 7;\n    CHECK(m.at(3, 2) == 7 && m.at(2, 3 - 1) == 1 && m.count(7) == 1);\n    m.fill_rect(1, 0, 3, 2, 5);\n    CHECK(m.count(5) == 4 && m.at(1, 0) == 5 && m.at(2, 1) == 5 && m.at(3, 0) == 1 && m.at(1, 2) == 1);\n    m.fill_rect(-10, -10, 2, 1, 9);\n    CHECK(m.count(9) == 2 && m.at(0, 0) == 9 && m.at(1, 0) == 9 && m.at(0, 1) == 1);\n    m.fill_rect(3, 1, 100, 100, 4);\n    CHECK(m.count(4) == 2 && m.at(3, 2) == 4);\n    m.fill_rect(2, 2, 1, 1, 8);\n    CHECK(m.count(8) == 0);\n    const TileMap& c = m;\n    CHECK(c.at(3, 1) == 4);\n    TileMap big(300, 200, 0);\n    big.fill_rect(0, 0, 300, 200, 2);\n    CHECK(big.count(2) == 60000);\n    return 0;\n}\n"}
+  solution={"#include <algorithm>\n#include <vector>\nclass TileMap {\npublic:\n    TileMap(int w, int h, int fill) : w_(w), h_(h), data_(static_cast<std::size_t>(w) * h, fill) {}\n    int& at(int x, int y) { return data_[static_cast<std::size_t>(y) * w_ + x]; }\n    int at(int x, int y) const { return data_[static_cast<std::size_t>(y) * w_ + x]; }\n    int width() const { return w_; }\n    int height() const { return h_; }\n    void fill_rect(int x0, int y0, int x1, int y1, int v) {\n        x0 = std::clamp(x0, 0, w_); x1 = std::clamp(x1, 0, w_);\n        y0 = std::clamp(y0, 0, h_); y1 = std::clamp(y1, 0, h_);\n        for (int y = y0; y < y1; ++y)\n            for (int x = x0; x < x1; ++x) at(x, y) = v;\n    }\n    int count(int v) const { return static_cast<int>(std::count(data_.begin(), data_.end(), v)); }\nprivate:\n    int w_, h_;\n    std::vector<int> data_;\n};\n"}
+  hints={["at: data_[y * w_ + x].", "fill_rect: clamp x0, x1 to [0, w] and y0, y1 to [0, h] with std::clamp, then loop y outer, x inner."]}
+  explanation="One allocation, row-major order, and loops with x innermost: every access walks memory forward. The clamping keeps a rectangle that hangs off the map edge from writing outside the vector."
 />

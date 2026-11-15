@@ -1,25 +1,90 @@
 ---
 id: cpp-systems/08-ub/03-sanitizers
 title: "Sanitizers: ASan, UBSan, TSan"
-estMinutes: 7
+estMinutes: 12
 xp: 90
 fun: 3
-missionIntro: "Compile with -fsanitize and the runtime catches UB, memory errors and races as they happen, with a stack trace."
+missionIntro: "An inventory bug writes one slot past the end and the game prints the right numbers anyway, for now. Compile with -fsanitize and the runtime catches UB, memory errors and races as they happen, with a stack trace."
 keyIdeas:
   - "AddressSanitizer: out-of-bounds, use-after-free and leaks. Typical slowdown about 2x."
   - "UBSan: signed overflow, misaligned access, bad shifts and more, at low cost. TSan: data races, typically 5–15x slower with 5–10x memory."
   - "Run tests under ASan+UBSan in CI, and run concurrent code under TSan separately (TSan and ASan can't be combined)."
 ---
 
-## Which sanitizer?
+## The feature: the test build
 
+The test build of Slime Siege gets a second configuration: same code, compiled with sanitizers, run by the automated tests and by testers on a few machines. It is slower, but every memory error stops the game with the exact line.
 
+## The careless version: a bug that looks fine
+
+The inventory has 8 slots. Picking up an item when the bag is full has an off-by-one:
+
+```cpp
+#include <cstdio>
+
+struct Bag {
+    int slots[8] = {};
+    int count = 0;
+    int gold = 100;
+    void pick_up(int item) { if (count <= 8) slots[count++] = item; }   // should be < 8
+};
+
+int main() {
+    Bag* bag = new Bag;
+    for (int i = 1; i <= 9; ++i) bag->pick_up(i);
+    std::printf("items: %d, gold: %d\n", bag->count, bag->gold);
+    delete bag;
+}
+```
+
+Normal `-O2` build:
+
+```text
+items: 9, gold: 100
+```
+
+## What went wrong
+
+The ninth item was written to `slots[8]`, which does not exist. In this build, that memory is `count`: `count++` had just made it 9, and the stray write stored item 9 there, so it is 9 again by coincidence. Nothing crashed, and the output looks exactly right, even though the bag claims 9 items in 8 slots. Change the struct layout, or the compiler, and the same write lands on `gold` instead.
+
+The same program under `-fsanitize=address,undefined`:
+
+```cpp
+#include <cstdio>
+
+struct Bag {
+    int slots[8] = {};
+    int count = 0;
+    int gold = 100;
+    void pick_up(int item) { if (count <= 8) slots[count++] = item; }   // should be < 8
+};
+
+int main() {
+    Bag* bag = new Bag;
+    for (int i = 1; i <= 9; ++i) bag->pick_up(i);
+    std::printf("items: %d, gold: %d\n", bag->count, bag->gold);
+    delete bag;
+}
+```
+```text
+game.cpp:7:59: runtime error: index 8 out of bounds for type 'int [8]'
+```
+
+UBSan's bounds check knows `slots` has 8 elements and stops at the bad index, naming the line. ASan alone would not catch this one: `slots[8]` is still inside the `Bag` allocation. That is why the two are used together.
+
+## Which sanitizer finds what
 
 ![Three sanitizers (ASan, UBSan, TSan) checking memory, arithmetic and threads, with slowdown factors](/diagrams/cpp-systems/08-ub/03-sanitizers.png)
 
+- **ASan** (`-fsanitize=address`): reads and writes outside heap, stack and global objects; use after free; double free; leaks at exit.
+- **UBSan** (`-fsanitize=undefined`): signed overflow, out-of-bounds indexing of arrays with known size, null dereference, bad shifts, misaligned pointers.
+- **TSan** (`-fsanitize=thread`): data races between threads. Separate build: it cannot be combined with ASan.
+
+Build with `-g` for line numbers, and `-O1` keeps it reasonably fast while keeping the stack traces readable.
+
 <MCQ
   id="which-san"
-  prompt="Two threads increment a plain int without a lock. Which sanitizer reports it?"
+  prompt="The asset loader thread and the main thread both increment a plain `int textures_loaded` without a lock. Which sanitizer reports it?"
   options={["ASan", "UBSan", "TSan", "MSan"]}
   answer={2}
   explanation="Data races are TSan's job."
@@ -28,7 +93,7 @@ keyIdeas:
 
 <Ordering
   id="san-steps"
-  prompt="Order a sensible sanitizer workflow."
+  prompt="Order a sensible sanitizer workflow for the game's test build."
   items={["Build tests with -fsanitize=address,undefined -g -O1", "Run the full test suite", "Fix reports from the top of the first stack trace", "Build a separate -fsanitize=thread job for concurrent tests", "Keep both jobs in CI so regressions fail fast"]}
   explanation="ASan+UBSan together, TSan separately, both in CI."
   devices={["phone", "desktop"]}
@@ -36,7 +101,7 @@ keyIdeas:
 
 <Predict
   id="asan-slow"
-  prompt="A test suite takes 4 minutes normally. Using ASan's documented typical ~2x slowdown, how long under ASan?"
+  prompt="The game's automated test run takes 4 minutes normally. Using ASan's documented typical ~2x slowdown, how long under ASan?"
   answer={8}
   tolerance={{"mode": "relative", "value": 0.05}}
   unit="min"
@@ -44,6 +109,12 @@ keyIdeas:
   devices={["phone", "desktop"]}
 />
 
-## Docs
+## When to use them, and when not
+
+- Run the whole test suite under ASan + UBSan in CI, on every change.
+- Run the multithreaded code (asset loader, job system) under TSan in a separate job.
+- Give testers a sanitizer build for a day before each release.
+- Do not ship sanitizer builds to players: they are slower, use more memory, and abort on the first error.
+- A clean sanitizer run proves only that the code paths you ran were clean. Test the edge cases (full inventory, empty level, last enemy).
 
 Sources: [Clang AddressSanitizer](https://clang.llvm.org/docs/AddressSanitizer.html), [ThreadSanitizer](https://clang.llvm.org/docs/ThreadSanitizer.html), [UBSan](https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html). (Every reference solution in this course is tested under ASan+UBSan.)

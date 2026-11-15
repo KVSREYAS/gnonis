@@ -1,0 +1,151 @@
+---
+id: cpp-systems/05-stl/05-lambdas-and-callbacks
+title: "Lambdas, std::function and Callbacks"
+estMinutes: 15
+xp: 90
+fun: 5
+missionIntro: "The event system: when an enemy dies, the score, the sound and the loot drop all react. A callback that captured a local by reference fires after that local is gone. Lambdas, captures, std::function, and how to unsubscribe."
+keyIdeas:
+  - "A lambda is an object: its captures are member variables, and its body is operator()."
+  - "[x] copies x into the lambda; [&x] stores a reference. A stored callback must not reference locals that die first."
+  - "std::function<void(int)> can hold any callable with that signature, at the cost of a possible heap allocation and an indirect call."
+  - "Callbacks registered by an object must be removed before the object dies: return a handle and unsubscribe."
+---
+
+## The feature: the event bus
+
+When an enemy dies, several systems care: the score goes up, a sound plays, a loot table rolls, the combo counter ticks, an achievement may unlock. The combat code should not know about all of them. Instead it **emits** an "enemy killed" event, and each system **subscribes** a function to run when it happens.
+
+A subscribed function is a **callback**. In C++ we usually write it as a **lambda**.
+
+## Lambdas in one example
+
+```cpp
+#include <cstdio>
+#include <functional>
+#include <vector>
+
+int main() {
+    int score = 0;
+    std::vector<std::function<void(int)>> on_kill;            // the subscribers
+
+    on_kill.push_back([&score](int xp) { score += xp; });    // capture by reference
+    int bonus = 2;
+    on_kill.push_back([bonus](int xp) { std::printf("combo x%d for %d xp\n", bonus, xp); });   // by copy
+
+    for (auto& f : on_kill) f(50);                            // an enemy died: emit
+    std::printf("score %d\n", score);
+}
+```
+```text
+combo x2 for 50 xp
+score 50
+```
+
+- `[...]` is the **capture list**. `[score]` copies the variable into the lambda when it is created. `[&score]` stores a reference to it.
+- `(int xp)` are the parameters, `{ ... }` the body.
+- The compiler turns each lambda into a small class: captured variables become members, the body becomes `operator()`.
+- `std::function<void(int)>` can hold any callable taking an `int` and returning nothing, so different lambdas fit in one vector.
+
+## The careless version: a callback that outlives what it captured
+
+The combo counter subscribes while a combo is active, using a local:
+
+```cpp
+#include <cstdio>
+#include <functional>
+#include <vector>
+
+std::vector<std::function<void()>> on_kill;
+
+void start_combo() {
+    int combo = 0;
+    on_kill.push_back([&combo] { ++combo; std::printf("combo %d\n", combo); });
+}   // combo dies here; the lambda still refers to it
+
+int main() {
+    start_combo();
+    for (auto& f : on_kill) f();     // the next enemy dies
+}
+```
+```text
+==1==ERROR: AddressSanitizer: stack-use-after-return on address 0x7f922f600030 at pc 0x555a734b73d2 bp 0x7fff356d8a40 sp 0x7fff356d8a38
+    [48, 52) 'combo' (line 8) <== Memory access at offset 48 is inside this variable
+SUMMARY: AddressSanitizer: stack-use-after-return game.cpp:9 in operator()
+```
+
+## What went wrong
+
+`[&combo]` stored a reference to a local of `start_combo`. That function returned, its stack frame was reused, and the stored lambda kept the reference. When the next kill fired the callback, it read and wrote stack memory that now belongs to something else. ASan reports it as a stack-use-after-return and names the variable. In a normal build it might print a random number, or quietly overwrite another function's local.
+
+The same bug happens with `[this]` when an object subscribes and is then destroyed without unsubscribing.
+
+## The fix: capture what the callback needs to own
+
+Either capture by value, so the lambda owns its copy (and mark it `mutable` to change that copy), or keep the state somewhere that lives as long as the subscription:
+
+```cpp
+#include <cstdio>
+#include <functional>
+#include <vector>
+
+std::vector<std::function<void()>> on_kill;
+
+void start_combo() {
+    on_kill.push_back([combo = 0]() mutable { ++combo; std::printf("combo %d\n", combo); });
+}
+
+int main() {
+    start_combo();
+    for (int kill = 0; kill < 3; ++kill)
+        for (auto& f : on_kill) f();
+}
+```
+```text
+combo 1
+combo 2
+combo 3
+```
+
+`[combo = 0]` is an **init capture**: it creates a member named `combo` inside the lambda. `mutable` allows the body to change it (a lambda's `operator()` is `const` by default).
+
+## Unsubscribing
+
+An object that subscribes `[this]` must unsubscribe before it dies. The usual design: `subscribe` returns an id, and the subscriber calls `unsubscribe(id)` in its destructor (or holds an RAII handle that does).
+
+## What std::function costs
+
+`std::function` stores the callable in a small internal buffer, or on the heap if it is too big (libstdc++'s buffer holds 16 bytes). Calling it is an indirect call that the compiler usually cannot inline. For events that fire a few times per frame, that is nothing. For a callback inside a loop over 100,000 particles, pass the lambda as a template parameter instead (`template <class F> void for_each_particle(F f)`), which the compiler inlines.
+
+## When to use it, and when not
+
+- Use lambdas for short logic passed to algorithms (`sort`, `erase_if`) and for callbacks.
+- Capture by value (`[=]`, `[x]`, `[x = std::move(y)]`) for anything stored and called later. Capture by reference (`[&]`) only for lambdas used immediately, like an algorithm's predicate.
+- Use `std::function` when you must store callables of different types. Use a template parameter when the callable is used right away in hot code.
+- Keep event handlers short. A handler that emits another event that emits another is hard to follow and can loop forever.
+
+<MCQ
+  id="capture-choice"
+  prompt="A sound system subscribes `[this](int id) { play(id); }` to the kill event, and the sound system is destroyed when the player opens the options menu. What must happen?"
+  options={["Nothing, std::function copies the sound system", "The sound system must unsubscribe before it is destroyed, or the next kill calls play() on a dead object", "Change [this] to [&]", "Mark the lambda mutable"]}
+  answer={1}
+  explanation="[this] copies only the pointer. The lambda does not keep the object alive, so the subscription must be removed in the destructor (or held by an RAII handle)."
+  devices={["phone", "desktop"]}
+/>
+
+## Coding task: the event bus
+
+The combat code emits kills; the score, sound and loot systems subscribe and unsubscribe at will.
+
+<Code
+  id="event-bus"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `class EventBus` for kill events. `int subscribe(std::function<void(int)> f)` stores f and returns a new id (1, 2, 3, ...). `bool unsubscribe(int id)` removes that subscriber and returns whether it existed. `void emit(int xp)` calls every current subscriber with xp, in subscription order. `std::size_t count() const` returns the number of subscribers."
+  starter={"#include <cstddef>\n#include <functional>\n#include <utility>\n#include <vector>\nclass EventBus {\npublic:\n    int subscribe(std::function<void(int)> f) { return 0; }\n    bool unsubscribe(int id) { return false; }\n    void emit(int xp) {}\n    std::size_t count() const { return 0; }\n};\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    EventBus bus;\n    int score = 0;\n    bus.subscribe([&score](int xp) { score += xp; });\n    bus.emit(50);\n    CHECK(score == 50);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <string>\nint main() {\n    EventBus bus;\n    int score = 0;\n    std::string log;\n    int a = bus.subscribe([&score](int xp) { score += xp; });\n    int b = bus.subscribe([&log](int xp) { log += \"s\" + std::to_string(xp); });\n    int c = bus.subscribe([&log](int) { log += \"L\"; });\n    CHECK(a == 1 && b == 2 && c == 3 && bus.count() == 3);\n    bus.emit(50);\n    CHECK(score == 50 && log == \"s50L\");\n    CHECK(bus.unsubscribe(b) && !bus.unsubscribe(b) && bus.count() == 2);\n    bus.emit(10);\n    CHECK(score == 60 && log == \"s50LL\");\n    int d = bus.subscribe([&log](int xp) { log += std::to_string(xp); });\n    CHECK(d == 4);\n    bus.emit(7);\n    CHECK(score == 67 && log == \"s50LLL7\");\n    CHECK(bus.unsubscribe(a) && bus.unsubscribe(c) && bus.unsubscribe(d) && bus.count() == 0);\n    bus.emit(1000);\n    CHECK(score == 67);\n    CHECK(!bus.unsubscribe(99));\n    return 0;\n}\n"}
+  solution={"#include <cstddef>\n#include <functional>\n#include <utility>\n#include <vector>\nclass EventBus {\npublic:\n    int subscribe(std::function<void(int)> f) {\n        subs_.emplace_back(++next_, std::move(f));\n        return next_;\n    }\n    bool unsubscribe(int id) {\n        return std::erase_if(subs_, [id](const auto& s) { return s.first == id; }) > 0;\n    }\n    void emit(int xp) {\n        for (auto& s : subs_) s.second(xp);\n    }\n    std::size_t count() const { return subs_.size(); }\nprivate:\n    std::vector<std::pair<int, std::function<void(int)>>> subs_;\n    int next_ = 0;\n};\n"}
+  hints={["Store std::vector<std::pair<int, std::function<void(int)>>> and a next_id counter.", "unsubscribe: std::erase_if on the id, and return whether it removed anything."]}
+  explanation="Ids make unsubscribing possible, which is what lets an object that captured this remove its callback in its destructor."
+/>

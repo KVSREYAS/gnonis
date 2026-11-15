@@ -1,25 +1,101 @@
 ---
 id: cpp-systems/11-perf/03-reading-assembly
 title: "Reading the Assembly"
-estMinutes: 8
+estMinutes: 10
 xp: 100
 fun: 3
-missionIntro: "Compiler Explorer shows what you actually shipped. Learn to spot vectorised loops, calls and spills quickly."
+missionIntro: "The tile-map pass looks like one multiply per tile, yet it runs three times slower than it should. The assembly shows a hidden division in every iteration. Learn to spot divisions, calls and vectorised loops quickly."
 keyIdeas:
   - "x86-64 SysV: args in rdi, rsi, rdx, rcx, r8, r9 (xmm0–7 for floats), return in rax/xmm0."
   - "`ps` suffix means packed single (SIMD), and `ss` is scalar single. `vfmadd231ps ymm` is AVX2 FMA on 8 floats."
-  - "Telltales: `call` in a hot loop (not inlined), lots of loads and stores to rsp (spills), branches inside the inner loop."
+  - "Telltales: `div`/`idiv` or `call` in a hot loop, lots of loads and stores to rsp (spills), branches inside the inner loop."
 ---
 
-## Spot the vector
+## The feature: the tile-map lighting pass
 
+Each frame, the lighting pass visits every tile of the level and needs its (x, y) position. The level width is only known when the level loads.
 
+## The careless version: x and y from one index
+
+```cpp
+#include <chrono>
+#include <cstdio>
+#include <vector>
+
+__attribute__((noipa)) long light_div(const std::vector<int>& tiles, int w) {
+    long s = 0;
+    for (int i = 0; i < (int)tiles.size(); ++i) {
+        int x = i % w, y = i / w;                       // looks cheap
+        s += tiles[i] * (x + y);
+    }
+    return s;
+}
+__attribute__((noipa)) long light_nested(const std::vector<int>& tiles, int w) {
+    long s = 0;
+    int h = tiles.size() / w;
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) s += tiles[y * w + x] * (x + y);
+    return s;
+}
+
+int main(int argc, char**) {
+    int w = 250 + argc;                                 // width known only at run time
+    std::vector<int> tiles(w * 200, 1);
+    long a = 0, b = 0;
+    auto t0 = std::chrono::steady_clock::now();
+    for (int f = 0; f < 2000; ++f) a += light_div(tiles, w);
+    auto t1 = std::chrono::steady_clock::now();
+    for (int f = 0; f < 2000; ++f) b += light_nested(tiles, w);
+    auto t2 = std::chrono::steady_clock::now();
+    auto ms = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };
+    std::printf("i %% w and i / w: %6.1f ms\n", ms(t1 - t0));
+    std::printf("nested loops:    %6.1f ms   (same result: %s)\n", ms(t2 - t1), a == b ? "yes" : "no");
+}
+```
+```text
+i % w and i / w:  151.4 ms
+nested loops:      49.7 ms   (same result: yes)
+```
+
+(One run at `-O2`.) Both functions compute the same sum.
+
+## What went wrong: read the inner loop
+
+Here is the inner loop of each function, from `g++ -O2 -S -masm=intel` (GCC 14.2), with nothing removed:
+
+```text
+light_div inner loop:                  light_nested inner loop:
+.L3:                                   .L10:
+    mov   eax, ecx                         mov   edx, DWORD PTR [rcx]
+    cdq                                    add   rcx, 4
+    idiv  esi                              imul  edx, eax
+    add   edx, eax                         add   eax, 1
+    imul  edx, DWORD PTR [r8+rcx*4]        movsx rdx, edx
+    mov   rax, rcx                         add   rsi, rdx
+    add   rcx, 1                           cmp   edi, eax
+    movsx rdx, edx                         jne   .L10
+    add   rdi, rdx
+    cmp   rax, r9
+    jne   .L3
+```
+
+`idiv esi` divides by `w` (the second argument, which arrived in `esi`) and produces both `i / w` and `i % w`. An integer division takes tens of cycles, and here it runs once per tile. When `w` is a compile-time constant the compiler replaces the division with a multiply, but our width comes from the level file. The nested version has no division at all: `x` and `y` are just counters.
+
+## The concept: what to look for
+
+- **Calling convention**: the first arguments arrive in `rdi`, `rsi`, `rdx`, `rcx` (or their 32-bit halves `edi`, `esi`...), floats in `xmm0`, `xmm1`...; results return in `rax` or `xmm0`.
+- **`div`/`idiv` in a loop**: a division by a value the compiler does not know.
+- **`call` in a loop**: a function that was not inlined.
+- **`ps` vs `ss`**: `mulps` works on 4 floats (vectorized), `mulss` on one.
+- **Many `[rsp+...]` loads and stores**: the loop ran out of registers and spills values to the stack.
+
+Use Compiler Explorer (godbolt.org) to see source lines and assembly side by side.
 
 ![Side-by-side C++ loop and its x86 assembly with packed instructions highlighted](/diagrams/cpp-systems/11-perf/03-reading-assembly.png)
 
 <MCQ
   id="ps-ss"
-  prompt="An inner loop contains `vmulps ymm0, ymm1, [rdi+rax]`. This is…"
+  prompt="The particle step's inner loop contains `vmulps ymm0, ymm1, [rdi+rax]`. This is…"
   options={["Scalar double", "AVX packed single-precision, 8 floats", "SSE integer", "A function call"]}
   answer={1}
   explanation="v = VEX encoding, ps = packed single, ymm = 256-bit."
@@ -28,7 +104,7 @@ keyIdeas:
 
 <MCQ
   id="first-arg"
-  prompt="Under the SysV ABI, the first integer or pointer argument arrives in…"
+  prompt="Under the SysV ABI, the first integer or pointer argument (for example the tiles vector in `light_div`) arrives in…"
   options={["rax", "rdi", "rsp", "rcx"]}
   answer={1}
   explanation="Windows x64 uses rcx instead."
@@ -37,13 +113,18 @@ keyIdeas:
 
 <Predict
   id="unroll"
-  prompt="An AVX2 loop body processes 4 ymm registers of floats per iteration. Floats per iteration?"
+  prompt="An AVX2 particle loop body processes 4 ymm registers of floats per iteration. Floats per iteration?"
   answer={32}
   tolerance={{"mode": "absolute", "value": 0}}
   explanation="4 × 8."
   devices={["phone", "desktop"]}
 />
 
-## Sources
+## When to read assembly, and when not
 
-[Compiler Explorer](https://godbolt.org), Matt Godbolt, [What Has My Compiler Done for Me Lately? (CppCon 2017)](https://www.youtube.com/watch?v=bSkpMdDe4g4), [System V AMD64 ABI](https://gitlab.com/x86-psABIs/x86-64-ABI)
+- Read it for the few hot loops the profiler pointed at, to confirm that a change did what you meant: vectorized, inlined, no division.
+- Read it to settle arguments like "the compiler optimizes that away anyway". It either did or it did not.
+- Do not read it for code that is not hot. Most of the game is not.
+- Do not hand-write assembly from it. Change the C++ (types, loop shape, `__restrict`, constants) and check again.
+
+Sources: [Compiler Explorer](https://godbolt.org), Matt Godbolt, [What Has My Compiler Done for Me Lately? (CppCon 2017)](https://www.youtube.com/watch?v=bSkpMdDe4g4), [System V AMD64 ABI](https://gitlab.com/x86-psABIs/x86-64-ABI)

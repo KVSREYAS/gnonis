@@ -1,0 +1,176 @@
+---
+id: cpp-systems/09-concurrency/05-mutexes-and-condition-variables
+title: "Mutexes and Condition Variables"
+estMinutes: 15
+xp: 100
+fun: 5
+missionIntro: "The loader pushes textures into a vector while the main thread reads it, and the game crashes once every few hundred level loads. A mutex makes one thread wait its turn; a condition variable lets the loader sleep until there is work instead of spinning."
+keyIdeas:
+  - "Any data written by one thread and read by another needs a mutex (or must be atomic)."
+  - "std::lock_guard / std::scoped_lock lock in the constructor and unlock in the destructor: RAII for locks."
+  - "A condition variable puts a thread to sleep until another thread changes the data and calls notify. Always wait with a predicate."
+  - "Keep critical sections short: do slow work (file reads, decoding) outside the lock."
+---
+
+## The feature: the load queue
+
+The main thread asks for assets ("load bat.png") as the player moves toward new areas. The loader thread takes requests from a queue, loads each one, and appends the result to a list of finished textures that the main thread uploads to the GPU each frame.
+
+Two pieces of shared data: the request queue and the finished list. Both threads touch both.
+
+## The careless version: share the vector
+
+```cpp
+#include <cstdio>
+#include <string>
+#include <thread>
+#include <vector>
+
+std::vector<std::string> finished;              // written by loader, read by main
+
+int main() {
+    std::thread loader([] {
+        for (int i = 0; i < 200; ++i) finished.push_back("tex" + std::to_string(i));
+    });
+    std::size_t uploaded = 0;
+    while (uploaded < 200)                          // main loop: upload whatever is done
+        if (uploaded < finished.size()) { std::string s = finished[uploaded]; ++uploaded; }
+    loader.join();
+    std::printf("uploaded %zu textures\n", uploaded);
+}
+```
+```text
+uploaded 200 textures
+WARNING: ThreadSanitizer: data race (pid=1)
+WARNING: ThreadSanitizer: data race (pid=1)
+WARNING: ThreadSanitizer: data race (pid=1)
+WARNING: ThreadSanitizer: data race (pid=1)
+WARNING: ThreadSanitizer: data race (pid=1)
+```
+
+## What went wrong
+
+`push_back` can reallocate the vector: allocate a new buffer, move the strings, free the old buffer, then update the size. The main thread reads `size()` and `finished[uploaded]` at the same time, with nothing ordering the two threads. It can read the old buffer after it was freed, or see the new size before the element is constructed. TSan reports the race on every run; without TSan it crashes or reads garbage rarely, which is the worst kind of bug to track down.
+
+## The fix: a mutex
+
+A `std::mutex` can be held by one thread at a time. `std::lock_guard` locks it in its constructor and unlocks it in its destructor, so every path out of the block unlocks, including exceptions:
+
+```cpp
+#include <cstdio>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <vector>
+
+std::mutex m;
+std::vector<std::string> finished;               // guarded by m
+
+int main() {
+    std::jthread loader([] {
+        for (int i = 0; i < 200; ++i) {
+            std::string tex = "tex" + std::to_string(i);   // slow work outside the lock
+            std::lock_guard lock(m);
+            finished.push_back(std::move(tex));
+        }
+    });
+    std::size_t uploaded = 0;
+    while (uploaded < 200) {
+        std::vector<std::string> batch;
+        {
+            std::lock_guard lock(m);
+            batch.swap(finished);                  // take everything, release the lock quickly
+        }
+        uploaded += batch.size();                  // upload outside the lock
+    }
+    std::printf("uploaded %zu textures\n", uploaded);
+}
+```
+```text
+uploaded 200 textures
+```
+
+Two habits shown here: build the texture before taking the lock, and take the whole batch with one `swap` so the main thread holds the lock for a moment, not for the upload.
+
+## Waiting for work: condition variables
+
+The loader also needs to wait for requests. Polling (`while (queue.empty()) {}`) burns a whole core doing nothing. A **condition variable** lets it sleep:
+
+![Main thread pushes a request into a mutex-guarded queue and notifies; the loader thread waits on the condition variable with a predicate](/diagrams/cpp-systems/09-concurrency/05-mutexes-and-condition-variables.png)
+
+```cpp
+#include <condition_variable>
+#include <cstdio>
+#include <deque>
+#include <mutex>
+#include <string>
+#include <thread>
+
+std::mutex m;
+std::condition_variable cv;
+std::deque<std::string> requests;
+bool closing = false;
+
+int main() {
+    std::jthread loader([] {
+        for (;;) {
+            std::unique_lock lk(m);
+            cv.wait(lk, [] { return !requests.empty() || closing; });   // sleeps, lock released
+            if (requests.empty()) return;                                // closing and nothing left
+            std::string name = std::move(requests.front());
+            requests.pop_front();
+            lk.unlock();                                                 // load without the lock
+            std::printf("loaded %s\n", name.c_str());
+        }
+    });
+    for (const char* n : {"bat.png", "ghost.png", "lava.ogg"}) {
+        { std::lock_guard g(m); requests.push_back(n); }
+        cv.notify_one();
+    }
+    { std::lock_guard g(m); closing = true; }
+    cv.notify_all();
+}
+```
+```text
+loaded bat.png
+loaded ghost.png
+loaded lava.ogg
+```
+
+- `cv.wait(lock, predicate)` releases the lock while asleep and re-locks before returning. It loops until the predicate is true, which handles **spurious wake-ups** (waking with no notify).
+- The other side changes the data **under the lock**, then calls `notify_one()` (wake one waiter) or `notify_all()`.
+- `closing` gives the loader a clean way out at shutdown.
+
+## When to use it, and when not
+
+- Use a mutex for any shared data structure (vectors, maps, queues) and for groups of values that must change together.
+- Lock several mutexes at once with `std::scoped_lock lk(a, b);`, which avoids deadlock from opposite locking orders.
+- Use a condition variable when a thread must wait for a state change. Never wait without a predicate.
+- Do not hold a lock while doing slow work or calling unknown code (callbacks). Copy what you need, unlock, then work.
+- For one-producer, one-consumer hot paths (the audio thread), the building-blocks module shows a lock-free ring buffer instead.
+
+<MCQ
+  id="cv-predicate"
+  prompt="The loader calls `cv.wait(lk);` without a predicate and then pops from `requests`. What can go wrong?"
+  options={["Nothing, wait only returns after notify", "It can wake spuriously, or after another thread already took the request, and pop from an empty deque", "It deadlocks every time", "It busy-waits"]}
+  answer={1}
+  explanation="Wake-ups without a matching notify are allowed, and with several consumers another one may have taken the item first. wait(lk, pred) re-checks the condition each time it wakes."
+  devices={["phone", "desktop"]}
+/>
+
+## Coding task: the request queue
+
+The main thread pushes load requests; the loader thread waits for them and exits cleanly when the level closes.
+
+<Code
+  id="load-queue"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `class LoadQueue`. `void push(std::string name)` adds a request and wakes the loader. `std::optional<std::string> wait_pop()` blocks until a request is available and returns it (oldest first), or returns std::nullopt once close() has been called and no requests are left. `void close()` makes waiting and future wait_pop calls return nullopt after the remaining requests are drained. Use std::mutex, std::condition_variable and std::deque."
+  starter={"#include <condition_variable>\n#include <deque>\n#include <mutex>\n#include <optional>\n#include <string>\nclass LoadQueue {\npublic:\n    void push(std::string name) {}\n    std::optional<std::string> wait_pop() { return std::nullopt; }\n    void close() {}\nprivate:\n    std::mutex m_;\n    std::condition_variable cv_;\n    std::deque<std::string> q_;\n    bool closed_ = false;\n};\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    LoadQueue q;\n    q.push(\"bat.png\");\n    auto r = q.wait_pop();\n    CHECK(r && *r == \"bat.png\");\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <atomic>\n#include <thread>\n#include <vector>\nint main() {\n    LoadQueue q;\n    q.push(\"a\"); q.push(\"b\");\n    auto x = q.wait_pop(); auto y = q.wait_pop();\n    CHECK(x && *x == \"a\" && y && *y == \"b\");\n    q.push(\"c\");\n    q.close();\n    auto z = q.wait_pop();\n    CHECK(z && *z == \"c\");\n    CHECK(!q.wait_pop() && !q.wait_pop());\n    LoadQueue q2;\n    std::atomic<int> got{0};\n    std::atomic<long> sum{0};\n    {\n        std::vector<std::jthread> loaders;\n        for (int t = 0; t < 4; ++t)\n            loaders.emplace_back([&] {\n                while (auto r = q2.wait_pop()) { ++got; sum += std::stol(*r); }\n            });\n        for (int i = 1; i <= 2000; ++i) q2.push(std::to_string(i));\n        q2.close();\n    }\n    CHECK(got == 2000 && sum == 2000L * 2001 / 2);\n    return 0;\n}\n"}
+  solution={"#include <condition_variable>\n#include <deque>\n#include <mutex>\n#include <optional>\n#include <string>\n#include <utility>\nclass LoadQueue {\npublic:\n    void push(std::string name) {\n        { std::lock_guard lk(m_); q_.push_back(std::move(name)); }\n        cv_.notify_one();\n    }\n    std::optional<std::string> wait_pop() {\n        std::unique_lock lk(m_);\n        cv_.wait(lk, [&] { return !q_.empty() || closed_; });\n        if (q_.empty()) return std::nullopt;\n        std::string s = std::move(q_.front());\n        q_.pop_front();\n        return s;\n    }\n    void close() {\n        { std::lock_guard lk(m_); closed_ = true; }\n        cv_.notify_all();\n    }\nprivate:\n    std::mutex m_;\n    std::condition_variable cv_;\n    std::deque<std::string> q_;\n    bool closed_ = false;\n};\n"}
+  hints={["wait_pop: std::unique_lock lk(m_); cv_.wait(lk, [&] { return !q_.empty()", "closed_; }); if (q_.empty()) return std::nullopt;", "close: set closed_ under the lock, then cv_.notify_all() so every waiter re-checks."]}
+  explanation="The predicate covers both reasons to wake (work or shutdown), so no wake-up is lost and none is acted on wrongly. Draining before returning nullopt means requests made just before closing are still loaded."
+/>

@@ -1,25 +1,118 @@
 ---
 id: cpp-systems/01-lifetime/01-raii-scope-guards
 title: "RAII and Scope Guards"
-estMinutes: 6
+estMinutes: 14
 xp: 80
-fun: 4
-missionIntro: "Tie every resource to an object's lifetime, and the destructor cleans up on every exit path, exceptions included."
+fun: 5
+missionIntro: "Loading a level grabs textures from the GPU, and any line can fail. Tie every texture to an object's lifetime and the destructor gives it back on every exit path, exceptions included."
 keyIdeas:
   - "A resource is acquired in a constructor and released in the destructor (Core Guidelines R.1)."
   - "Destructors of fully constructed locals run in reverse order of construction, also during exception unwinding."
   - "Scope guards generalise RAII to any \"undo this on exit\" action."
 ---
 
+## The feature: loading a level's textures
+
+When the player enters a level, the engine uploads its textures to the GPU: tiles, the hero sprite sheet, enemy sprites. The graphics API is a C library, like OpenGL, SDL or Vulkan. You ask for a texture and get back an integer id. When you are done you must hand the id back, or that GPU memory stays used until the game quits.
+
+Our stand-in API, used in every example in this lesson:
+
+```cpp
+int  gpu_create_texture(const char* file);   // returns an id
+void gpu_destroy_texture(int id);            // must be called exactly once per id
+```
+
+## The careless version: manual cleanup
+
+```cpp
+#include <cstdio>
+#include <cstring>
+
+int g_textures = 0;   // textures currently alive on the GPU
+int gpu_create_texture(const char*) { return ++g_textures; }
+void gpu_destroy_texture(int) { --g_textures; }
+
+bool load_level(const char* music_file) {
+    int tiles = gpu_create_texture("tiles.png");
+    int hero = gpu_create_texture("hero.png");
+    if (std::strlen(music_file) == 0) {
+        std::printf("no music, abort load\n");
+        return false;                    // forgot to destroy tiles and hero
+    }
+    // ... play the level ...
+    gpu_destroy_texture(hero);
+    gpu_destroy_texture(tiles);
+    return true;
+}
+
+int main() {
+    for (int attempt = 0; attempt < 3; ++attempt) load_level("");
+    std::printf("textures still on the GPU: %d\n", g_textures);
+}
+```
+```text
+no music, abort load
+no music, abort load
+no music, abort load
+textures still on the GPU: 6
+```
+
+## What went wrong
+
+The happy path cleans up. The early return does not, so every failed load leaks two textures. Three retries, six textures gone. On a real GPU each one might be 16 MB.
+
+The cleanup is written once, at the bottom, but there are many ways out of the function: every `return`, every `break` out of a loading loop, and every exception thrown by anything called inside. Each exit needs its own copy of the cleanup, in the right order, and the next person to add an early return will forget.
+
+## The fix: RAII
+
+Wrap the id in a class. The constructor creates the texture. The destructor destroys it. Now cleanup is not a line you write; it is something the compiler does at every exit of the scope.
+
+```cpp
+#include <cstdio>
+#include <cstring>
+
+int g_textures = 0;
+int gpu_create_texture(const char*) { return ++g_textures; }
+void gpu_destroy_texture(int) { --g_textures; }
+
+class Texture {
+public:
+    explicit Texture(const char* file) : id_(gpu_create_texture(file)) {}
+    ~Texture() { gpu_destroy_texture(id_); }
+    Texture(const Texture&) = delete;              // one owner per id
+    Texture& operator=(const Texture&) = delete;
+    int id() const { return id_; }
+private:
+    int id_;
+};
+
+bool load_level(const char* music_file) {
+    Texture tiles("tiles.png");
+    Texture hero("hero.png");
+    if (std::strlen(music_file) == 0) return false;    // both freed here
+    return true;                                       // and here
+}
+
+int main() {
+    for (int attempt = 0; attempt < 3; ++attempt) load_level("");
+    std::printf("textures still on the GPU: %d\n", g_textures);
+}
+```
+```text
+textures still on the GPU: 0
+```
+
+The copy operations are deleted: if two `Texture` objects held the same id, both destructors would destroy it. The rule of 0/3/5 lesson covers this.
+
 ## Reverse order, every exit
 
-Locals are destroyed in reverse order of construction when they leave scope, whether that's via `return`, the end of the block, or an exception unwinding the stack. So `std::lock_guard`, `std::fstream` and `std::unique_ptr` never leak, even on the early-return path you forgot about.
+Locals are destroyed in reverse order of construction when they leave scope, whether that is via `return`, the end of the block, or an exception unwinding the stack. Reverse order matters: an object built later may use one built earlier (a sprite that refers to its texture), so it must be destroyed first.
 
 ![Stack frames with objects constructed a,b,c and destroyed in reverse order, including an exception path](/diagrams/cpp-systems/01-lifetime/01-raii-scope-guards.png)
 
 <Trace
   id="dtor-order"
-  prompt="Constructors talk, destructors talk back."
+  prompt="Constructors print + and destructors print -. Imagine a, b, c, d are textures being loaded and freed."
   code={"#include <cstdio>\nstruct G { char n; G(char c) : n(c) { std::printf(\"+%c\", n); } ~G() { std::printf(\"-%c\", n); } };\nint main() {\n    G a('a');\n    {\n        G b('b');\n        G c('c');\n    }\n    G d('d');\n}"}
   steps={[{"line": 4, "note": "a is built"}, {"line": 6, "note": "b, then c"}, {"line": 8, "note": "inner scope ends: c dies first, then b"}, {"line": 9, "note": "d is built"}, {"line": 10, "note": "main ends: d, then a"}]}
   question="What does it print?"
@@ -28,28 +121,129 @@ Locals are destroyed in reverse order of construction when they leave scope, whe
   devices={["phone", "desktop"]}
 />
 
+## Exceptions: the exit you cannot see
+
+The level file parser throws when it finds a bad tile. With manual cleanup, an exception skips every line below it. With RAII, unwinding destroys every fully built local on the way out:
+
+```cpp
+#include <cstdio>
+#include <stdexcept>
+
+int g_textures = 0;
+int gpu_create_texture(const char*) { return ++g_textures; }
+void gpu_destroy_texture(int) { --g_textures; }
+
+class Texture {
+public:
+    explicit Texture(const char* f) : id_(gpu_create_texture(f)) {}
+    ~Texture() { gpu_destroy_texture(id_); }
+    Texture(const Texture&) = delete;
+    Texture& operator=(const Texture&) = delete;
+private:
+    int id_;
+};
+
+void parse_map() { throw std::runtime_error("level2.map: unknown tile 'Q'"); }
+
+void load_level() {
+    Texture tiles("tiles.png");
+    Texture hero("hero.png");
+    parse_map();                              // throws
+}
+
+int main() {
+    try { load_level(); }
+    catch (const std::exception& e) { std::printf("load failed: %s\n", e.what()); }
+    std::printf("textures still on the GPU: %d\n", g_textures);
+}
+```
+```text
+load failed: level2.map: unknown tile 'Q'
+textures still on the GPU: 0
+```
+
 <MCQ
   id="unwind"
-  prompt="A function constructs a `std::lock_guard`, then a call inside it throws. What happens to the mutex?"
+  prompt="The asset loader holds a `std::lock_guard` on the asset table, then a call inside it throws (a corrupt file). What happens to the mutex?"
   options={["It stays locked forever", "It's unlocked when the guard is destroyed during stack unwinding", "It's unlocked only if you catch the exception in that function", "std::terminate is called"]}
   answer={1}
-  explanation="Unwinding runs the destructors of every fully constructed local, so the lock is released."
+  explanation="Unwinding runs the destructors of every fully constructed local, so the lock is released and the next load can proceed."
   devices={["phone", "desktop"]}
 />
 
-## Write a scope guard
+## Scope guards: undo anything
 
-When there's no ready-made RAII type, wrap the cleanup in a guard. (C++ Core Guidelines E.19, GSL `finally`.) Source: [cppreference: RAII](https://en.cppreference.com/w/cpp/language/raii)
+Sometimes there is no resource class, just an action to undo. During a cutscene the game disables player input; it must turn input back on however the cutscene ends (finished, skipped, or an error). A **scope guard** is a tiny RAII object whose destructor runs any code you give it:
+
+```cpp
+#include <cstdio>
+#include <utility>
+
+template <class F>
+struct ScopeExit {
+    F f;
+    ~ScopeExit() { f(); }
+};
+template <class F> ScopeExit(F) -> ScopeExit<F>;
+
+bool g_input_enabled = true;
+
+void play_cutscene(bool skipped) {
+    g_input_enabled = false;
+    ScopeExit restore{[] { g_input_enabled = true; }};
+    if (skipped) { std::printf("skipped\n"); return; }
+    std::printf("cutscene played\n");
+}
+
+int main() {
+    play_cutscene(true);
+    std::printf("input enabled: %d\n", g_input_enabled);
+}
+```
+```text
+skipped
+input enabled: 1
+```
+
+(The `[] { ... }` is a **lambda**: an unnamed function written inline. The containers module covers lambdas fully. The line after the struct is a deduction guide so the template argument is worked out from the lambda.)
+
+## When to use it, and when not
+
+- Use RAII for **everything** that must be released: memory, textures, files, sockets, locks, audio channels, "input disabled" flags. In good C++ code, you almost never see a bare release call outside a destructor.
+- Use the standard ones first: `std::vector`, `std::unique_ptr` (also with custom deleters for C APIs, next module), `std::lock_guard`, `std::fstream`, `std::jthread`.
+- Use a scope guard for one-off undo actions. If the same guard appears in three places, make it a named class.
+- A destructor should not throw. It may run during unwinding from another exception, and two exceptions in flight terminate the program.
+
+## Coding task: a scope guard
+
+A reusable version of the guard above, with a way to cancel it.
 
 <Code
   id="scope-exit"
   devices={["desktop"]}
   language="cpp"
-  prompt="Implement `ScopeExit<F>`: it stores a callable and calls it once in its destructor, unless `dismiss()` was called. It must not be copyable. Add a helper `make_scope_exit(f)`."
+  prompt="Build the engine's general-purpose undo tool. Implement `ScopeExit<F>`: it stores a callable and calls it once in its destructor, unless `dismiss()` was called (for example, when a level load succeeds and the temporary state should be kept). It must not be copyable. Add a helper `make_scope_exit(f)`."
   starter={"#include <utility>\ntemplate <class F>\nclass ScopeExit {\npublic:\n    explicit ScopeExit(F f) : f_(std::move(f)) {}\n    // TODO: destructor, dismiss(), delete copies\nprivate:\n    F f_;\n};\ntemplate <class F> ScopeExit<F> make_scope_exit(F f) { return ScopeExit<F>(std::move(f)); }\n"}
   visibleTests={"#include \"check.h\"\n\nint main() {\n    int n = 0;\n    { auto g = make_scope_exit([&] { ++n; }); }\n    CHECK(n == 1);\n    return 0;\n}\n"}
   tests={"#include \"check.h\"\n\n#include <stdexcept>\n#include <type_traits>\nint main() {\n    int n = 0;\n    { auto g = make_scope_exit([&] { ++n; }); }\n    CHECK(n == 1);\n    { auto g = make_scope_exit([&] { ++n; }); g.dismiss(); }\n    CHECK(n == 1);\n    try { auto g = make_scope_exit([&] { n += 10; }); throw std::runtime_error(\"boom\"); } catch (...) {}\n    CHECK(n == 11);\n    static_assert(!std::is_copy_constructible_v<ScopeExit<void(*)()>>);\n    return 0;\n}\n"}
   solution={"#include <utility>\ntemplate <class F>\nclass ScopeExit {\npublic:\n    explicit ScopeExit(F f) : f_(std::move(f)) {}\n    ~ScopeExit() { if (active_) f_(); }\n    void dismiss() noexcept { active_ = false; }\n    ScopeExit(const ScopeExit&) = delete;\n    ScopeExit& operator=(const ScopeExit&) = delete;\nprivate:\n    F f_;\n    bool active_ = true;\n};\ntemplate <class F> ScopeExit<F> make_scope_exit(F f) { return ScopeExit<F>(std::move(f)); }\n"}
   hints={["Add a bool flag for dismiss.", "`= delete` the copy constructor and copy assignment."]}
-  explanation="C++17 guaranteed copy elision lets make_scope_exit return a non-copyable, non-movable guard."
+  explanation="C++17 guaranteed copy elision lets make_scope_exit return a non-copyable, non-movable guard. dismiss() is the commit-or-rollback pattern: undo by default, keep on success."
+/>
+
+## Coding task: the cutscene input lock
+
+Cutscenes can trigger other cutscenes (a boss intro inside a door animation), so the input lock must nest correctly.
+
+<Code
+  id="cutscene-lock"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="Write `class InputLock`, a RAII guard for cutscenes. The constructor saves the current value of the global `bool g_input_enabled` (declared for you) and sets it to false. The destructor restores the saved value, so nested locks work: when an inner lock ends, input stays off until the outer lock ends too. Copying must not compile."
+  starter={"extern bool g_input_enabled;\nclass InputLock {\npublic:\n    InputLock() {}\n};\n"}
+  visibleTests={"#include \"check.h\"\nbool g_input_enabled = true;\nint main() {\n    { InputLock lock; CHECK(!g_input_enabled); }\n    CHECK(g_input_enabled);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\n#include <stdexcept>\n#include <type_traits>\nbool g_input_enabled = true;\nint main() {\n    {\n        InputLock outer;\n        CHECK(!g_input_enabled);\n        {\n            InputLock inner;\n            CHECK(!g_input_enabled);\n        }\n        CHECK(!g_input_enabled);\n    }\n    CHECK(g_input_enabled);\n    try {\n        InputLock lock;\n        throw std::runtime_error(\"cutscene file missing\");\n    } catch (const std::exception&) {}\n    CHECK(g_input_enabled);\n    g_input_enabled = false;\n    { InputLock lock; }\n    CHECK(!g_input_enabled);\n    CHECK(!std::is_copy_constructible_v<InputLock>);\n    return 0;\n}\n"}
+  solution={"extern bool g_input_enabled;\nclass InputLock {\npublic:\n    InputLock() : prev_(g_input_enabled) { g_input_enabled = false; }\n    ~InputLock() { g_input_enabled = prev_; }\n    InputLock(const InputLock&) = delete;\n    InputLock& operator=(const InputLock&) = delete;\nprivate:\n    bool prev_;\n};\n"}
+  hints={["Store the previous value in a member: `bool prev_ = g_input_enabled;` then set the global to false in the constructor body.", "The destructor writes prev_ back. Delete the copy constructor and copy assignment."]}
+  explanation="Saving and restoring the previous value, instead of always setting true, is what makes nested guards correct. The same pattern is used for render state, the current OpenGL context, and the floating-point rounding mode."
 />

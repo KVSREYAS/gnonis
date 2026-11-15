@@ -1,25 +1,82 @@
 ---
 id: cpp-systems/07-dod/02-hot-cold-splitting
 title: "Hot/Cold Splitting"
-estMinutes: 7
+estMinutes: 12
 xp: 90
 fun: 3
-missionIntro: "Fields used every frame (hot) and fields used rarely (cold) shouldn't share cache lines."
+missionIntro: "The AI loop reads an enemy's position and hp every frame, but drags its name, loot table and debug info through the cache too. Fields used every frame (hot) and fields used rarely (cold) shouldn't share cache lines."
 keyIdeas:
   - "Move rarely used fields (names, debug info, config) into a separate cold array indexed the same way."
   - "Smaller hot structs mean more objects per cache line and fewer misses per update."
   - "Measure first: splitting only helps if the hot loop is memory-bound."
 ---
 
-## Count the objects
+## The feature: the enemy AI tick
 
+Every frame, the AI checks each enemy: is it alive, how far is the player, should it chase? It reads position and hp. The enemy struct also holds its display name, loot table, spawn info and debug fields, which only the inspector panel and the loot drop ever read.
 
+## The careless version: everything in one struct
+
+```cpp
+#include <chrono>
+#include <cstdio>
+#include <vector>
+
+struct Enemy {                  // 128 bytes
+    float x, y;                 // hot: read every frame
+    int   hp;                   // hot
+    int   state;                // hot
+    char  name[32];             // cold: shown when you hover the enemy
+    int   loot_table[16];       // cold: read once, when it dies
+    float spawn_x, spawn_y;     // cold
+    int   debug_flags[2];       // cold
+};
+
+struct EnemyHot  { float x, y; int hp, state; };                // 16 bytes
+struct EnemyCold { char name[32]; int loot_table[16]; float spawn_x, spawn_y; int debug_flags[2]; };
+
+int main() {
+    const int N = 1'000'000;
+    std::vector<Enemy> fat(N, Enemy{});
+    std::vector<EnemyHot> hot(N, EnemyHot{});
+    std::vector<EnemyCold> cold(N, EnemyCold{});     // same index as hot
+    auto ms = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };
+    long chasing = 0;
+    auto t0 = std::chrono::steady_clock::now();
+    for (auto& e : fat) if (e.hp >= 0 && e.x * e.x + e.y * e.y < 100.0f) { e.state = 1; ++chasing; }
+    auto t1 = std::chrono::steady_clock::now();
+    for (auto& e : hot) if (e.hp >= 0 && e.x * e.x + e.y * e.y < 100.0f) { e.state = 1; ++chasing; }
+    auto t2 = std::chrono::steady_clock::now();
+    std::printf("sizeof Enemy %zu, EnemyHot %zu\n", sizeof(Enemy), sizeof(EnemyHot));
+    std::printf("AI tick, one struct: %.2f ms\nAI tick, hot only:   %.2f ms  (%ld chase decisions)\n",
+                ms(t1 - t0), ms(t2 - t1), chasing);
+}
+```
+```text
+sizeof Enemy 128, EnemyHot 16
+AI tick, one struct: 7.79 ms
+AI tick, hot only:   2.23 ms  (2000000 chase decisions)
+```
+
+(One run on the course machine.)
+
+## What went wrong
+
+The AI loop uses 16 of every 128 bytes. Each enemy occupies two cache lines, and the loop pays for both. After splitting, four enemies' hot data share one line, so the loop streams 16 MB instead of 128 MB.
+
+Nothing about the fat struct was wrong for the inspector panel. It was wrong for the loop that runs a million times per frame, and that is the loop that decides the frame time.
 
 ![128-byte enemy structs split into a dense hot array and a separate cold array](/diagrams/cpp-systems/07-dod/02-hot-cold-splitting.png)
 
+## The fix: split by use
+
+Keep two arrays with the same indexing: `hot[i]` and `cold[i]` describe the same enemy. The hot loop never touches `cold`. When an enemy dies, the loot code reads `cold[i].loot_table` once.
+
+Removing enemy `i` must remove it from both arrays (swap-and-pop both with the same index), so wrap removal in one function.
+
 <Predict
   id="hot-per-line"
-  prompt="An Enemy struct is 128 bytes (position, health, plus a 100-byte name and inventory). After splitting, the hot part is 16 bytes. How many hot records fit in one 64-byte line?"
+  prompt="An Enemy struct is 128 bytes (position, health, plus name and loot table). After splitting, the hot part is 16 bytes. How many hot records fit in one 64-byte line?"
   answer={4}
   tolerance={{"mode": "absolute", "value": 0}}
   explanation="64 / 16 = 4, versus half an object per line before."
@@ -36,13 +93,17 @@ keyIdeas:
   devices={["phone", "desktop"]}
 />
 
-## When to split
+## When to split, and when not
 
 Source: Mike Acton (CppCon 2014); Noel Llopis, [Data-Oriented Design (Game Developer, 2009)](https://gamesfromwithin.com/data-oriented-design)
 
+- Split when a hot loop over many objects reads a few fields of a big struct, and a profile shows it waiting on memory.
+- Do not split small structs (16 bytes already fit four per line) or collections of a few hundred objects.
+- A `std::string` member is already a kind of split: short names live inside the 32-byte string object, long ones on the heap. The 32 bytes still sit in the hot struct, so move the string out too.
+
 <MCQ
   id="split-when"
-  prompt="Which signal says hot/cold splitting is worth trying?"
+  prompt="Which signal says hot/cold splitting the Enemy struct is worth trying?"
   options={["The loop is compute-bound with high IPC", "perf shows the loop stalls on cache misses and touches only a few fields of a big struct", "The struct is 8 bytes", "The code is single-threaded"]}
   answer={1}
   explanation="Wasted bandwidth on unused fields is exactly what splitting fixes."

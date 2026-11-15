@@ -1,0 +1,202 @@
+---
+id: cpp-systems/oop/07-references-and-const
+title: "References, Pass-by-Value and const"
+estMinutes: 13
+xp: 90
+fun: 5
+missionIntro: "An area spell that damages nobody, and a minimap that copies the whole level 60 times a second. References and const fix both."
+keyIdeas:
+  - "Passing by value copies the argument. Changes to the copy do not reach the caller, and big copies are slow."
+  - "A reference `T&` is another name for an existing object: no copy, and changes are visible to the caller."
+  - "`const T&` is the default way to pass anything bigger than a few words that you only read."
+  - "`for (auto e : v)` copies every element. Use `auto&` to modify, `const auto&` to read."
+---
+
+## The feature: the frost nova
+
+The player casts Frost Nova: every enemy takes 10 damage. Simple loop over the enemy list. The first version compiles, runs, plays the sound effect, and... nobody takes damage.
+
+## The careless version: loops and parameters that copy
+
+```cpp
+#include <cstdio>
+#include <vector>
+
+struct Enemy { int hp = 30; };
+
+void frost_nova(std::vector<Enemy> enemies) {    // copy of the whole list
+    for (auto e : enemies) e.hp -= 10;           // copy of each enemy
+}
+
+int main() {
+    std::vector<Enemy> enemies(3);
+    frost_nova(enemies);
+    for (auto e : enemies) std::printf("%d ", e.hp);
+    std::printf("\n");
+}
+```
+```text
+30 30 30 
+```
+
+## What went wrong
+
+There are two copies, and either one alone would break the spell:
+
+1. `frost_nova(std::vector<Enemy> enemies)` takes the vector **by value**. The function gets its own copy of the whole list. Changes to it vanish when the function returns.
+2. `for (auto e : enemies)` copies **each element** into `e`. `e.hp -= 10` changes the copy, which is thrown away at the end of each loop step.
+
+In C++, a plain parameter or a plain `auto` variable is always a new, independent object. That is a good default for small values like an `int` or a `Vec2`. It is the wrong default when you mean "this exact object over there".
+
+## The fix: references
+
+A **reference** is another name for an object that already exists. `Enemy& e = enemies[0];` makes `e` refer to the first enemy itself. No copy is made, and changes through `e` change the real enemy.
+
+```cpp
+#include <cstdio>
+#include <vector>
+
+struct Enemy { int hp = 30; };
+
+void frost_nova(std::vector<Enemy>& enemies) {   // the caller's list itself
+    for (auto& e : enemies) e.hp -= 10;          // each real enemy
+}
+
+int main() {
+    std::vector<Enemy> enemies(3);
+    frost_nova(enemies);
+    for (const auto& e : enemies) std::printf("%d ", e.hp);
+    std::printf("\n");
+}
+```
+```text
+20 20 20 
+```
+
+Rules for references:
+
+- must be bound to an object when created (`int& r;` does not compile)
+- can never be re-bound to another object; `r = x` assigns to the referred object
+- cannot be null
+
+That makes them safer than pointers for "use this object" parameters.
+
+## The second bug: slow copies
+
+The minimap draws the level every frame. It only reads the level. Here the level is 256 by 256 tiles, and we count how many times the tile grid is copied over 60 frames:
+
+```cpp
+#include <cstdio>
+#include <vector>
+
+int g_copies = 0;
+
+struct Level {
+    std::vector<unsigned char> tiles = std::vector<unsigned char>(256 * 256);
+    Level() = default;
+    Level(const Level& o) : tiles(o.tiles) { ++g_copies; }
+};
+
+int count_walls_by_value(Level lvl) {            // copies 64 KB per call
+    int n = 0;
+    for (unsigned char t : lvl.tiles) n += (t == 1);
+    return n;
+}
+int count_walls_by_ref(const Level& lvl) {       // no copy
+    int n = 0;
+    for (unsigned char t : lvl.tiles) n += (t == 1);
+    return n;
+}
+
+int main() {
+    Level level;
+    for (int frame = 0; frame < 60; ++frame) count_walls_by_value(level);
+    std::printf("by value: %d copies, %d KB copied\n", g_copies, g_copies * 64);
+    g_copies = 0;
+    for (int frame = 0; frame < 60; ++frame) count_walls_by_ref(level);
+    std::printf("by const&: %d copies\n", g_copies);
+}
+```
+```text
+by value: 60 copies, 3840 KB copied
+by const&: 0 copies
+```
+
+3.8 MB of copying every second for a minimap that changes nothing. On a big level that is a visible frame-time spike.
+
+## const: read-only access
+
+`const Level&` means: "give me the real level, no copy, and I promise not to change it". The compiler enforces the promise. Inside the function, any write to `lvl` is a compile error, and only `const` member functions can be called.
+
+So the parameter type tells the reader what the function does:
+
+| Parameter | Meaning | Use for |
+| --- | --- | --- |
+| `Vec2 v` | my own copy | small types (int, float, Vec2, Tile) |
+| `const Level& lvl` | read the caller's object | anything bigger that you only read |
+| `Level& lvl` | change the caller's object | out-parameters, "apply damage to these" |
+| `Level* lvl` | maybe an object, maybe null | optional things, like "current target, if any" |
+
+A reasonable cutoff for "small": two or three machine words (16 to 24 bytes) and cheap to copy. A `std::string` or `std::vector` is never small, because copying it copies its heap buffer.
+
+## const with pointers
+
+With pointers there are two different things that can be const, and the position of `const` says which:
+
+```cpp
+struct Enemy { int hp = 30; };
+int main() {
+    Enemy a, b;
+    const Enemy* p = &a;   // pointer to const Enemy: can't change *p
+    p = &b;                // fine: the pointer itself can move
+    Enemy* const q = &a;   // const pointer: can change *q, can't re-point q
+    q->hp = 5;             // fine
+    p->hp = 5;             // error
+}
+```
+```text
+game.cpp:8: error: assignment of member 'Enemy::hp' in read-only object
+```
+
+Read the declaration from right to left: `const Enemy* p` is "p is a pointer to an Enemy that is const". `Enemy* const q` is "q is a const pointer to an Enemy".
+
+## Returning references
+
+A member function can return a reference to a member, so the caller can read it without a copy. `const std::string& name() const` is common. Two rules:
+
+- return `const T&` from a const method, so readers cannot change private data through it
+- never return a reference to a local variable: the local dies at the return and the reference dangles (the lifetime module covers this in depth)
+
+<SpotBug
+  id="ref-copy-loop"
+  prompt="The poison tick should take 1 hp from every enemy each second. Which line stops it from working?"
+  code={"#include <vector>\nstruct Enemy { int hp = 30; bool poisoned = true; };\nvoid poison_tick(std::vector<Enemy>& enemies) {\n    for (auto e : enemies)\n        if (e.poisoned) e.hp -= 1;\n}"}
+  bugLine={4}
+  explanation="`auto e` copies each enemy, so the subtraction hits a temporary copy. Write `for (auto& e : enemies)`."
+  devices={["phone", "desktop"]}
+/>
+
+## When to use it, and when not
+
+- **Small values** (int, float, `Vec2`, a 3-int struct): pass by value. A reference to them is not faster, and a copy cannot be changed behind your back by another part of the game.
+- **Big things you read**: `const T&`. This is the most common parameter type in C++ game code.
+- **Things you change**: `T&`, and name the function so it is obvious (`apply_damage(enemies)`).
+- **Maybe-absent things**: a pointer that may be null, or `std::optional` (later module).
+- **Range-for**: `for (const auto& x : v)` to read, `for (auto& x : v)` to modify. Plain `auto` only for small types when you want a copy.
+
+## Coding task: fix the frost nova
+
+The spell from the top of this lesson, for real this time. The tests count every copy of an Enemy.
+
+<Code
+  id="frost-nova"
+  devices={["desktop"]}
+  language="cpp"
+  prompt="`Enemy` is given and counts its copies in `Enemy::copies`. Fix and finish two functions. `void frost_nova(std::vector<Enemy>& enemies, int dmg)` must take dmg from every enemy's hp (never below 0) and set `frozen = true`. `int total_hp(const std::vector<Enemy>& enemies)` returns the sum of hp. Neither function may copy an Enemy."
+  starter={"#include <vector>\nstruct Enemy {\n    inline static int copies = 0;\n    int hp = 30;\n    bool frozen = false;\n    Enemy() = default;\n    explicit Enemy(int h) : hp(h) {}\n    Enemy(const Enemy& o) : hp(o.hp), frozen(o.frozen) { ++copies; }\n    Enemy& operator=(const Enemy&) = default;\n};\nvoid frost_nova(std::vector<Enemy>& enemies, int dmg) {\n    for (auto e : enemies) { e.hp -= dmg; e.frozen = true; }\n}\nint total_hp(const std::vector<Enemy>& enemies) {\n    int t = 0;\n    for (auto e : enemies) t += e.hp;\n    return t;\n}\n"}
+  visibleTests={"#include \"check.h\"\nint main() {\n    std::vector<Enemy> v(2);\n    frost_nova(v, 10);\n    CHECK(v[0].hp == 20 && v[1].frozen);\n    return 0;\n}\n"}
+  tests={"#include \"check.h\"\nint main() {\n    std::vector<Enemy> v;\n    v.reserve(3);\n    v.emplace_back(30); v.emplace_back(5); v.emplace_back(12);\n    Enemy::copies = 0;\n    frost_nova(v, 10);\n    CHECK(v[0].hp == 20 && v[1].hp == 0 && v[2].hp == 2);\n    CHECK(v[0].frozen && v[1].frozen && v[2].frozen);\n    CHECK(total_hp(v) == 22);\n    CHECK(Enemy::copies == 0);\n    std::vector<Enemy> none;\n    frost_nova(none, 5);\n    CHECK(total_hp(none) == 0);\n    return 0;\n}\n"}
+  solution={"#include <vector>\nstruct Enemy {\n    inline static int copies = 0;\n    int hp = 30;\n    bool frozen = false;\n    Enemy() = default;\n    explicit Enemy(int h) : hp(h) {}\n    Enemy(const Enemy& o) : hp(o.hp), frozen(o.frozen) { ++copies; }\n    Enemy& operator=(const Enemy&) = default;\n};\nvoid frost_nova(std::vector<Enemy>& enemies, int dmg) {\n    for (auto& e : enemies) {\n        e.hp = e.hp > dmg ? e.hp - dmg : 0;\n        e.frozen = true;\n    }\n}\nint total_hp(const std::vector<Enemy>& enemies) {\n    int t = 0;\n    for (const auto& e : enemies) t += e.hp;\n    return t;\n}\n"}
+  hints={["In the loops, write `auto&` (to modify) and `const auto&` (to read).", "Clamp: `e.hp = e.hp > dmg ? e.hp - dmg : 0;`"]}
+  explanation="References give the functions the real enemies with zero copies. The const& in total_hp also documents and enforces that counting does not change anybody."
+/>
