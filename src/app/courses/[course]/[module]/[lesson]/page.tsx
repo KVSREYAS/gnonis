@@ -32,7 +32,7 @@ export default async function LessonPage({ params }: PageProps<"/courses/[course
 
   const steps: PlayerStep[] = lesson.blocks.map((b) =>
     b.kind === "card"
-      ? { kind: "card", title: b.title, content: <Markdown source={b.markdown} />, text: b.markdown }
+      ? { kind: "card", title: b.title, content: <Markdown source={b.markdown} defaultLanguage={cslug === "cpp-systems" ? "cpp" : undefined} />, text: b.markdown }
       : { kind: "exercise", id: b.id, exercise: forClient(lesson.exercises[b.id]) },
   );
   const next = nextAfter(course, mod.slug, lesson.slug);

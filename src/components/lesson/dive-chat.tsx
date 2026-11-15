@@ -4,7 +4,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Globe, Square, Trash2 } from "lucide-react";
-import { Markdown } from "@/components/markdown";
+import { Markdown } from "@/components/markdown-client";
 import { loadChat, saveChat } from "@/lib/chat/storage";
 import { questionFromMessage, type TutorContext } from "@/lib/chat/prompt";
 import { cn } from "@/lib/utils";
