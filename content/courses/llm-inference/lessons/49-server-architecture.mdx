@@ -3,7 +3,7 @@ id: llm-inference/12-capstone/01-server-architecture
 title: Architecture of a Tiny Server
 estMinutes: 3
 xp: 100
-fun: 3
+fun: 4
 missionIntro: "Every LLM server has the same components: API, tokenizer, scheduler,
   block manager, model runner, sampler and a streamer."
 keyIdeas:
@@ -31,10 +31,10 @@ Serving engines like vLLM split cleanly into an async API front, a scheduler wit
 <MCQ
   id="brain"
   devices={["phone","desktop"]}
-  prompt="Which component decides each step which sequences run and how many prefill tokens to add?"
-  options={["Tokenizer","Scheduler","Sampler","HTTP layer"]}
-  answer={1}
-  explanation="The scheduler, together with the block manager, makes every decision about who runs. The model runner only executes the batch it is given."
+  prompt={"A small server hangs: the GPU is idle, requests sit in the waiting queue, and the KV block pool is half free. Which component do you inspect first?"}
+  options={["The tokenizer: if it stalls, requests never become token ids, so nothing reaches the GPU.", "The attention kernel: if it is too slow, the queue builds up behind it.", "The block manager: a half-free pool can still be too fragmented to admit anything.", "The scheduler: it admits waiting requests each step, and here it is admitting none."]}
+  answer={3}
+  explanation={"Requests are waiting, memory is free and the GPU is idle, so nothing is being scheduled: the decision step is stuck or wrong, for example a budget check that never passes. A slow kernel would show a busy GPU, and the block pool isn't full. A tokenizer failure would usually show errors, not a queue."}
 />
 
 ## How big?
@@ -43,12 +43,21 @@ Little's law tells you how many sequences you'll hold at once, and so how many K
 
 Source: [vLLM architecture overview](https://docs.vllm.ai/en/latest/design/arch_overview.html)
 
-<Predict
+## A capacity plan with Little's law
+
+Little's law links three things: requests in the system = arrival rate × time each request spends there.
+
+- If answers get longer, each request stays longer, so more requests are in flight at once.
+- If the server slows down under load, the same thing happens, which is why load feeds on itself.
+- Each request in flight holds a KV cache, so memory needed = requests in flight × cache per request.
+
+The same law works in reverse for planning: measure the arrival rate and the time in system at peak, and you know how many requests, and how much KV cache, must fit at once.
+
+<MCQ
   id="littles-law"
   devices={["phone","desktop"]}
-  prompt="Requests arrive at 5 per second and each takes 10 seconds end to end. On average, how many are in the system at once?"
-  answer={50}
-  tolerance={{"mode":"absolute","value":0}}
-  unit="requests"
-  explanation="Little's law: L = λW = 5 × 10 = 50. Size your KV pool for that."
+  prompt={"Traffic stays the same, but answers get longer, so each request spends longer in the system. What happens to the number of requests held at once, and to the KV memory you need?"}
+  options={["Nothing changes, because the arrival rate is the same and that alone sets concurrency.", "Fewer requests are in flight, because each one takes longer to get through.", "More requests are in flight, each with a bigger cache, so KV memory grows even faster.", "More requests are in flight, but KV memory stays the same, because the cache is per request."]}
+  answer={2}
+  explanation={"Little's law: requests in the system = arrival rate × time each spends there. Longer stays mean more requests held at once. Each of them also has a longer context, so total cache grows on both counts."}
 />

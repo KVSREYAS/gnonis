@@ -46,11 +46,19 @@ For inference, the big tenants are all in HBM:
 A kernel loads tiles from HBM into shared memory and registers, does as much maths on them as it
 can, and writes results back. The more work per byte loaded, the less it waits.
 
+## Why weights can't stay on chip
+
+A GPU's on-chip memory (registers, shared memory, L2 cache) is fast but tiny: tens of megabytes in total. Even a small language model's weights take gigabytes.
+
+So weights live in HBM, and each decode step streams all of them through the chip. Nothing useful stays on chip from one step to the next, because the next step needs all the weights again and they can't fit.
+
+That is why batch-1 decode speed is set by HBM bandwidth and the model's size in bytes, and why the main levers are fewer bytes (quantization) or more tokens per read (batching, speculative decoding).
+
 <MCQ
   id="where-weights"
   devices={["phone","desktop"]}
-  prompt="Where do the weights of an 8B model live while it is being served on one GPU?"
-  options={["In L2 cache","In shared memory, split across SMs","In HBM, streamed through the chip for every forward pass","In CPU memory, copied in per token"]}
+  prompt={"A teammate suggests keeping a model's weights in the GPU's L2 cache so decode stops waiting on HBM. What is wrong with the plan?"}
+  options={["L2 is slower than HBM for large reads, so the plan would make decode slower.", "Weights already live in L2; it is the KV cache that is read from HBM each step.", "L2 is tiny next to the weights, so each step still streams nearly all of them from HBM.", "Nothing: L2 holds the weights between steps, which is what FlashAttention does."]}
   answer={2}
-  explanation={"16 GB will not fit in 50 MB of L2. The weights sit in HBM and are read for every forward pass, which is why HBM bandwidth caps decode speed."}
+  explanation={"On-chip caches are measured in tens of megabytes, while even a small model's weights take gigabytes. A decode step touches every weight, so nearly all of them must come from HBM each time. L2 is faster than HBM; it is simply far too small. FlashAttention keeps attention tiles on chip, not the weights."}
 />

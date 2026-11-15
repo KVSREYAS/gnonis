@@ -72,12 +72,22 @@ The MLP is usually two or three matrices with an activation such as SwiGLU betwe
 
 Each weight is used in one multiply and one add per token, so a forward pass costs about **2 x parameters FLOPs per token** (ignoring attention over the context, which matters at long lengths).
 
-Example: an 8B model processing a 1,000-token prompt: 2 x 8 x 10^9 x 1,000 = 1.6 x 10^13 FLOPs = 16 TFLOPs. On a GPU sustaining 400 TFLOP/s that is about 40 ms of prefill.
+What matters is the consequence: prefill pushes many tokens through each weight it reads, so it is limited by compute, while decode pushes one, so it is limited by memory.
+
+## Counting the work in a request
+
+Two numbers describe a request's cost: prompt tokens and output tokens.
+
+- **Prompt tokens** set the size of the single prefill pass. A 10,000-token prompt does 10,000 tokens' worth of maths in that pass, and it sets the wait before the first token.
+- **Output tokens** set the number of forward passes. Each new token needs one pass, and each pass reads all the weights.
+
+A request with a long prompt and a short answer is mostly prefill: a slow start, then a quick finish. A short prompt with a long answer is mostly decode: a fast start, then a long stream. Most APIs bill the two separately, and output tokens usually cost more, because each one needs its own pass.
 
 <MCQ
   id="concept-check"
-  prompt="A model must write a 200-token answer to a 1,000-token prompt. How many forward passes, roughly?"
-  options={["1", "200 (one prefill that yields token 1, then 199 decode steps)", "1,200", "1,000"]}
+  devices={["phone","desktop"]}
+  prompt={"A summarizer reads a long article and writes a short summary. A chat reply reads a short question and writes a long answer. Which needs more forward passes, and which has the slower start?"}
+  options={["The summarizer needs more passes, because it handles more tokens in total and every single token needs its own pass.", "The chat reply needs more passes, one per output token; the summarizer starts slower, since its prefill is long.", "They need about the same number of passes, because both handle a similar amount of text overall.", "The chat reply needs more passes and has the slower start, because every pass re-reads the question."]}
   answer={1}
-  explanation="Prefill handles the whole prompt in one pass and produces the first token. Each further token needs one decode pass."
+  explanation={"Forward passes are counted by output tokens: one prefill pass gives the first token, and each later token needs one decode pass. The prompt's length sets how much work that first pass does, so a long prompt means a slow start, and a long answer means a long stream. Earlier tokens are not re-read; their keys and values come from the cache."}
 />

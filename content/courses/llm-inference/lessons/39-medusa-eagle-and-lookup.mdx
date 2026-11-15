@@ -25,23 +25,32 @@ Both build a **tree** of candidates: several options for the next token, several
 
 ![A candidate token tree: 3 first-token options each with 2 children, verified in one pass](/diagrams/llm-inference/09-speculative-decoding/03-medusa-eagle-and-lookup.png)
 
-<Predict
+<MCQ
   id="tree-nodes"
   devices={["phone","desktop"]}
-  prompt={"A Medusa-style tree has 3 candidates for the next token and 2 children under each. How many candidate tokens does one verification pass check?"}
-  answer={9}
-  tolerance={{"mode":"absolute","value":0}}
-  unit="tokens"
-  explanation="3 + 3 × 2 = 9 tokens, checked in one forward pass with a tree-shaped attention mask."
+  prompt={"In tree verification, each candidate may attend to the prompt and its own ancestors, but not to its siblings or cousins. Why?"}
+  options={["Siblings are alternative futures; seeing them would make a score depend on text off its path.", "To save memory, because attending over the whole tree would need too large a mask.", "Siblings are always rejected, so attending to them would only waste work.", "The causal mask only lets a token attend to the token right before it."]}
+  answer={0}
+  explanation={"Each root-to-leaf path is one possible continuation. The tree mask makes every candidate see exactly the text it would follow in normal decoding, so one pass checks all paths correctly. Memory is not the reason, any sibling might be the accepted one, and the causal mask allows attending to all earlier tokens, not just one."}
 />
+
+## Exact or not: the accept rule decides
+
+Medusa's candidates can be verified in two ways. With rejection sampling, the output keeps the target's distribution. Medusa also offers **typical acceptance**, which accepts candidates the target finds plausible enough. It is faster, but the output distribution is no longer exactly the target's.
+
+Tree shape matters too. The Medusa paper found that a carefully chosen sparse tree beat a much larger dense one. Too many candidates make the verify pass compute-bound, which cancels the gain.
+
+EAGLE-2 and EAGLE-3 grow the tree as they go, adding branches where the draft is confident.
+
+Source: [Medusa](https://arxiv.org/abs/2401.10774)
 
 <MCQ
   id="tree-why"
   devices={["phone","desktop"]}
-  prompt="What does tree attention let Medusa do?"
-  options={["Train faster","Verify several alternative continuations in one forward pass","Shrink the KV cache","Skip the softmax"]}
-  answer={1}
-  explanation="Each branch only attends to its own ancestors, set by a custom mask."
+  prompt={"Medusa's heads give several guesses for the next token and several for the token after each. Without tree attention, how would you check all the continuations, and what does the tree mask buy?"}
+  options={["You'd check them one at a time; the tree mask lets the heads verify each other without the target.", "You'd need one target pass per first guess; the tree mask removes the need for the draft heads at all.", "Each path would be a separate sequence; the tree packs all candidates into one pass.", "You'd verify only the most likely path; the tree mask merges all paths into one averaged guess."]}
+  answer={2}
+  explanation={"Every path through the guesses is a different continuation, and normally each would be checked as a separate sequence. Tree attention places every candidate token in one sequence and uses a mask so each token attends only to its own ancestors. One target pass then scores all paths at once, sharing the common prefix."}
 />
 
 ## Copy-paste drafting
@@ -53,8 +62,8 @@ Sources: [Medusa](https://arxiv.org/abs/2401.10774), [EAGLE](https://arxiv.org/a
 <MCQ
   id="no-training"
   devices={["phone","desktop"]}
-  prompt="Which method needs no extra model and no training at all?"
-  options={["Medusa","EAGLE","Prompt lookup decoding","Distilled draft model"]}
-  answer={2}
-  explanation="It just searches the prompt for the current n-gram and proposes whatever followed it."
+  prompt={"A code-editing tool wants speculative decoding by tomorrow. There is no GPU budget for training and no room to host a second model. Which drafting method fits?"}
+  options={["Medusa-1, because only the small heads are trained and the base model stays frozen.", "EAGLE, because its draft is only one light layer on top of the target's features.", "A distilled small draft model, because distillation can run on CPUs overnight.", "Prompt lookup (n-gram) drafting, which copies continuations from earlier in the context."]}
+  answer={3}
+  explanation={"Prompt lookup needs no training and no extra model: it finds the last few tokens earlier in the context and proposes what followed them. Code editing repeats much of its input, so acceptance is high. Medusa and EAGLE both need training, and a draft model needs hosting."}
 />

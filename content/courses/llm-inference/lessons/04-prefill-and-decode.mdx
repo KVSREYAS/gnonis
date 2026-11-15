@@ -48,15 +48,13 @@ $$T \approx \text{TTFT} + (N - 1) \times \text{TPOT}$$
 
 ![Timeline showing one large prefill block then many small decode steps, with TTFT and TPOT marked](/diagrams/llm-inference/01-tokens-forward-pass/04-prefill-and-decode.png)
 
-<Predict
+<MCQ
   id="total-latency"
   devices={["phone","desktop"]}
-  prompt={"A server has a TTFT of 200 ms and a steady time-per-output-token of 20 ms. How long until a 101-token answer is complete?"}
-  answer={2200}
-  tolerance={{"mode":"relative","value":0.01}}
-  unit="ms"
-  hint="The first token arrives at TTFT, and each of the remaining 100 tokens adds one TPOT."
-  explanation="200 + 100 x 20 = 2,200 ms. For long answers, decode dominates."
+  prompt={"Server A starts answering quickly but streams each token slowly. Server B takes longer to start but streams fast. You run code autocomplete (a few tokens) and long chat answers. Which server suits which?"}
+  options={["A for both, because a fast start is what users notice, whatever the answer length.", "B for both, because fast streaming always wins once the answer gets going, whatever its length.", "B for autocomplete and A for long answers, because short answers hide a slow start.", "A for autocomplete, where the start dominates; B for long answers, where per-token time does."]}
+  answer={3}
+  explanation={"Total wait ≈ time to first token + (number of tokens × time per token). With only a few tokens, the start dominates, so the quick starter wins. With hundreds of tokens, the per-token time is paid over and over, so the fast streamer wins. Neither number wins for every workload."}
 />
 
 ## Different bottlenecks
@@ -68,11 +66,21 @@ Decode at batch size 1 loads **every weight** to process **one token**. The tens
 units that do matrix multiplication, covered in module 4) sit mostly idle, waiting on memory. That one fact drives batching, quantization and speculative decoding,
 which you will meet later.
 
-<Fill
+## Why each phase has its own limit
+
+Both phases do roughly the same maths per token. What differs is how often each weight is reused once it has been read from memory.
+
+**Prefill**: all prompt tokens go through the model together, so each weight is loaded once and used for every prompt token. Lots of maths per byte read, so the tensor cores are the bottleneck. Prefill is **compute-bound**.
+
+**Decode**: one new token per step, and the step must still read every weight. The tensor cores finish their small share almost at once and then wait for memory. Decode is **memory-bound**.
+
+So a faster chip only helps the phase whose limit it raises: more compute speeds up prefill, more memory bandwidth speeds up decode. When you read a GPU spec sheet, ask which phase your users mostly wait on.
+
+<MCQ
   id="bound-fill"
   devices={["phone","desktop"]}
-  text={"At batch size 1, prefill of a long prompt is usually {{0}}-bound, while decode is usually {{1}}-bound."}
-  chips={["compute","memory-bandwidth","network","disk"]}
-  answers={["compute","memory-bandwidth"]}
-  explanation={"Prefill multiplies many tokens against each weight it loads. Decode loads every weight to process a single token, so it waits on memory. Module 4 makes this precise."}
+  prompt={"A team swaps its GPU for one with much more compute but the same memory bandwidth. For one user, what happens to long-prompt prefill and to token streaming?"}
+  options={["Both get faster, because prefill and decode are both matrix multiplications run by the same tensor cores.", "Prefill gets faster, because it is compute-bound; streaming barely changes, being memory-bound.", "Streaming gets faster but prefill doesn't, because prefill is limited by reading the long prompt from memory.", "Neither changes, because with a single user the GPU sits mostly idle and no hardware limit is ever reached."]}
+  answer={1}
+  explanation={"Prefill reuses each weight for every prompt token, so it does a lot of maths per byte read and waits on the tensor cores. Decode at batch 1 reads every weight to produce one token and does very little maths per byte, so it waits on memory. More compute helps the phase that waits on compute. The prompt itself is tiny next to the weights."}
 />

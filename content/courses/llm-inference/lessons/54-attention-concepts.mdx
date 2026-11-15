@@ -71,10 +71,22 @@ Going from 8K to 32K context is 4 times longer but about 16 times more attention
 
 ![Attention cost growing with T squared](/diagrams/llm-inference/02-attention/04-the-quadratic-bill.png)
 
+## Worked scenario: two designs, one GPU
+
+Two models are the same except for attention: one gives every query head its own K/V head (MHA), the other shares each K/V head across a group of query heads (GQA).
+
+- **Cache per token**: each token stores a key and a value per layer per KV head, so GQA stores a fraction of what MHA stores.
+- **Users that fit**: the same memory holds proportionally more GQA tokens, so more conversations at once.
+- **Speed at long context**: each decode step reads the whole cache, so GQA's steps read fewer bytes and finish sooner.
+- **What stays the same**: both compute one attention pattern per query head. GQA changes what is stored, not how many patterns are computed.
+
+This is why almost every recent open model uses GQA: a small quality cost for a much cheaper cache.
+
 <MCQ
   id="concept-check"
-  prompt="A model has 32 query heads and 8 KV heads. Compared with full MHA, how big is the stored K and V?"
-  options={["The same", "1/2", "1/4", "1/32"]}
+  devices={["phone","desktop"]}
+  prompt={"Model X shares each K/V head across a group of query heads. Model Y gives every query head its own K/V head. Same layers, same head size, same memory for the cache. Which fits more cached tokens, and does X compute fewer attention patterns?"}
+  options={["X fits more tokens, and it computes only one pattern per group, so it loses most of what its heads learned.", "Y fits more tokens, because its larger number of KV heads spreads the cache more efficiently.", "X fits more tokens; no, it still computes one pattern per query head.", "They fit the same, because the cache is sized by query heads, which both models share."]}
   answer={2}
-  explanation="K and V scale with the number of KV heads: 8/32 = 1/4."
+  explanation={"Cache per token grows with the number of KV heads, so sharing them makes each token cheaper and more tokens fit. Every query head still scores its own query against its group's shared keys, so the number of patterns doesn't drop. Query heads are never cached."}
 />

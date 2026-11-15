@@ -22,15 +22,13 @@ entry. Token id 644 selects row 644, a vector of `d_model` numbers (4,096 for Ll
 So a prompt of $n$ tokens becomes a matrix of shape $[n \times d_{model}]$. Everything after this
 point is matrix maths on that hidden state.
 
-<Predict
+<MCQ
   id="embedding-params"
   devices={["phone","desktop"]}
-  prompt={"Llama 3 8B has a vocabulary of 128,256 and a hidden size of 4,096. How many parameters are in its embedding table, in millions?"}
-  answer={525.3}
-  tolerance={{"mode":"relative","value":0.02}}
-  unit="million"
-  hint="rows x columns"
-  explanation={"128,256 x 4,096 ≈ 525 million parameters, about 6.5% of the model. The LM head is another matrix of the same shape (Llama 3 8B does not share them)."}
+  prompt={"Hindi users' messages take far more tokens than the same message in English. A newer model has a much larger vocabulary that includes many Hindi tokens. What do Hindi users gain, and what does every request pay for it?"}
+  options={["Fewer tokens per Hindi message: less prefill, fewer decode steps, a smaller cache. Every request pays for a bigger embedding table and LM head.", "Hindi messages get fewer tokens, but nothing else changes, because the vocabulary only affects the tokenizer on the CPU.", "Hindi gets faster, but every transformer block widens with the vocabulary, so all languages do much more maths per token.", "Hindi needs fewer tokens and the model also gets smaller, because each embedding row can be shorter in a bigger table."]}
+  answer={0}
+  explanation={"Every serving cost is counted in tokens, so a vocabulary that covers Hindi better makes Hindi requests cheaper in every phase. The price sits in the two vocabulary-sized matrices: the embedding table and the LM head each have one row per token, so both grow, and the final logits step scores more entries every time. The transformer blocks don't change width with the vocabulary."}
 />
 
 ## The block, repeated
@@ -64,6 +62,14 @@ token. Turning them into an actual choice is the next lesson.
 
 Cost check: a forward pass does about **2 FLOPs per parameter per token**, so an 8B model needs
 roughly 16 GFLOPs for every token it processes.
+
+## Only the last position needs logits
+
+The LM head is one of the biggest single matrices in the model: it has a row for every entry in the vocabulary. During prefill, the forward pass produces a hidden vector for every prompt position, but only the last one predicts the next token.
+
+So serving engines run the LM head only on the positions they will sample from: the last position of each sequence in the batch. Every other row of logits would be thrown away, so skipping them saves real work and changes nothing in the output.
+
+Don't confuse this with the KV cache. The keys and values of every prompt position are still computed and stored, because each later token attends to all of them.
 
 <Ordering
   id="pipeline-order"

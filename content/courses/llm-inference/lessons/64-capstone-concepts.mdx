@@ -32,7 +32,7 @@ Each iteration:
 4. **Run**: one forward pass over all decode tokens plus prefill chunks.
 5. **Emit**: sample one token per sequence that produced one, and stream it.
 
-Example budget 2,048 tokens: 60 running decodes use 60, leaving 1,988 for prefill chunks of waiting requests.
+Decodes are scheduled first, one token each, so the more sequences are decoding, the less of the budget is left for prefill chunks.
 
 ![Scheduler loop with finish, grow, admit, run](/diagrams/llm-inference/12-capstone/02-build-the-scheduler.png)
 
@@ -57,10 +57,22 @@ A **Poisson process** is the standard model for independent random arrivals. At 
 
 It creates realistic bursts: several requests close together, then pauses. Sending requests at perfectly even intervals hides queueing effects and makes latency look better than it will be in production.
 
+## Worked scenario: a full step under pressure
+
+A vLLM-style server is at step 9,001. Running: S (arrived first), T, R (arrived last). Free blocks: 0. S's last block just filled.
+
+1. The scheduler must give S a new block. None is free.
+2. It preempts the lowest-priority request, R, the newest. With recompute, R's blocks return to the free list and R goes back to the waiting queue.
+3. S gets its block, and the step runs S and T.
+4. When blocks free up later, R is admitted again, and prefill rebuilds its cache from its prompt plus the tokens it had already generated.
+
+R's user sees a pause. If this happens often, the fix is memory: an FP8 cache, a smaller batch cap, or more GPUs.
+
 <MCQ
   id="concept-check"
-  prompt="During a step, a running sequence needs a new KV block and none is free. What does a vLLM-style scheduler do?"
-  options={["Crash", "Preempt another sequence (swap or recompute) to free blocks", "Skip attention for that token", "Allocate CPU memory for attention"]}
-  answer={1}
-  explanation="Preemption frees blocks so running sequences can keep growing."
+  devices={["phone","desktop"]}
+  prompt={"On an engine that only supports recompute (like vLLM V1), the oldest sequence needs a new KV block and none is free. The newest request has a prompt and a long answer generated so far. What happens to it, and what will resuming it cost?"}
+  options={["Its blocks are copied to CPU memory, and when it resumes they are copied back over PCIe.", "It restarts from its prompt and generates its whole answer again, one decode step at a time.", "It is preempted; on resume, one prefill over its prompt and its output rebuilds the cache.", "The oldest sequence is preempted instead, because the newest one holds more blocks and would cost more to rebuild."]}
+  answer={2}
+  explanation={"First-come-first-served preempts the newest request and frees its blocks. With recompute, nothing is saved but the tokens. On resume the engine prefills the prompt and the already-generated tokens together in one pass, which is far faster than decoding them again one by one, and the answer continues where it stopped."}
 />

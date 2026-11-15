@@ -35,13 +35,13 @@ Softmax runs along each row, so each row's weights sum to 1.
 
 ![Three heatmaps: Q times K transpose scores, row-wise softmax, and the weighted sum of V](/diagrams/llm-inference/02-attention/01-queries-keys-values.png)
 
-<Fill
+<MCQ
   id="formula-fill"
   devices={["phone","desktop"]}
-  text={"Attention(Q, K, V) = softmax(Q Kᵀ / {{0}}) {{1}}"}
-  chips={["√d_k","d_model","V","K","n²","Q"]}
-  answers={["√d_k","V"]}
-  explanation="Scale the scores by the square root of the key dimension, softmax each row, then use the weights to mix the values."
+  prompt={"Two heads score the same three keys. In head A, the first key's score is far above the other two. In head B, it is only slightly above them. What do the two outputs look like?"}
+  options={["A's output is almost exactly the first value; B's mixes in a real share of the others.", "Both are exactly the first value vector, because softmax gives all the weight to the highest score.", "Both are an even mix of the three values, because softmax makes every row of weights add up to 1.", "Both have the same mix, because softmax depends only on which score is largest, not by how much."]}
+  answer={0}
+  explanation={"Softmax turns score gaps into weight ratios through the exponential, so a large gap gives nearly all the weight to one key, while a small gap leaves the others a noticeable share. The output is the weighted mix of the value vectors. Rows add up to 1, but that says nothing about how evenly the weight is spread."}
 />
 
 ## The scale factor
@@ -51,21 +51,28 @@ push softmax into a near one-hot distribution, where it stops learning.
 
 Dividing by $\sqrt{d_k}$ keeps the scores' variance around 1, whatever the head size.
 
+## Reading a softmax row
+
+Softmax turns score gaps into weight ratios through the exponential. A small gap between two scores gives them similar weights; a large gap gives almost all the weight to the higher one, and the effect grows very fast with the gap.
+
+So the scale of the scores decides how spread out attention is. Scores that differ only a little give a soft, spread-out mix. Scores that differ a lot give a nearly one-hot row: the head copies a single value vector.
+
+Raw dot products add up one term per dimension, so the wider the head, the more spread out the raw scores. Dividing by √d_k cancels that growth and keeps scores in the range where softmax is neither flat nor one-hot, which is also the range where its gradients are useful for training.
+
 <MCQ
   id="why-scale"
   devices={["phone","desktop"]}
-  prompt="Why divide the scores by √d_k?"
-  options={["To make the matrix multiply cheaper","To keep the scores' spread around 1 so softmax does not saturate","To normalise the values to unit length","To mask future tokens"]}
-  answer={1}
-  explanation={"A dot product of two random d-dimensional vectors has variance proportional to d. Without scaling, large d pushes softmax towards one-hot, and its gradients vanish during training."}
+  prompt={"A student writes attention without dividing the scores by √d_k. With a large head size, training is unstable and each row's weights pile onto a single key. What went wrong?"}
+  options={["Dot products grow with the head size, so the scores spread too wide; softmax goes nearly one-hot and its gradients vanish.", "Without the division the scores stay too small, so softmax spreads weight evenly and the model can't focus.", "The division only keeps numbers inside fp16's range to save memory; leaving it out shouldn't change learning.", "Without it, future tokens' scores grow big enough to get past the mask, so information leaks backwards."]}
+  answer={0}
+  explanation={"A dot product adds up one term per dimension, so its typical size grows with the square root of the head size. Large score gaps make softmax put almost all weight on the top key, and a nearly one-hot softmax barely changes when its inputs change, so gradients nearly vanish and learning stalls or jumps. Dividing by √d_k keeps the spread near 1. Leakage is the mask's job, not the scale's."}
 />
 
-<Predict
+<MCQ
   id="score-count"
   devices={["phone","desktop"]}
-  prompt="A sequence has 8 tokens. How many query-key scores does ONE attention head compute (before masking)?"
-  answer={64}
-  tolerance={{"mode":"absolute","value":0}}
-  unit="scores"
-  explanation="Every query is compared with every key, so 8 x 8 = 64. Causal masking then discards the upper triangle."
+  prompt={"During decode, the sequence already holds t tokens and one new token arrives. How many new attention scores does one head compute in this step?"}
+  options={["About t²: the whole score matrix is recomputed every step.", "Exactly 1: the new query against the new key only.", "None: scores are cached along with the keys and values.", "About t: one row, the new token's query against every key so far."]}
+  answer={3}
+  explanation={"Old scores never change and old queries are never needed again, so decode computes just one new row: the new query against all keys so far. That is why per-token attention cost grows linearly with context during decode. Recomputing t² scores is the waste that caching avoids. Scoring only the new key would ignore the whole context. And scores are not cached: each new query needs fresh scores against every key."}
 />

@@ -62,16 +62,12 @@ Plotted on log-log axes the limit looks like a sloped line that flattens into a 
 
 ## The decode speed limit
 
-At batch size 1, each decode step must read every weight once. AI is about 1, far below 295, so decode is memory-bound and:
-
-max tokens/s = bandwidth / bytes of weights
-
-Llama-3-8B in FP16 = 16 GB. On H100: 3,350 / 16 = about **209 tokens/s** at best, before counting KV reads.
+At batch size 1, each decode step must read every weight once. Intensity is about 1 FLOP per byte, far below the ridge, so decode is memory-bound, and its best possible speed is memory bandwidth divided by the bytes of weights (plus KV reads).
 
 Two ways out, both covered later:
 
-- **Batching**: B requests share one weight read, so aggregate throughput rises nearly B times while still memory-bound.
-- **Quantization**: 4-bit weights are 4 GB, so the ceiling rises to about 840 tokens/s.
+- **Batching**: many requests share one weight read, so aggregate throughput rises almost in step with the batch while still memory-bound.
+- **Quantization**: fewer bytes per weight, so each read finishes sooner and the ceiling rises.
 
 ## Tensor cores, warps and MFU
 
@@ -79,10 +75,21 @@ Two ways out, both covered later:
 - A **warp** is a group of 32 GPU threads that execute the same instruction together. Kernels are written per thread but scheduled per warp.
 - **MFU** (model FLOP utilization) = FLOP/s your workload achieves / peak FLOP/s. Prefill on a good engine may reach 40-60%. Decode at small batch is often under 5%, which is expected when memory-bound, not a bug.
 
+## Worked scenario: will a new GPU help?
+
+To predict whether a new chip speeds up a workload, place the workload on each chip's roofline before reading the headline numbers.
+
+- **Memory-bound work** (small-batch decode, normalisation, long-context attention reads): it speeds up by the bandwidth gain. A large jump in FLOP/s does nothing for it.
+- **Compute-bound work** (long prefill, large training matmuls): it speeds up by the FLOP/s gain.
+- **The ridge moves** too. Chips have added compute faster than bandwidth, so the ridge keeps moving right, and memory-bound work uses an ever smaller share of the chip.
+
+The spec sheet's headline FLOP/s only applies to work right of the ridge. For decode, read the bandwidth line first.
+
 <MCQ
   id="concept-check"
-  prompt="A GPU has 1,000 TFLOP/s and 4 TB/s. A kernel has intensity 50 FLOP/byte. What limits it?"
-  options={["Compute", "Memory bandwidth", "Neither", "Kernel launch overhead"]}
-  answer={1}
-  explanation="Ridge = 1000/4 = 250. 50 is below it, so the kernel is memory-bound at 50 x 4 = 200 TFLOP/s."
+  devices={["phone","desktop"]}
+  prompt={"A new accelerator has far more compute than your current GPU but only slightly more memory bandwidth. Your batched decode sits well left of the ridge on both. What speedup should you expect?"}
+  options={["Only about the small bandwidth gain, because memory-bound work follows bandwidth.", "About the large compute gain, because decode is made of matrix multiplications.", "Somewhere between the two gains, because time depends on both added together.", "No change at all, because decode speed depends only on the model, not the hardware."]}
+  answer={0}
+  explanation={"Left of the ridge, speed is bandwidth times intensity. The compute gain lifts the flat roof, which this workload never touches. Note too that the new ridge sits even further right, so the same workload uses an even smaller share of the new chip's compute."}
 />

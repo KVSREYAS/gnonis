@@ -60,10 +60,21 @@ Uneven routing creates **load imbalance**: a popular expert's GPU becomes the bo
 
 ![Router sending tokens to experts across GPUs](/diagrams/llm-inference/10-parallelism/03-moe-and-expert-parallelism.png)
 
+## Worked scenario: one model, three splits
+
+A large model on one server of GPUs connected by NVLink:
+
+- **TP across all GPUs**: each GPU holds a slice of every layer, and one user's step reads all slices at once, so it is fastest for latency, at the cost of all-reduces in every block.
+- **Smaller TP groups as replicas**: each replica has more memory per GPU for KV cache, and replicas never talk to each other. Often the best throughput per GPU.
+- **PP across all GPUs**: memory per GPU is like full TP, but one user's token passes through the stages in turn, so per-user speed is no better than one big GPU.
+
+Pick TP for latency, add replicas for throughput, and use PP when the model doesn't fit inside one node.
+
 <MCQ
   id="concept-check"
-  prompt="Which split needs an all-reduce inside every transformer block?"
-  options={["Pipeline parallelism", "Tensor parallelism", "Data parallelism", "None of them"]}
-  answer={1}
-  explanation="TP's row-split matmuls produce partial sums that must be added across GPUs each block."
+  devices={["phone","desktop"]}
+  prompt={"A large model must serve a latency-critical chat on several GPUs in one NVLink server. Which split gives the lowest per-token latency, and what does it add?"}
+  options={["Pipeline parallelism: each GPU holds fewer layers, so the token gets through each GPU faster.", "Data parallelism: one full copy per GPU, so that each user gets a GPU entirely to themselves.", "Tensor parallelism: all GPUs read their share of each layer at once, plus all-reduces.", "Expert parallelism, because it has the least communication of any split across several GPUs."]}
+  answer={2}
+  explanation={"Per-token latency at small batch is the time to read the weights. TP splits every layer, so all GPUs read at once and the read finishes sooner, at the cost of two all-reduces per block over NVLink. PP still runs the stages one after another, and data parallelism needs the model to fit on one GPU."}
 />

@@ -19,23 +19,30 @@ keyIdeas:
 
 Each stage owns a block of layers. Stage k finishes a micro-batch and sends its activations to stage k + 1. In inference, different requests or micro-batches fill the pipeline.
 
-<Predict
+<MCQ
   id="pp-mem"
   devices={["phone","desktop"]}
-  prompt="Llama 3 70B in fp16 (140 GB) split across 4 pipeline stages. Weights per GPU in GB?"
-  answer={35}
-  tolerance={{"mode":"relative","value":0.01}}
-  unit="GB"
-  explanation="140 / 4. The same as TP = 4, but with very different communication."
+  prompt={"You serve a large model with pipeline parallelism over several GPUs. Compared with one GPU big enough to hold the whole model, does one user's next token arrive faster?"}
+  options={["Yes, much faster, because each stage reads only its own share of the weights.", "No: the stages handle that token one after another, so PP mainly lets the model fit.", "Yes, because the stages add their partial results with an all-reduce.", "No, it is much slower, because every stage waits for an all-reduce."]}
+  answer={1}
+  explanation={"A token must pass through every layer in order, so the stages work one after another and only one is busy for that token at a time. Total weight reads are the same, just spread over GPUs, plus small hand-offs. PP's gain is fitting the model and, with many requests in flight, throughput."}
 />
+
+## How small pipeline traffic is
+
+With pipeline parallelism, weights and the KV cache stay on their stage. Between stages only the hidden vector of each token in flight moves, one vector per token: tiny next to the weights, even for a long prompt.
+
+Tensor parallelism is the opposite: two all-reduces of the activations in every block, so a deep model does many all-reduces per step, each one a moment when every GPU waits for the others.
+
+That is why the usual layout keeps TP inside a node, on NVLink, and uses PP across nodes, where the links are slower. Pipeline traffic is small and infrequent enough to cross them; TP's is not.
 
 <MCQ
   id="pp-vs-tp"
   devices={["phone","desktop"]}
-  prompt="Compared with TP, PP communication is…"
-  options={["all-reduce every layer","point-to-point activation sends between neighbouring stages only","none at all","all-to-all"]}
+  prompt={"A large model runs with pipeline parallelism across several GPUs. At batch 1, what crosses from one stage's GPU to the next on each decode step?"}
+  options={["A share of the weights, so that the next GPU has the layers it needs for this step.", "Only the token's activation vector at the stage boundary, with no per-block all-reduces.", "The KV cache of the earlier layers, so the next GPU's layers can attend to past tokens.", "An all-reduce of the activations after every layer, just as in tensor parallelism."]}
   answer={1}
-  explanation="That's why PP is the go-to for spanning nodes."
+  explanation={"Each stage keeps its own layers' weights and their KV cache, so neither moves. All that passes is the hidden vector coming out of the stage's last layer, which is tiny next to the weights. That light traffic is why PP suits slower links between nodes."}
 />
 
 ## Bubbles
@@ -46,12 +53,11 @@ Sources: [GPipe](https://arxiv.org/abs/1811.06965), [Megatron-LM PP](https://arx
 
 ![Pipeline timeline for 4 stages and 6 micro-batches with idle bubble cells at the start and end](/diagrams/llm-inference/10-parallelism/02-pipeline-parallelism.png)
 
-<Predict
+<MCQ
   id="bubble"
   devices={["phone","desktop"]}
-  prompt="4 pipeline stages, 12 micro-batches. What percentage of the time is bubble?"
-  answer={20}
-  tolerance={{"mode":"absolute","value":0.5}}
-  unit="%"
-  explanation="(4 − 1) / (12 + 4 − 1) = 3/15 = 20%."
+  prompt={"In pipeline parallelism, some stages sit idle while the pipeline fills and empties: the bubble. How do you shrink it, and what does that need?"}
+  options={["Use more micro-batches, which needs enough requests in flight to fill them.", "Add more stages, because more stages always shrink the bubble by giving each GPU less to do.", "Use fewer, bigger micro-batches, so each stage has more to do at once.", "Put all the stages on one GPU, so that none of the stages ever has to wait for another."]}
+  answer={0}
+  explanation={"The bubble is the start and end of the pipeline, when only some stages have work. With more micro-batches, the busy middle part grows next to those fixed edges, so the idle share falls. More stages make the edges longer. Micro-batches need concurrent requests, which interactive serving may not have."}
 />

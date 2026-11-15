@@ -25,15 +25,17 @@ compute units spend most of their time waiting.
 
 A matmul $[m \times k] \cdot [k \times n]$ does $2mkn$ FLOPs (a multiply and an add per term).
 
-<Predict
+For a square $n \times n$ matmul the FLOPs grow as $n^3$, but the data moved (two inputs and one
+output) grows only as $n^2$, so each loaded number is reused about $n$ times. At $n = 4{,}096$ in
+fp16 the intensity is about 1,365 FLOP/byte.
+
+<MCQ
   id="square-ai"
   devices={["phone","desktop"]}
-  prompt={"A 4096 x 4096 by 4096 x 4096 matmul in fp16 does 2·n³ FLOPs and moves two inputs plus one output (3·n² elements of 2 bytes each). What is its arithmetic intensity in FLOP/byte?"}
-  answer={1365.3}
-  tolerance={{"mode":"relative","value":0.03}}
-  unit="FLOP/byte"
-  hint="2n³ / (2 · 3n²) = n / 3"
-  explanation="2·4096³ / (6·4096²) = 4096 / 3 ≈ 1,365. Comfortably compute-bound on any GPU."
+  prompt={"A large square matrix multiply reaches very high arithmetic intensity, but a batch-1 decode multiply with the same weight matrix is very low. What makes the difference?"}
+  options={["In the square multiply each weight meets many rows; in batch-1 decode it meets one vector.", "The square multiply uses tensor cores and decode doesn't, so decode does less work per byte.", "Decode stores its weights in fp32, which doubles the bytes it reads for each FLOP compared with prefill.", "The square multiply skips most of its zeros, which saves memory traffic that decode has to pay for."]}
+  answer={0}
+  explanation={"Intensity is FLOPs divided by bytes moved. Reading a weight costs the same in both cases, but in a large square multiply that weight is reused for every row of the other matrix, so the cost of reading it is shared over many FLOPs. In batch-1 decode it is used once. Same hardware, same precision."}
 />
 
 ## Decode is a matrix-vector product
@@ -42,17 +44,20 @@ A matrix-matrix multiply is called a **GEMM** (general matrix multiply), and a m
 is a **GEMV**. At decode time with batch size 1, each linear layer is a GEMV: it multiplies **one**
 token's vector by a big weight matrix. Every weight is read once and used once.
 
+One multiply-add per 2-byte weight works out to about **one FLOP per byte**, whatever the matrix size.
+Tensor cores need hundreds of FLOPs per byte to stay busy, so batch-1 decode is firmly memory-bound.
+
 ![Log-log plot of arithmetic intensity for square GEMM versus GEMV against the H100 ridge](/diagrams/llm-inference/04-gpu-memory-roofline/02-arithmetic-intensity.png)
 
 <Predict
   id="gemv-ai"
   devices={["phone","desktop"]}
-  prompt={"Now batch size 1: a [1 x 4096] vector times a [4096 x 4096] fp16 weight matrix. Ignoring the tiny input and output vectors, what is the arithmetic intensity?"}
+  prompt={"Batch-1 decode: one step reads every weight matrix from HBM to make one token. Once a weight has been loaded, for how many tokens is it used before the step moves on?"}
   answer={1}
-  tolerance={{"mode":"relative","value":0.05}}
-  unit="FLOP/byte"
-  hint="Each 2-byte weight is used for one multiply and one add."
-  explanation="2·4096² FLOPs over 2·4096² bytes = 1 FLOP/byte. Three orders of magnitude below the square matmul."
+  tolerance={{"mode":"absolute","value":0}}
+  unit="token"
+  hint="Batch 1 means a single token per step."
+  explanation="One. Each weight is loaded, used in a single multiply-add for the single token, and not needed again in that step. That is why batch-1 decode does only about one FLOP per byte it reads, far below what the tensor cores need, so it is memory-bound. Batching raises this number: each weight read then serves every user in the batch."
 />
 
 ## Element-wise operations
@@ -68,14 +73,22 @@ data is not written to HBM and read back.
 Decode $B$ sequences together and each weight, loaded once, serves $B$ tokens. The intensity of
 the weight matmuls rises to roughly $B$ FLOP/byte in fp16. This is the core reason servers batch.
 
+## Why batching raises intensity
+
+In a weight matmul, the expensive part is loading each weight from HBM. At batch 1 each loaded weight is used for one token. With a batch of users, the engine stacks their vectors into a matrix, so each loaded weight is used for every user in the batch.
+
+So batching raises the FLOPs done per byte read, almost in step with the batch size, without any change to the model. That is the one idea behind batched decode: the weight read is shared.
+
+It doesn't last forever. Each user also brings a KV cache that only that user reads, and those reads grow with every user added. Memory caps the batch, and latency targets cap it too, so real decode servers rarely reach the ridge. Prefill gets there easily, because one prompt already brings many tokens.
+
 <Code
   id="intensity-code"
   devices={["desktop"]}
   language="python"
-  prompt={"Write matmul_intensity(m, k, n, bytes_per_elem=2) for an [m x k] @ [k x n] matmul. It counts 2·m·k·n FLOPs and moves A, B and C exactly once."}
-  starter={"def matmul_intensity(m, k, n, bytes_per_elem=2):\n    \"\"\"FLOPs per byte for C[m,n] = A[m,k] @ B[k,n], each matrix moved once.\"\"\"\n    return 0.0\n"}
-  tests={"def test_square():\n    \"\"\"4096 square fp16 -> ~1365.3\"\"\"\n    v = matmul_intensity(4096, 4096, 4096)\n    assert abs(v - 4096 / 3) < 1e-6, v\n\ndef test_gemv():\n    \"\"\"batch-1 GEMV -> just under 1\"\"\"\n    v = matmul_intensity(1, 4096, 4096)\n    assert 0.99 < v < 1.0, v\n\ndef test_batch_scales():\n    \"\"\"batch 64 decode -> ~ 63\"\"\"\n    v = matmul_intensity(64, 4096, 4096)\n    assert 60 < v < 64, v\n\ndef test_dtype():\n    \"\"\"int8 doubles intensity\"\"\"\n    assert abs(matmul_intensity(8, 1024, 1024, 1) - 2 * matmul_intensity(8, 1024, 1024, 2)) < 1e-9\n"}
-  solution={"def matmul_intensity(m, k, n, bytes_per_elem=2):\n    flops = 2 * m * k * n\n    bytes_moved = bytes_per_elem * (m * k + k * n + m * n)\n    return flops / bytes_moved\n"}
-  hints={["Bytes moved = bytes_per_elem x (m·k + k·n + m·n)."]}
-  explanation="With m = batch size and k x n = a weight matrix, you can see why batching rescues decode."
+  prompt={"Batching works because one weight read serves every user in the batch. Write batched_matvec(W, xs): W is a list of rows, xs is a list of input vectors (one per user). Return (outputs, weight_reads), where outputs[u] is W times xs[u], and weight_reads counts how many times you read an entry of W. Read each weight once and use it for every user, so weight_reads doesn't grow with the batch."}
+  starter={"def batched_matvec(W, xs):\n    outputs = [[0.0] * len(W) for _ in xs]\n    weight_reads = 0\n    # Batch-1 style: every user reads every weight again.\n    for u, x in enumerate(xs):\n        for i, row in enumerate(W):\n            for j in range(len(row)):\n                w = row[j]\n                weight_reads += 1\n                outputs[u][i] += w * x[j]\n    return outputs, weight_reads\n"}
+  tests={"W = [[1.0, 2.0, 0.0], [0.0, -1.0, 3.0]]\nXS = [[1.0, 0.0, 0.0], [0.0, 1.0, 1.0], [2.0, 2.0, 2.0], [1.0, -1.0, 0.5]]\n\ndef ref(W, x):\n    return [sum(w * v for w, v in zip(row, x)) for row in W]\n\ndef test_outputs_correct():\n    out, _ = batched_matvec(W, XS)\n    assert out == [ref(W, x) for x in XS], out\n\ndef test_each_weight_read_once():\n    \"\"\"4 users, still one read per weight\"\"\"\n    _, reads = batched_matvec(W, XS)\n    assert reads == 6, reads\n\ndef test_reads_do_not_grow_with_batch():\n    _, r1 = batched_matvec(W, XS[:1])\n    _, r4 = batched_matvec(W, XS)\n    assert r1 == r4 == 6\n"}
+  solution={"def batched_matvec(W, xs):\n    outputs = [[0.0] * len(W) for _ in xs]\n    weight_reads = 0\n    for i, row in enumerate(W):\n        for j in range(len(row)):\n            w = row[j]\n            weight_reads += 1\n            for u, x in enumerate(xs):\n                outputs[u][i] += w * x[j]\n    return outputs, weight_reads\n"}
+  hints={["Swap the loop order: put the loop over users innermost.", "Read w once, then use it for every user before moving on."]}
+  explanation={"Same outputs, same multiply-adds, but the expensive part, loading a weight from memory, happens once per step instead of once per user. That is what a batched GEMM does on the GPU, and why batched decode raises arithmetic intensity: the FLOPs grow with the batch while the weight bytes don't."}
 />

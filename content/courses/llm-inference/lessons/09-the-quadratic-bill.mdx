@@ -25,14 +25,21 @@ dominates prefill.
 
 ![Log-scale bars of fp16 score-matrix size per head from 1k to 128k context](/diagrams/llm-inference/02-attention/04-the-quadratic-bill.png)
 
-<Predict
+## Where the square shows up
+
+Each token goes through the MLP and the projection matmuls once, so their total work grows in proportion to the context. Attention's score work in prefill grows with the **square** of the context, because every token is compared with every earlier token.
+
+So at short contexts the matmuls dominate prefill, and at very long contexts attention takes over most of the time.
+
+Decode is different. Each step has a single new query, so its attention work grows only in proportion to the context. What grows is the KV cache it has to read: at very long contexts a single conversation's cache can be as large as the model's weights. That is why long-context decode is about bytes, not FLOPs.
+
+<MCQ
   id="quad-factor"
   devices={["phone","desktop"]}
-  prompt="You grow the context from 4k to 16k tokens. By what factor does the number of attention scores per head grow?"
-  answer={16}
-  tolerance={{"mode":"absolute","value":0}}
-  unit="x"
-  explanation="4x the tokens gives 4² = 16x the scores. The MLP's cost only grows 4x."
+  prompt={"As context grows, prefill's attention work grows much faster than the attention work for each decode token. Why the difference?"}
+  options={["Decode uses the KV cache, which makes each individual score cheaper to compute.", "Prefill scores every query against every key; decode has one new query per step.", "The MLP takes over part of the attention work during decode, so attention has less left to do.", "Decode skips the causal mask, because there are no future tokens, so it computes fewer scores per step."]}
+  answer={1}
+  explanation={"In prefill both the number of queries and the number of keys grow with the context, so the score count grows with its square. In a decode step there is only one new query, so the count grows in proportion to the context. The cache saves recomputing old keys and values; it doesn't make each score cheaper."}
 />
 
 ## Do not materialise it

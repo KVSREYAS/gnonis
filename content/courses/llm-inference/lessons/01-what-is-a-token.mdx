@@ -31,13 +31,21 @@ The model never sees the letters. It only sees ids, and it can only ever produce
 
 ![The phrase Inference is fun split into four tokens, each mapped to an integer id](/diagrams/llm-inference/01-tokens-forward-pass/01-what-is-a-token.png)
 
+## What the model cannot see
+
+Because the model only receives ids, anything inside a token is hidden from it. Ask it to count the letters in a word, reverse a string, or compare digits, and it has to rely on what it learned about each token's spelling, not on looking at the letters. That is why models can spell a word correctly and still miscount its letters.
+
+Numbers are a common trap. Depending on the tokenizer, "12345" may be split into chunks like "123" and "45", so the digits that line up in place value are not lined up in the input.
+
+Spaces matter too: " cat" (with a leading space) and "cat" are usually different tokens. A prompt that ends with a trailing space can therefore push the model towards an unusual next token.
+
 <MCQ
   id="what-model-sees"
   devices={["phone","desktop"]}
-  prompt="What does the model itself actually receive as input?"
-  options={["The raw UTF-8 bytes of your prompt","A list of integer token ids","One vector per word, computed by the tokenizer","A bag of words with counts"]}
-  answer={1}
-  explanation={"The tokenizer turns text into integer ids. The model's first layer looks each id up in an embedding table to get a vector. Byte-level BPE can represent any byte, but what reaches the model is still a list of ids."}
+  prompt={"A user asks a chatbot how many r's are in \"strawberry\". It spells the word perfectly but gets the count wrong. Which explanation fits how the model works?"}
+  options={["The temperature was set high, so it sampled an unlikely count even though it had worked out the right one.", "The KV cache stores one entry per distinct letter, so repeated letters share an entry and some go missing.", "It receives ids for multi-letter chunks, so it must recall each chunk's letters rather than see them.", "The tokenizer drops repeated letters to save tokens, so the model never receives the full spelling."]}
+  answer={2}
+  explanation={"The tokenizer turns text into ids for chunks, often several letters long, and the model only ever sees those ids. It has learned how each chunk is spelled, which is why spelling works, but counting letters means tracking characters it never directly sees. Temperature changes randomness, not the input. The KV cache holds per-token keys and values, not letters, and tokenizers don't delete letters."}
 />
 
 ## Where the vocabulary comes from
@@ -64,13 +72,11 @@ token for the same reason.
 A useful rule of thumb for English is **about 0.75 words per token**. Code, maths and many
 non-English languages tokenize less efficiently, sometimes 2 to 3 times worse.
 
-<Predict
+<MCQ
   id="tokens-per-essay"
   devices={["phone","desktop"]}
-  prompt="Using the rule of thumb of about 0.75 English words per token, roughly how many tokens is a 1,200-word blog post?"
-  answer={1600}
-  tolerance={{"mode":"relative","value":0.1}}
-  unit="tokens"
-  hint="tokens ≈ words / 0.75"
-  explanation="1,200 / 0.75 = 1,600. Code, numbers and non-English text usually need more tokens per word."
+  prompt={"You send the same essay twice: once in English, once translated into a language the tokenizer handles poorly. What changes for the second request, and why?"}
+  options={["Nothing: the model reads meaning, so the cost follows the number of words, not the number of tokens.", "It needs fewer tokens, because words the tokenizer doesn't know are stored as single whole-word tokens.", "It needs many more tokens, so prefill takes longer, the KV cache is bigger and a per-token bill is higher.", "Only the output gets slower: the prompt is read in one pass, so its length has no effect on cost."]}
+  answer={2}
+  explanation={"Every cost in serving is counted in tokens. A tokenizer trained mostly on English splits other languages into smaller pieces, so the same meaning becomes more tokens. More prompt tokens means more prefill work, more KV entries and a bigger bill. Unknown words are split into more pieces, not fewer, and prefill work grows with prompt length even though it happens in one pass."}
 />

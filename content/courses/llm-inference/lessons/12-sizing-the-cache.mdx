@@ -27,34 +27,49 @@ $$\text{bytes/token} = 2 \times L \times H_{kv} \times d_{head} \times b$$
 
 ![Bar chart of KV bytes per token for Llama 2 7B, Llama 3 8B and Llama 3 70B](/diagrams/llm-inference/03-kv-cache/02-sizing-the-cache.png)
 
-<Fill
+<MCQ
   id="formula"
   devices={["phone","desktop"]}
-  text={"KV bytes per token = {{0}} × layers × {{1}} × head_dim × bytes per element"}
-  chips={["2","kv_heads","query_heads","vocab","4"]}
-  answers={["2","kv_heads"]}
-  explanation="The 2 is for K and V. Use KV heads, not query heads, because GQA shares them."
+  prompt={"For a long-context product you compare two models of similar quality. The one with fewer parameters turns out to use more KV cache per token. How can that be?"}
+  options={["Cache per token depends on layers, KV heads and head size; the smaller one likely uses MHA.", "It can't be: cache per token always grows with parameter count, so the measurement must be wrong somewhere.", "The smaller model has a larger vocabulary, and every vocabulary entry is cached for each token.", "The smaller model has more query heads, and queries are stored in the cache along with keys and values."]}
+  answer={0}
+  explanation={"Each cached token stores a key and a value for every layer and every KV head. Parameter count barely enters: a model can be large but share few KV heads (GQA), or small but give every head its own K and V (MHA). Queries and vocabulary entries are never cached."}
 />
 
-## A real model
+## What the formula leaves out
 
-Llama 3 8B: $L = 32$, $H_{kv} = 8$, $d_{head} = 128$, with an fp16 cache.
+Notice what is missing from the formula: query heads, the MLP's width and the vocabulary. Queries are
+never cached, and the MLP and vocabulary never touch the cache, so only layers, KV heads, head size and
+the number format count. For Llama 3 8B in fp16 this comes to roughly a hundred kilobytes per token.
 
-<Predict
+## Comparing real models
+
+The cache per token is set by the attention shape, not by the parameter count:
+
+| Model | Attention | Cache per token |
+|---|---|---|
+| Llama 2 7B | MHA: a K/V head per query head | Largest of the three |
+| Llama 3 8B | GQA: few KV heads | Small |
+| Llama 3 70B | GQA, many more layers | Between the two |
+
+Llama 3 70B is far bigger than Llama 3 8B, but its cache per token grows only with its extra layers. Llama 2 7B, the smallest model here, has the biggest cache per token, because it uses MHA.
+
+Parameter count tells you the weight memory. Layers, KV heads, head size and the cache's number format tell you the cache.
+
+<MCQ
   id="llama3-per-token"
   devices={["phone","desktop"]}
-  prompt={"Llama 3 8B has 32 layers, 8 KV heads and a head dim of 128, with an fp16 cache (2 bytes). How many bytes of KV cache does one token need?"}
-  answer={131072}
-  tolerance={{"mode":"relative","value":0.01}}
-  unit="bytes"
-  hint="2 x 32 x 8 x 128 x 2"
-  explanation="2 x 32 x 8 x 128 x 2 = 131,072 bytes = 128 KiB per token."
+  prompt={"Which change does NOT shrink the KV cache per token?"}
+  options={["Adding query heads while keeping the same KV heads and head size.", "Using fewer KV heads (GQA instead of MHA).", "Storing the cache in fp8 instead of fp16.", "Using a model with fewer layers, all else equal."]}
+  answer={0}
+  explanation={"Bytes per token = 2 × layers × KV heads × head dim × bytes per element. Query heads are not in the formula, because queries are never cached. Fewer KV heads, fewer bytes per element and fewer layers each shrink one factor."}
 />
 
 ## Per sequence
 
-That is 128 KiB per token. An 8,192-token conversation needs
-$131{,}072 \times 8{,}192 \approx 1.07$ GB, just for one sequence's cache.
+A sequence's cache is that per-token cost times its length, so it grows steadily with every token. A
+single long conversation on Llama 3 8B already needs around a gigabyte of cache, and very long
+contexts need several. That is why the cache, not the weights, usually decides how many users fit.
 
 ## Play with it
 

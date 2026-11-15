@@ -21,28 +21,36 @@ Each physical block records how many sequences point at it: its **reference coun
 
 ![Four samples mapping shared prompt blocks (ref count 4) plus private copied blocks](/diagrams/llm-inference/06-paged-attention/02-block-tables-and-copy-on-write.png)
 
+## A worked copy-on-write
+
+Two parallel samples of a prompt whose last block is only partly full:
+
+1. After prefill, both samples' block tables point to the same prompt blocks, and each block's reference count says two sequences use it.
+2. Sample A writes its first token. The last block is shared, so the block manager copies it into a new block, A writes there, and the original's count drops to one.
+3. Sample B is now the only user of the original, so it writes into it in place, with no copy.
+
+The full prompt blocks are never written, so they stay shared for the whole request. That is why sampling several answers costs little extra memory.
+
 <MCQ
   id="cow-when"
   devices={["phone","desktop"]}
-  prompt="When does vLLM copy a KV block?"
-  options={["Every time a token is generated","When a sequence appends to a block whose reference count is above 1","When the GPU runs out of memory","Never; blocks are immutable"]}
-  answer={1}
-  explanation="Blocks stay shared until a sequence needs to write into one. Only then is that one block copied, and the counts are updated."
+  prompt={"Parallel sampling: several samples share the prompt's last block, which is only half full. The samples write their first new tokens one after another. What happens to the shared block?"}
+  options={["All of them write into the shared block at once, because their tokens go into different slots.", "Every sample copies the block before writing, so the original ends up unused and is freed.", "Each writer copies it while it is still shared; the last one, now its only user, writes in place.", "The first sample writes in place because it went first, and the rest move to new blocks."]}
+  answer={2}
+  explanation={"Copy-on-write checks the reference count before writing. While more than one sample uses the block, a writer gets a private copy and the count drops by one. When only one user is left, it can write into the original. Writing in place while it is still shared would put one sample's token into the others' history."}
 />
 
 ## Copy on write
 
 The last prompt block is usually half full. When sample 2 writes its first new token there, vLLM copies just that one block and bumps the counts. Everything else stays shared.
 
-<Predict
+<MCQ
   id="cow-blocks"
   devices={["phone","desktop"]}
-  prompt={"A 1,000-token prompt with block size 16. You draw 4 parallel samples, each generating 200 tokens. Full prompt blocks are shared, and the partial last prompt block is copied per sample. How many physical blocks in total?"}
-  answer={114}
-  tolerance={{"mode":"absolute","value":0}}
-  unit="blocks"
-  hint="shared full blocks + 4 × private blocks"
-  explanation={"Full shared prompt blocks: floor(1000/16) = 62 (992 tokens). Each sample then holds 1,200 − 992 = 208 private tokens = 13 blocks. 62 + 4 × 13 = 114, versus 4 × 75 = 300 without sharing."}
+  prompt={"You ask for several parallel samples of a long prompt. Which of the prompt's blocks get copied when the samples start writing?"}
+  options={["Every prompt block, once per sample, because every block is shared and might be written later.", "Only the partly filled last block, for each sample writing to it while shared.", "None: new tokens always go into fresh blocks, so nothing is ever copied.", "The full blocks only, because their reference counts are above one and the last block's is not."]}
+  answer={1}
+  explanation={"Full blocks are never written again, so all samples can keep sharing them. The last block has free slots, and the samples' new tokens would go there, so a sample that writes while the block is shared gets its own copy first. That's why sampling several answers costs little extra memory."}
 />
 
 ## Beams share more
@@ -54,8 +62,8 @@ Source: [Kwon et al., §4.4 and §6.3](https://arxiv.org/abs/2309.06180)
 <MCQ
   id="beam-why"
   devices={["phone","desktop"]}
-  prompt="Why does beam search save more memory with sharing than parallel sampling does?"
-  options={["Beams are shorter","Beams share generated blocks too, not just the prompt","Beam search uses fp8","Beam search disables the KV cache"]}
-  answer={1}
-  explanation="Beams branch from common prefixes of generated text, so many blocks are shared at any time."
+  prompt={"A translation service runs beam search; a chat service runs parallel sampling with the same number of outputs. Which saves more memory from block sharing, and why?"}
+  options={["Beam search: beams also share the generated tokens they have in common, not just the prompt.", "Parallel sampling: its samples keep the same tokens for longer, so more blocks stay shared.", "They save the same, because both share only the prompt blocks and nothing generated.", "Neither saves anything: each output writes its own tokens, so each needs a private cache."]}
+  answer={0}
+  explanation={"Parallel samples share the prompt and then go their own way. Beams keep branching from each other and dropping weak branches, so surviving beams often share long generated prefixes as well. That is where the vLLM paper measured its biggest savings."}
 />

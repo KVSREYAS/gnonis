@@ -32,19 +32,33 @@ With continuous batching (lesson 1 of this module), one forward pass can hold de
 
 ## The prefill stall
 
-Suppose 96 users are decoding and each step takes about 10 ms. Now a request arrives with an 8,192-token prompt.
+Picture many users decoding, each step taking a few milliseconds. Now a request arrives with a very long
+prompt.
 
-If the scheduler puts the whole prefill into the next step, that step must do 8,192 tokens of compute. For an 8B model that is 2 × 8 × 10^9 × 8,192 ≈ 1.3 × 10^14 FLOPs, about 330 ms on an H100 at a realistic 400 TFLOP/s.
+If the scheduler puts the whole prefill into the next step, that one step has to push every prompt
+token through the model. Prefill is compute-bound, so the step lasts many times longer than a normal
+decode step.
 
-All 96 users get no token during those 330 ms. Their stream pauses for 33 normal step times, then continues. This pause is called a **generation stall** (the Sarathi-Serve paper's term). It shows up as a spike in **inter-token latency** (ITL, the gap between two streamed tokens) and in the p99 of TPOT, even if the average looks fine.
+Every decoding user waits for that step to end before getting their next token, so their streams
+freeze mid-answer and then carry on. This pause is called a **generation stall** (the Sarathi-Serve
+paper's term). It shows up as a spike in **inter-token latency** (ITL, the gap between two streamed
+tokens) and in the p99 of TPOT, even if the average looks fine.
+
+## Spotting a prefill stall
+
+Prefill stalls are easy to miss on a dashboard. Mean TPOT barely moves, because most steps are normal decode steps. The signal is in the tail: p99 inter-token latency jumps, and the jumps line up with requests that carry long prompts.
+
+The cause is one step that includes a whole long prefill. Every request that is decoding has to wait for that step to finish before its next token appears.
+
+To confirm it, compare the arrival times of long prompts with the timestamps of the slow gaps, or log each step's prefill token count next to its duration.
 
 <MCQ
   id="what-improves"
   devices={["phone","desktop"]}
-  prompt="What does chunked prefill mainly improve?"
-  options={["The model's accuracy","Tail inter-token latency of requests that are already decoding","Peak FLOP/s of the GPU","The size of the KV cache"]}
-  answer={1}
-  explanation={"Without chunking, a 10k-token prefill makes every running user wait for it. Chunking caps each step's work, so decode steps stay short and predictable. Sarathi-Serve calls these stall-free schedules."}
+  prompt={"Dashboard: the average time between tokens is fine, but the worst gaps are huge, and the spikes line up with long prompts arriving. Users report freezes mid-answer. What is happening, and what fixes it?"}
+  options={["The KV cache is too small, so the engine recomputes; a GPU with more memory fixes it.", "The sampler is slow on long prompts, because it scores every prompt token; switching to greedy decoding fixes it.", "Each long prefill runs as one huge step that stalls all decoding; chunk the prefill.", "The GPU overheats under long prompts; spreading users over more GPUs fixes it."]}
+  answer={2}
+  explanation={"When a step contains a whole long prompt, every decoding user waits for that step to end, so their next token is late: a spike in the worst gaps while the average looks healthy. Chunked prefill caps the tokens per step, so long prompts are spread over several steps and decoders keep moving."}
 />
 
 ## What chunked prefill does
@@ -57,7 +71,7 @@ Each step has a **token budget**: the most tokens the step may process. The sche
 2. The next chunk of any prefill that is already in progress.
 3. Chunks of new waiting requests, while budget is left.
 
-Example: budget 2,048 and 96 decodes. The decodes use 96 tokens, so this step carries a 1,952-token prefill chunk. The 8,192-token prompt finishes after 5 steps (4 × 1,952 + 384). Only the step that processes the last chunk produces the request's first output token.
+So the decoders always get their token, and the long prompt takes whatever room is left, step after step. The more users are decoding, the smaller the room and the more steps the prompt needs. Only the step that processes the last chunk produces the request's first output token.
 
 Sarathi-Serve (OSDI 2024) introduced this "stall-free" schedule. vLLM and SGLang ship it as chunked prefill.
 
@@ -66,20 +80,19 @@ Sarathi-Serve (OSDI 2024) introduced this "stall-free" schedule. vLLM and SGLang
 <Fill
   id="budget-fill"
   devices={["phone","desktop"]}
-  text={"Each step has a token budget. Every running decode costs {{0}} token, and the leftover goes to a {{1}}."}
-  chips={["1","16","prefill chunk","sampling pass"]}
-  answers={["1","prefill chunk"]}
-  explanation={"Decode is one token per sequence. Prefill fills the remaining compute, because prefill tokens are cheap to batch together."}
+  text={"With chunked prefill, raising the per-step token budget means long prompts finish prefill sooner, so their {{0}} drops, but every step takes longer, so decoding users see longer {{1}}."}
+  chips={["TTFT", "gaps between tokens", "KV cache", "block tables", "vocabulary", "prefix hits"]}
+  answers={["TTFT", "gaps between tokens"]}
+  explanation={"The budget caps how many tokens one step may process. A bigger budget lets each chunk of a long prompt be larger, so the prompt reaches its first token sooner. But decoders get one token per step, and a step with more prefill work takes longer, so their gaps grow. The budget slides between the two targets."}
 />
 
-<Predict
+<MCQ
   id="budget-left"
   devices={["phone","desktop"]}
-  prompt="The step token budget is 2,048. There are 96 running decodes. How many prefill tokens can join this step?"
-  answer={1952}
-  tolerance={{"mode":"absolute","value":0}}
-  unit="tokens"
-  explanation="Each decode uses 1 token of budget: 2,048 − 96 = 1,952."
+  prompt={"With a fixed per-step token budget, many more users start decoding at once while a long prompt is being prefilled. What happens to that prompt?"}
+  options={["Each decoder takes one token of the budget, so its chunks shrink and its TTFT rises.", "Nothing: prefill and decode have separate budgets, so decoders can't slow it down.", "It is paused until the decoders finish, because decoding always comes first.", "Its chunks grow, because decoders use fewer tokens than prefill does."]}
+  answer={0}
+  explanation={"The budget counts all tokens in the step. Decoders are scheduled first and each needs one token, and the prefill chunk gets what is left. More decoders leave less room, so the prompt needs more steps to finish, which pushes its first token later."}
 />
 
 ## A timeline with and without chunks
@@ -106,45 +119,42 @@ Past that point the step becomes compute-bound and its time grows with every ext
 
 ## Chunk size: TTFT against TPOT
 
-Use a simple cost model with round numbers for an 8B model on one H100:
+The prompt needs the same total prefill work whatever the chunk size; chunking only decides how that
+work is spread over steps. Two things follow:
 
-- a step with only the decodes takes **10 ms**
-- each prefill token in the step adds **0.04 ms** (16 GFLOPs at 400 TFLOP/s)
+- Each step that carries a chunk gets longer as the chunk grows, and that step's length is every
+  decoding user's gap between tokens.
+- Each extra step also pays the normal cost of a decode step, so smaller chunks make the long prompt
+  wait longer for its first token.
 
-The 8,192-token prompt then needs 8,192 × 0.04 = 328 ms of prefill compute, whatever the chunk size. Each chunk also pays the 10 ms step.
+## The trade-off at a glance
 
-## The trade-off in numbers
-
-Same cost model, 8,192-token prompt:
-
-| chunk size | steps for the prompt | step time (decoders' gap) | TTFT of the long prompt |
+| chunk size | steps for the prompt | decoders' gap | TTFT of the long prompt |
 | --- | --- | --- | --- |
-| 8,192 (no chunking) | 1 | 10 + 328 = 338 ms | 338 ms |
-| 2,048 | 4 | 10 + 82 = 92 ms | 368 ms |
-| 512 | 16 | 10 + 20.5 = 30.5 ms | 488 ms |
-| 256 | 32 | 10 + 10.2 = 20.2 ms | 648 ms |
+| whole prompt (no chunking) | one | one huge stall | shortest |
+| large | a few | noticeably longer | short |
+| small | many | close to a normal step | longer |
+| very small | very many | barely changes | longest |
 
-Smaller chunks protect the decoding users (shorter gaps, better TPOT and ITL) but make the long prompt wait longer for its first token (worse TTFT). This model overstates the cost of small chunks, because real steps stay nearly flat for the first few hundred tokens, but the direction is right.
+Smaller chunks protect the decoding users (shorter gaps, better TPOT and ITL) but make the long prompt
+wait longer for its first token (worse TTFT). In practice steps stay nearly flat for the first few
+hundred prefill tokens, so moderate chunks cost decoders very little.
 
-<Predict
+<MCQ
   id="stall-ms"
   devices={["phone","desktop"]}
-  prompt="Same cost model: 10 ms per step plus 0.04 ms per prefill token. With a chunk size of 1,024, how long is each step that carries a chunk, in ms?"
-  answer={50.96}
-  tolerance={{"mode":"relative","value":0.02}}
-  unit="ms"
-  hint="10 + 0.04 × 1,024"
-  explanation="10 + 40.96 = 50.96 ms. Each decoding user sees a 51 ms gap during those steps instead of 10 ms."
+  prompt={"You make prefill chunks larger. What happens to the gaps between tokens for users who are decoding, and to TTFT for the long prompt?"}
+  options={["Both improve, because larger chunks waste less time switching between requests.", "Their gaps stay the same, because decode and prefill run on separate parts of the GPU.", "Their gaps grow, because each step carries more prefill work; the long prompt's TTFT falls.", "Their gaps shrink, and the long prompt's TTFT grows, because decoding gets priority."]}
+  answer={2}
+  explanation={"Decoders get one token per step, so the step's length is their gap. A larger chunk makes every step that carries it longer, while the prompt needs fewer steps and reaches its first token sooner. Chunk size slides between the two targets."}
 />
 
-<Predict
+<Ordering
   id="chunk-count"
   devices={["phone","desktop"]}
-  prompt="An 8,192-token prompt is prefilled in chunks of 512 tokens. How many scheduler steps does its prefill take?"
-  answer={16}
-  tolerance={{"mode":"absolute","value":0}}
-  unit="steps"
-  explanation="8,192 / 512 = 16 steps, with decodes for everyone else riding along in each one."
+  prompt={"Put what happens to a long request C in order, from arrival until it streams, when the server uses chunked prefill."}
+  items={["C arrives and waits in the queue", "A step gives every running decode its one token from the budget", "C's first chunk fills the budget left over in that same step", "Later steps carry C's next chunks until the whole prompt is done", "The step with C's last chunk produces C's first output token", "C becomes a running decode and gets one token per step"]}
+  explanation={"Decodes are served first in every step and prefill chunks take what is left, so C's prompt is spread over several steps. Only the last chunk yields C's first token, which is why smaller chunks mean a later TTFT for C. After that, C is a decode like everyone else."}
 />
 
 ## Tune the chunk size
@@ -186,10 +196,10 @@ Move the slider to change the chunk size and watch the gap that decoding users s
 <MCQ
   id="pick-chunk"
   devices={["phone","desktop"]}
-  prompt="Which chunk size meets both targets: decoders' step time ≤ 50 ms and TTFT ≤ 450 ms?"
-  options={["256","768","2,048","8,192 (no chunking)"]}
-  answer={1}
-  explanation="768 gives a 40.7 ms step and a 437.7 ms TTFT. 256 is too slow for the long prompt's TTFT. 2,048 and 8,192 make the decoders wait too long."
+  prompt={"You have a limit on the gap between tokens for decoding users and a target for TTFT. How should you choose the prefill chunk size?"}
+  options={["Take the smallest chunk possible, because short steps are always best for every user on the server.", "Take the largest chunk the GPU can run, because TTFT matters more than gaps between tokens.", "Make the chunk the length of the average prompt, so that most prompts finish their prefill in one step.", "The largest chunk that keeps decoders' gaps within the limit; if TTFT still misses, add capacity."]}
+  answer={3}
+  explanation={"Larger chunks help TTFT and hurt decoders' gaps. The gap limit sets the upper bound, and inside it a larger chunk is better for TTFT. If no chunk meets both, scheduling can't fix it: you need more GPUs, or separate prefill and decode GPUs."}
 />
 
 ## What happens to the KV cache
@@ -204,15 +214,13 @@ Chunking does not change how much KV cache a request needs in the end: 8,192 tok
 
 Sarathi-Serve reports that the extra reads cost little: with 2,048-token chunks the overhead is almost zero, and with 512-token chunks the total prefill takes at most about 25% longer.
 
-<Predict
+<MCQ
   id="kv-reread"
   devices={["phone","desktop"]}
-  prompt="An 8,192-token prompt is prefilled in 16 chunks of 512 tokens. Chunk k reads the KV of the (k − 1) × 512 tokens before it. How many tokens' worth of KV are read again in total, across all 16 chunks?"
-  answer={61440}
-  tolerance={{"mode":"relative","value":0.01}}
-  unit="tokens"
-  hint="512 × (0 + 1 + 2 + … + 15)"
-  explanation="512 × 120 = 61,440 token-KVs. At 128 KiB each that is about 8 GB, roughly 2.4 ms of HBM time on an H100 spread over 16 steps. Small next to 328 ms of prefill compute."
+  prompt={"Compared with one big prefill of the same prompt, what new cost does chunked prefill add?"}
+  options={["Each chunk reads the keys and values of all earlier chunks back from HBM.", "Extra attention FLOPs, because each chunk recomputes the earlier chunks' keys and values.", "A bigger final KV cache, because every chunk stores its own copy of the prompt.", "Extra weight memory, because each chunk loads its own copy of the model."]}
+  answer={0}
+  explanation={"Chunk k attends over the whole prompt so far, so it reads chunks 1 to k − 1 back from the KV cache. The arithmetic and the final cache size are the same as one big prefill: earlier keys and values are read, not recomputed or duplicated. The weights are shared by everything in the step. Sarathi-Serve found the extra reads cheap: near zero with 2,048-token chunks and at most about 25% more prefill time with 512."}
 />
 
 ## How real systems use it
@@ -231,7 +239,7 @@ Sources: [Sarathi-Serve](https://arxiv.org/abs/2403.02310), [vLLM optimization a
   id="vllm-knob"
   devices={["phone","desktop"]}
   prompt="Your vLLM server streams smoothly, but long-prompt users complain about TTFT. Which change to max_num_batched_tokens helps them, and what does it cost?"
-  options={["Lower it: TTFT improves, decode gaps also shrink","Raise it: long prompts finish prefill in fewer steps, but decoding users see longer gaps","Raise it: both TTFT and decode gaps shrink","It has no effect on TTFT"]}
+  options={["Lower it: TTFT improves and decode gaps also shrink, because each step is smaller.", "Raise it: long prompts finish prefill in fewer steps, but decoders see longer gaps.", "Raise it: both TTFT and decode gaps shrink, because the GPU is used better.", "It has no effect on TTFT, because it only limits how many decodes run."]}
   answer={1}
   explanation="A bigger budget means bigger chunks, so fewer steps for the long prompt and a lower TTFT. Each of those steps is longer, so other users' inter-token latency goes up."
 />

@@ -17,28 +17,27 @@ keyIdeas:
 
 ## Know your pool
 
-At startup vLLM profiles memory, subtracts weights and activations, and carves the rest into fixed blocks. Every running sequence needs ceil(tokens / 16) of them, plus room to grow.
+At startup vLLM profiles memory, subtracts weights and activations, and carves the rest into fixed blocks. A running sequence holds enough blocks for its tokens, takes one more each time its last block fills, and gives them all back when it finishes.
 
-<Predict
+<MCQ
   id="pool-size"
   devices={["phone","desktop"]}
-  prompt="Llama 3 8B fp16 uses 128 KiB of KV per token, block size 16. You have 40 GB (decimal) free for KV. How many blocks fit?"
-  answer={19073}
-  tolerance={{"mode":"relative","value":0.01}}
-  unit="blocks"
-  explanation="Block = 16 × 131,072 B = 2 MiB = 2,097,152 B. 40e9 / 2,097,152 ≈ 19,073 blocks."
+  prompt={"Same GPU, same free memory for the cache. You switch to a model with the same attention shape but many more layers. What happens to the block pool?"}
+  options={["Blocks hold the same tokens but take more bytes each, so the pool has fewer blocks.", "Each block holds fewer tokens, and the number of blocks stays the same.", "Nothing changes: the number of blocks depends only on how much memory is free after the weights.", "There are more blocks, because each layer gets its own separate pool."]}
+  answer={0}
+  explanation={"A block stores its tokens' keys and values for every layer, so more layers make each block bigger. The pool is free memory divided by the block's size, so it shrinks. Fewer blocks mean fewer tokens in flight, and fewer users."}
 />
 
 <Code
   id="fits-code"
   devices={["desktop"]}
   language="python"
-  prompt={"Write blocks_needed(lens, block_size=16) that returns the total physical blocks for sequences of the given token lengths (no sharing). Then write can_admit(free_blocks, running_lens, new_len, block_size=16), which returns True if the new sequence fits after the running ones."}
-  starter={"import math\n\ndef blocks_needed(lens, block_size=16):\n    return 0\n\ndef can_admit(free_blocks, running_lens, new_len, block_size=16):\n    return False\n"}
-  tests={"def test_blocks():\n    assert blocks_needed([1000, 16, 17]) == 63 + 1 + 2\n\ndef test_empty():\n    assert blocks_needed([]) == 0\n\ndef test_admit_yes():\n    assert can_admit(100, [160, 320], 640) is True\n\ndef test_admit_no():\n    assert can_admit(70, [160, 320], 641) is False\n"}
-  solution={"import math\n\ndef blocks_needed(lens, block_size=16):\n    return sum(math.ceil(n / block_size) for n in lens)\n\ndef can_admit(free_blocks, running_lens, new_len, block_size=16):\n    return blocks_needed(running_lens, block_size) + blocks_needed([new_len], block_size) <= free_blocks\n"}
-  hints={["Use math.ceil for partial blocks."]}
-  explanation="Real schedulers also reserve a block for the next decoded token of every running sequence."
+  prompt={"The block manager's core move. A sequence holds `length` tokens, and table lists its physical block ids in order. Write append_slot(table, length, free, block_size) for the next token: if the last block still has room, return (that block's id, slot inside it). If the sequence has no block yet or its last block is full, pop a block id from the end of free, append it to table, and return (new id, 0). If a new block is needed and free is empty, return None and change nothing: the scheduler must preempt someone."}
+  starter={"def append_slot(table, length, free, block_size):\n    # Assumes there is always room in the last block.\n    return (table[-1], length % block_size)\n"}
+  tests={"def test_room_in_last_block():\n    table, free = [7, 3], [1, 2]\n    assert append_slot(table, 5, free, 4) == (3, 1)\n    assert table == [7, 3] and free == [1, 2]\n\ndef test_last_block_full_takes_new_block():\n    table, free = [7, 3], [1, 2]\n    assert append_slot(table, 8, free, 4) == (2, 0)\n    assert table == [7, 3, 2] and free == [1]\n\ndef test_first_token_of_a_sequence():\n    table, free = [], [9]\n    assert append_slot(table, 0, free, 16) == (9, 0)\n    assert table == [9] and free == []\n\ndef test_no_free_block_means_preempt():\n    table, free = [4], []\n    assert append_slot(table, 16, free, 16) is None\n    assert table == [4] and free == []\n"}
+  solution={"def append_slot(table, length, free, block_size):\n    if length % block_size == 0:\n        if not free:\n            return None\n        table.append(free.pop())\n        return (table[-1], 0)\n    return (table[-1], length % block_size)\n"}
+  hints={["The last block is full exactly when length is a multiple of block_size (including 0).", "Check for an empty free list before changing anything."]}
+  explanation={"This is why paging never copies: a growing sequence just takes any free block and records it in its table, and blocks needn't be next to each other. The only failure is an empty pool, and that is the moment the scheduler preempts a sequence (recompute or swap) to get blocks back."}
 />
 
 ## Preempt: swap or recompute
@@ -54,21 +53,30 @@ Sources: [vLLM paper §4.5](https://arxiv.org/abs/2309.06180), [vLLM docs: preem
 
 ![GPU block pool full; newest sequence evicted either to CPU swap space or dropped for recompute](/diagrams/llm-inference/06-paged-attention/03-preemption-and-swapping.png)
 
+## Preemption in practice
+
+Preemption keeps the server running when memory is short, but every preempted request repeats work. If it happens often, latency suffers.
+
+vLLM logs a warning each time a request is preempted for lack of KV space, and exposes a preemption count in its metrics. Its docs list the levers: give the cache more memory (leave `gpu_memory_utilization` unset or raise it), lower `max_num_seqs` or `max_num_batched_tokens` so fewer requests run at once, or raise tensor or pipeline parallelism so each GPU holds fewer weights and has more room for cache.
+
+An fp8 KV cache helps for the same reason: each token takes half the bytes, so the same pool holds twice as many tokens.
+
+Source: [vLLM docs: optimization](https://docs.vllm.ai/en/latest/configuration/optimization.html)
+
 <MCQ
   id="who-first"
   devices={["phone","desktop"]}
-  prompt="Under vLLM's first-come-first-served policy, which sequence gets preempted first?"
-  options={["The oldest request","The most recently arrived request","The longest sequence","A random one"]}
-  answer={1}
-  explanation="FCFS protects earlier arrivals, so the newest work is evicted first."
+  prompt={"Blocks run out, and one of three running requests must be preempted. Under vLLM's first-come-first-served policy, which one goes, and why?"}
+  options={["The one that arrived first, because it has run longest, holds the most blocks and frees the most.", "The one with the fewest tokens, because it is the cheapest to rebuild later.", "One picked at random, so that over time no request is favoured over the others.", "The one that arrived last: the newest has the lowest priority, so earlier arrivals keep running."]}
+  answer={3}
+  explanation={"Under first-come-first-served, earlier arrivals have priority, so the scheduler preempts from the back of the queue. This protects requests that have waited longest. Its cost is that the newest request might be a long one, which then has to be rebuilt."}
 />
 
-<Predict
+<MCQ
   id="swap-time"
   devices={["phone","desktop"]}
-  prompt="Swapping a sequence's 2 GB of KV to CPU over a PCIe Gen4 x16 link at ~32 GB/s. Roughly how long, in ms?"
-  answer={62.5}
-  tolerance={{"mode":"relative","value":0.03}}
-  unit="ms"
-  explanation="2 / 32 s = 62.5 ms, one way. That's why recomputation often wins for short sequences."
+  prompt={"Blocks run out and two sequences must be preempted: one very short, one very long. On an engine that supports both modes, which mode fits each?"}
+  options={["Swap both: copying blocks over PCIe is always cheaper than recomputing any amount of prefill.", "Swap the short one, which copies quickly, and recompute the long one, which has too many blocks to copy.", "Recompute the short one, a quick prefill, and swap the long one, where copying beats a huge prefill.", "Recompute both: PCIe is so slow next to GPU compute that swapping is never worth it."]}
+  answer={2}
+  explanation={"Recomputing means prefilling the sequence's tokens again later, which costs little for a short sequence. Swapping means copying its blocks to CPU memory and back. For a short sequence the copy overhead isn't worth it; for a very long one, the copy is cheaper than a huge prefill. vLLM V1 recomputes only."}
 />

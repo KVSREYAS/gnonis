@@ -63,10 +63,21 @@ Short sequences are often cheaper to recompute. Long ones are cheaper to swap. S
 
 All beams share the prompt, and beams that split from the same parent share their earlier generated tokens. With block tables and copy-on-write those shared parts are stored once, which is why the vLLM paper reports its largest memory savings for beam search.
 
+## Worked scenario: choosing a block size
+
+Each sequence wastes only the empty slots in its last block, so the waste depends on the block size compared with typical sequence length.
+
+- **Long sequences**: one partly empty block is a tiny share of many full ones, so almost any block size wastes little.
+- **Very short sequences** with large blocks: most of each sequence's single block sits empty, so most of the pool is wasted.
+- **Small blocks** waste little, but cost a longer block table and smaller, more scattered reads for the kernel.
+
+vLLM's default block size is a middle ground. Workloads made of many short sequences gain the most from small blocks.
+
 <MCQ
   id="concept-check"
-  prompt="With a block size of 16 tokens, what is the most KV memory one sequence can waste in its own blocks?"
-  options={["Its maximum length", "Less than one block (at most 15 token slots)", "Half its blocks", "Nothing ever"]}
-  answer={1}
-  explanation="Only the last block can be partly empty."
+  devices={["phone","desktop"]}
+  prompt={"A service runs thousands of very short sequences. Compare a small block size with a large one. Which wastes more memory in partly filled blocks, and why?"}
+  options={["The small block size, because each sequence needs several blocks, and each has some waste.", "They waste about the same: paging removes almost all waste, whatever the block size.", "Neither wastes anything, because the empty slots are given to other sequences.", "The large block size, because most of each short sequence's only block sits empty."]}
+  answer={3}
+  explanation={"Each sequence wastes only what is empty in its last block. When sequences are much shorter than a large block, nearly the whole block is empty for every sequence. With small blocks the leftover is small. The empty slots can't be lent out, because a block belongs to one sequence (or one shared prefix)."}
 />

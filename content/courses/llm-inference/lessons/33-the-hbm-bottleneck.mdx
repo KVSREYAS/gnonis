@@ -20,14 +20,13 @@ Naive attention runs as separate kernels, and each one writes its N×N result to
 
 ![Naive attention writing S and P matrices to HBM versus FlashAttention keeping tiles in on-chip SRAM](/diagrams/llm-inference/08-flash-attention/01-the-hbm-bottleneck.png)
 
-<Predict
+<MCQ
   id="s-size"
   devices={["phone","desktop"]}
-  prompt="One layer, batch 1, 32 heads, N = 4,096, fp16. How many GiB does materialising S for all heads take?"
+  prompt={"Naive attention writes S and P (both N × N) to HBM, but its output O is only N × d. What happens as the context grows?"}
+  options={["S and P stay the same size as the context grows, so the balance between kernels doesn't change.", "S and P traffic grows with N² while the output grows with N, so the kernels mostly move data.", "The FLOPs grow with N², but the HBM traffic stays constant, so the kernels become compute-bound.", "O grows with N², so writing the output comes to dominate the traffic."]}
   answer={1}
-  tolerance={{"mode":"relative","value":0.02}}
-  unit="GiB"
-  explanation="4,096² × 2 B × 32 = 1,073,741,824 B = 1 GiB, and P doubles that. Per layer, per forward."
+  explanation={"S and P have one entry per query-key pair, so they grow as N², and each is written and read back. O has one d-sized row per token. At 4k tokens and 32 heads, S alone is about a GiB per layer. That traffic, not the FLOPs, is what makes naive attention slow at long context."}
 />
 
 <Ordering
@@ -44,11 +43,19 @@ Dao et al. counted HBM reads and writes. For standard attention they grow like N
 
 Source: [FlashAttention](https://arxiv.org/abs/2205.14135)
 
+## Why the score matrices dominate traffic
+
+At long contexts, one head's score matrix S is enormous: it has a row and a column for every token. The probability matrix P after softmax is just as big.
+
+Naive attention writes S to HBM, reads it back for the mask and softmax, writes P, and reads P again for the multiplication by V. Each of these passes moves a huge matrix while doing only a few operations per element, so the work is memory-bound.
+
+Meanwhile the output O has only one row per token, a tiny fraction of the size of S. Almost all of the traffic is intermediate data that is thrown away. FlashAttention's whole idea is to stop that intermediate data from ever leaving the chip.
+
 <MCQ
   id="slow-why"
   devices={["phone","desktop"]}
-  prompt="Why is standard attention slow on GPUs at long context?"
-  options={["Too many FLOPs in QKᵀ","The N² intermediates go back and forth to HBM, and the elementwise steps are memory-bound","Softmax needs fp64","GPUs can't do matmuls on attention"]}
-  answer={1}
-  explanation="The matmuls are fine. Shuttling S and P through HBM is what hurts."
+  prompt={"Profiling naive attention at long context: the two matmul kernels run near peak FLOP/s, but most of the time goes to the mask and softmax kernels, which barely use the tensor cores. Why?"}
+  options={["They move the huge score matrices to and from HBM, doing little maths per element.", "Softmax and masking need exp and comparisons, which are far slower on a GPU than multiply-adds.", "The mask kernel computes extra scores for all the future tokens, which doubles the work at long context.", "In naive implementations the softmax runs on the CPU, so the data has to cross PCIe twice per layer."]}
+  answer={0}
+  explanation={"The score matrix grows with the square of the context. The mask and softmax kernels each read it from HBM and write it back, doing only a few operations per element. That is very low arithmetic intensity, so they wait on memory. Fusing everything into one kernel that keeps scores on chip is FlashAttention's fix."}
 />

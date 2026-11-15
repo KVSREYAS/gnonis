@@ -25,15 +25,13 @@ linearly until you hit the compute roof or run out of KV memory.
 
 In a static batch, every slot stays reserved until the longest request finishes.
 
-<Predict
+<MCQ
   id="static-waste"
   devices={["phone","desktop"]}
-  prompt={"A static batch of 4 requests generates 100, 100, 100 and 1,000 tokens. The batch runs until the longest finishes. What fraction of the 4 x 1,000 decode slots does useful work? (Answer as a percentage.)"}
-  answer={32.5}
-  tolerance={{"mode":"absolute","value":1}}
-  unit="%"
-  hint="useful tokens / (batch size x longest length)"
-  explanation={"(100+100+100+1000) / 4000 = 1300/4000 = 32.5%. The other 67.5% of slots are padding. Continuous batching fills them with new requests."}
+  prompt={"Which workload loses the most throughput under static batching?"}
+  options={["Requests that all produce about the same number of output tokens.", "Requests with long prompts but identical output lengths.", "Requests that all have very short outputs of a few tokens.", "Requests whose output lengths vary widely, like one-liners mixed with essays."]}
+  answer={3}
+  explanation={"A static batch holds every slot until its longest request ends. If one request writes 1,000 tokens and three write 100, those three slots sit idle for 900 steps: only about a third of the slots do useful work, and new requests wait the whole time. Similar output lengths finish together, so little is wasted. Prompt length does not cause this idling."}
 />
 
 ## Iteration-level scheduling
@@ -46,13 +44,21 @@ iteration, mixed with the other sequences' decode tokens. vLLM, TGI (Hugging Fac
 
 ![Static vs continuous batching: static slots sit idle as grey padding, continuous slots are refilled with new requests](/diagrams/llm-inference/05-batching/01-continuous-batching.png)
 
+## What the papers measured
+
+Orca (OSDI 2022) introduced iteration-level scheduling: the batch is re-decided at every step, so a finished request leaves at once and a waiting one can join. To mix requests at different positions, it batches the matmuls across all tokens but runs attention per request ("selective batching"), because each request has its own cache length.
+
+vLLM (SOSP 2023) combined continuous batching with paged KV memory and reported 2–4x higher throughput than FasterTransformer and Orca at the same latency, with bigger gains for longer sequences and larger models. Most of that gain came from fitting more sequences in memory, so the batch could grow.
+
+Sources: [Orca](https://www.usenix.org/conference/osdi22/presentation/yu), [vLLM](https://arxiv.org/abs/2309.06180)
+
 <MCQ
   id="when-admit"
   devices={["phone","desktop"]}
-  prompt="In iteration-level (continuous) batching, when can a new request join the running batch?"
-  options={["Only when every request in the batch has finished","At any decode iteration, as soon as there is KV memory for it","Only at fixed 1-second scheduling windows","Never; each request gets its own GPU"]}
+  prompt={"Two servers each have a fixed number of slots. In the current batch, all but one request have finished and the last has a long answer to go. Server A uses static batching; server B uses continuous batching. What happens on each?"}
+  options={["Both fill the empty slots at the next step, because every engine admits as soon as there is room.", "A leaves finished slots empty until the last request ends; B refills them at the next step.", "A fills the empty slots at once; B waits for the whole batch to finish before admitting anyone.", "Both stop the long request so a fresh batch can start together, which is fairer to waiting users."]}
   answer={1}
-  explanation={"Orca schedules at the granularity of one iteration, so finished sequences leave and new ones enter every step, limited mainly by free KV-cache memory."}
+  explanation={"Static batching admits a new batch only when the whole current one is done, so one long answer keeps the rest of the GPU idle. Continuous batching makes the decision every step: finished requests leave, and waiting ones join if their memory fits. Neither stops a running request just to start a new batch."}
 />
 
 ## One scheduler tick

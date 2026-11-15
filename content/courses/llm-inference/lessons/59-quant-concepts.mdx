@@ -59,10 +59,21 @@ Using the module 3 formula for Llama-3-8B: 128 KiB per token in FP16 becomes 64 
 
 Keys tend to have outlier channels, so good KV schemes use per-channel scales for K and per-token scales for V. Values are dequantized inside the attention kernel as they are read, so the saving is in memory and bandwidth, not in arithmetic.
 
+## Worked scenario: picking a format
+
+Three teams, three choices:
+
+- **One user, a large model that only fits once shrunk**: weight-only int4 (GPTQ or AWQ). The model fits, and memory-bound decode reads far fewer bytes per token.
+- **A prefill-heavy RAG service on recent GPUs**: W8A8 in FP8 or int8. Prefill is compute-bound, and 8-bit matmuls run faster than 16-bit ones.
+- **Long-context chat that runs out of KV memory**: an FP8 KV cache first, because it shrinks every cached token. Lower-bit caches (KIVI-style) go further, with more care.
+
+The question each time is which bytes or FLOPs are the bottleneck, and which quantization removes that one.
+
 <MCQ
   id="concept-check"
-  prompt="Symmetric INT8 with max |x| = 2.54. What is the scale, and what integer stores 1.0?"
-  options={["scale 0.02, q = 50", "scale 0.01, q = 100", "scale 2.54, q = 1", "scale 0.02, q = 127"]}
-  answer={0}
-  explanation="scale = 2.54/127 = 0.02. q = round(1.0/0.02) = 50."
+  devices={["phone","desktop"]}
+  prompt={"A group of small values is quantized to int8 with one shared scale. Then one value far larger than the rest joins the group. What happens to the smallest values?"}
+  options={["Nothing: each value in the group keeps its own scale, so a newcomer can't affect the others.", "They are stored more precisely, because the grid now spans more values.", "The large value is clipped to fit the old range, and the small values stay exactly as they were.", "The scale stretches to fit it, so the smallest values round to zero."]}
+  answer={3}
+  explanation={"A shared scale is set by the group's largest value. A big newcomer stretches every step, and values smaller than half a step round to zero. That's why outliers are so damaging, and why methods use small groups, per-channel scales or smoothing."}
 />

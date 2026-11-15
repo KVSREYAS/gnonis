@@ -59,10 +59,19 @@ HBM traffic drops from order T squared to roughly reading Q, K, V and writing O.
 
 ![Q tile staying in SRAM while K/V tiles stream through](/diagrams/llm-inference/08-flash-attention/03-tiling-in-sram.png)
 
+## Worked scenario: long-context decode
+
+Decoding one sequence with a very long context, each head has a single query row. FlashAttention splits work by query tiles, so it makes only about one block of work per head, far fewer than the GPU has SMs. Most of the chip sits idle while a few SMs read the whole cache.
+
+Flash-Decoding splits the cached keys and values into chunks along the sequence. Each SM computes a partial output and its log-sum-exp for its chunk, and a small final step merges them with the same rescaling as online softmax. Now every SM reads part of the cache at once, so the read finishes much sooner. The authors reported large speedups for very long sequences, and it shipped inside FlashAttention.
+
+Source: [Flash-Decoding](https://crfm.stanford.edu/2023/10/12/flashdecoding.html)
+
 <MCQ
   id="concept-check"
-  prompt="Is FlashAttention an approximation of attention?"
-  options={["Yes, it drops small scores", "No, online softmax makes it mathematically exact (up to float rounding)", "Yes, it uses low-rank K", "Only for long sequences"]}
-  answer={1}
-  explanation="It reorders the computation and rescales running sums; the result equals standard attention."
+  devices={["phone","desktop"]}
+  prompt={"A service decodes at batch 1 with very long contexts, and the attention kernel uses only a small fraction of the GPU's SMs. Which technique targets this?"}
+  options={["Flash-Decoding: split cached K and V along the sequence across SMs, then merge.", "More query tiles per head, so that the single query row is split into pieces across more SMs.", "A larger tile size, so that each SM gets a bigger share of the work to chew through at once.", "Speculative decoding, which removes the attention step for accepted tokens."]}
+  answer={0}
+  explanation={"At decode there is one query row per head, so splitting by queries gives too little work to spread. Flash-Decoding splits the long cached sequence into chunks, lets each SM handle one, and merges the partial softmax results with the same rescaling trick as online softmax."}
 />

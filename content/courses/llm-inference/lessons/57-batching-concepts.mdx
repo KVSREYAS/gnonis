@@ -41,18 +41,18 @@ No slot waits for another sequence to finish. vLLM, TGI (Hugging Face Text Gener
 
 ## Batch size vs latency
 
-Per-step time stays roughly flat while the step is memory-bound, then rises once the batch is large enough that compute or KV reads dominate.
+Per-step time stays roughly flat while the step is memory-bound and the weights dominate the bytes
+read, then rises as each user's KV reads add up or compute starts to matter.
 
-Numbers for Llama 3 8B in fp16 on one H100, each sequence holding 2,048 tokens of context. Step time = (16 GB of weights + batch × 0.27 GB of KV) / 3.35 TB/s, the formula from lesson 2 of this module:
-
-| batch | step time | tokens/s total | tokens/s per user |
+| batch | step time | total tokens/s | tokens/s per user |
 | --- | --- | --- | --- |
-| 1 | 4.9 ms | 204 | 204 |
-| 16 | 6.1 ms | 2,640 | 165 |
-| 64 | 9.9 ms | 6,465 | 101 |
-| 128 | 15.0 ms | 8,530 | 67 |
+| 1 | shortest | lowest | highest |
+| small | barely longer | rises almost in step | almost unchanged |
+| large | noticeably longer | still rising, more slowly | falling |
+| very large | much longer | flattening out | low |
 
-Throughput keeps climbing with diminishing returns. Each user's speed keeps falling. A service picks a batch limit that meets its per-user speed target. KV memory also caps the batch, as computed in module 3.
+Throughput keeps climbing with diminishing returns. Each user's speed keeps falling. A service picks a
+batch limit that meets its per-user speed target. KV memory also caps the batch, as covered in module 3.
 
 ![Throughput and per-user speed vs batch size](/diagrams/llm-inference/05-batching/02-batch-size-vs-latency.png)
 
@@ -62,7 +62,7 @@ Recall the two phases from module 1. **Prefill** runs all prompt tokens through 
 
 With continuous batching, a new request's prefill runs inside a step next to everyone else's decodes. Every decoding user gets one token per step, so a step's length is the gap between their tokens.
 
-A 16,000-token prompt is about 2 × 8 × 10^9 × 16,000 ≈ 2.6 × 10^14 FLOPs for an 8B model, roughly 0.6 s on an H100. If it runs as one step, every decoding user's stream pauses for that 0.6 s, instead of the usual 10 ms or so. This pause is a **generation stall**, and it shows up as a spike in inter-token latency.
+A very long prompt run as one step makes that step many times longer than a decode step, so every decoding user's stream pauses until it ends. This pause is a **generation stall**, and it shows up as a spike in inter-token latency.
 
 ## Chunked prefill: the fix
 
@@ -79,10 +79,22 @@ Lesson 3 of this module works through the numbers, the KV cache effects and how 
 
 ![Prefill split into chunks mixed with decode tokens](/diagrams/llm-inference/05-batching/03-chunked-prefill.png)
 
+## Worked scenario: one iteration
+
+A continuous-batching server is full, with a queue waiting. During one step, a running request emits its end-of-sequence token.
+
+1. Its KV blocks go back to the free list, and its slot opens.
+2. At the next step the scheduler first gives each still-running request its one decode token.
+3. It then looks at the front of the waiting queue. If enough free blocks exist for that request's prompt, it is admitted, and its prefill tokens join the same step.
+4. The step runs as one forward pass: the decode rows plus the new prompt's rows.
+
+If blocks were short, the request would keep waiting even though a slot is open. Memory, not the slot count, is the real limit.
+
 <MCQ
   id="concept-check"
-  prompt="In continuous batching, when can a new request join the running batch?"
-  options={["Only after every current request finishes", "At the next decode step, once a slot is free", "Only at the start of each minute", "Never; it gets its own GPU"]}
+  devices={["phone","desktop"]}
+  prompt={"A continuous-batching server is full and has a queue of waiting requests. One running request finishes during a step. What happens at the next step?"}
+  options={["Nothing yet: the others keep running until all of them finish, then a new batch starts.", "One waiting request is admitted if its blocks fit, and its prefill joins the step.", "Every waiting request is admitted at once, because the batch now has room to grow past its limit.", "The freed slot stays empty until the next fixed batch boundary, some steps later."]}
   answer={1}
-  explanation="The scheduler revisits the batch every step, so finished sequences are replaced immediately."
+  explanation={"Continuous batching decides membership at every step. A finished request frees its slot and blocks, and the scheduler admits from the queue as long as memory allows. The new request's prefill shares the step with ongoing decodes. Waiting for the whole batch is static batching."}
 />

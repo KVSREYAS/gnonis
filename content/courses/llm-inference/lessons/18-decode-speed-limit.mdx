@@ -15,28 +15,36 @@ keyIdeas:
     proportionally.
 ---
 
-## Back-of-envelope decode
+## The decode speed limit
 
-At batch 1 every decode step reads all the weights once. If memory is the bottleneck (it is), the
-step time is about:
+At batch 1 every decode step reads all the weights once, and memory is the bottleneck. So the step
+time is set by how many bytes must be read divided by how fast memory delivers them:
 
 $$t_{step} \approx \frac{\text{weight bytes} + \text{KV bytes}}{BW}$$
 
-For an 8B fp16 model on an H100, $16\text{ GB} / 3.35\text{ TB/s} \approx 4.8$ ms per token,
-which is about **209 tokens/s**. That is the ceiling. Kernel launch gaps, the KV reads and
-sampling all eat into it.
+This gives a ceiling, not a prediction. For an 8B fp16 model on an H100 it is a few milliseconds per
+token, on the order of two hundred tokens per second. Kernel launch gaps, the KV reads and sampling all
+eat into it. Fewer bytes or more bandwidth raise the ceiling; more FLOP/s do not.
 
 ![Bar chart of batch-1 decode ceilings on A100 and H100 at fp16, int8 and int4](/diagrams/llm-inference/04-gpu-memory-roofline/04-decode-speed-limit.png)
 
-<Predict
+## Where real engines lose time
+
+The bandwidth formula is a ceiling. Real batch-1 decode usually reaches 60–80% of it, and the rest goes to:
+
+- **Kernel launches**: a forward pass runs hundreds of small kernels. vLLM captures decode steps as **CUDA graphs**, which replay the whole sequence of kernels with one launch.
+- **Small reads**: element-wise kernels (norms, activations, rotary embeddings) move data with very little maths. Fusing them into neighbouring kernels saves HBM round trips.
+- **Python and scheduling overhead** between steps, which matters most for small models.
+
+The share of the bandwidth ceiling you actually reach is called **MBU** (memory bandwidth utilisation). It is the first number to check when decode is slower than the formula predicts.
+
+<MCQ
   id="a100-limit"
   devices={["phone","desktop"]}
-  prompt={"An A100 has about 2.0 TB/s of HBM bandwidth. What is the batch-1 decode ceiling for an 8B fp16 model (16 GB of weights), in tokens/s?"}
-  answer={125}
-  tolerance={{"mode":"relative","value":0.04}}
-  unit="tokens/s"
-  hint="tokens/s ≈ bandwidth / bytes per token"
-  explanation="2.0e12 / 16e9 = 125 tokens/s. No kernel trick beats this without reading fewer bytes."
+  prompt={"You move batch-1 decode of the same model from an H100 to an older A100, which has much less compute and noticeably less bandwidth. What sets the slowdown?"}
+  options={["The bandwidth gap, because batch-1 decode is memory-bound; the compute gap barely matters.", "The compute gap, because decode's matmuls run on tensor cores, which the A100 has fewer of.", "Both gaps together, because time depends on FLOPs and bytes added up.", "Neither: the same model runs at the same speed on any GPU it fits on."]}
+  answer={0}
+  explanation={"A memory-bound kernel runs at about bandwidth times intensity. Batch-1 decode is far left of either GPU's ridge, so its speed follows bandwidth, and the much larger gap in compute never shows up. Prefill, which is compute-bound, would feel the compute gap."}
 />
 
 ## Pulling the levers

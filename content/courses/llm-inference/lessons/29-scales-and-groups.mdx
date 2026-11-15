@@ -21,13 +21,13 @@ Symmetric quantization stretches the integer grid over [−max|w|, +max|w|]. One
 
 ![Weight histogram with a coarse per-tensor int4 grid versus a fine per-group grid](/diagrams/llm-inference/07-quantization/02-scales-and-groups.png)
 
-<Predict
+<MCQ
   id="q-value"
   devices={["phone","desktop"]}
-  prompt="Symmetric int8 with max|w| = 0.508, so scale = 0.004. What integer does w = 0.3 quantize to?"
-  answer={75}
-  tolerance={{"mode":"absolute","value":0}}
-  explanation="0.3 / 0.004 = 75."
+  prompt={"Symmetric int8 with one scale for the whole tensor. One outlier weight makes the tensor's largest value much bigger. What happens to the rounding error of every other weight?"}
+  options={["It stays the same; only the outlier itself is affected, because each weight is rounded on its own.", "It shrinks, because the grid now covers a wider range of values.", "It drops to zero for small weights, because they now round exactly to 0, which is perfectly accurate.", "It grows: the scale stretches to fit the outlier, so every step gets coarser."]}
+  answer={3}
+  explanation={"With one scale, the step size is set by the largest value. A bigger maximum means wider steps, and rounding error can be up to half a step, so every weight gets less precise. Small weights may now round to zero, which is a loss, not a perfect result."}
 />
 
 <Code
@@ -48,21 +48,28 @@ With one scale per tensor, a single big outlier makes every step huge. Per-chann
 
 Sources: [GPTQ](https://arxiv.org/abs/2210.17323), [AWQ](https://arxiv.org/abs/2306.00978)
 
+## How one outlier wrecks a scale
+
+With symmetric quantization, the scale is chosen so the largest value lands on the top level. The step between levels is that scale, and any value smaller than half a step rounds to zero.
+
+Picture a row of small weights plus one large outlier. The outlier sets the scale, the steps become wide, and most small weights land on zero or on the first level or two: their detail is gone.
+
+int4 has far fewer levels than int8, so the same outlier does much more damage. Groups contain it: each small group of weights gets its own scale, so the outlier only coarsens its own group. The price is one extra scale stored per group, which is why formats balance group size against bits per weight.
+
 <MCQ
   id="why-groups"
   devices={["phone","desktop"]}
-  prompt="Why do GPTQ and AWQ checkpoints typically use group size 128 instead of one scale per tensor?"
-  options={["It makes the file smaller","Outliers in one region no longer blow up the scale for the whole tensor","GPUs need groups of 128","It removes the need to dequantize"]}
+  prompt={"One row of weights has a single large value; the rest are tiny. You quantize to int4. What happens to the tiny weights with one scale for the whole row, and with small groups that each have their own scale?"}
+  options={["Nothing is lost either way, because int4 has enough levels for a narrow range of weights.", "With one scale they all round to zero; with groups, only the outlier's own group suffers.", "Both lose the tiny weights, because int4 is too coarse for them with or without groups.", "One scale is better, because groups add extra error from storing each group's scale."]}
   answer={1}
-  explanation="Local scales track local ranges. The cost is a few extra bits for the scales."
+  explanation={"The scale is set by the largest value it has to cover. One big value stretches the steps for the whole row until the tiny weights all land on zero. With groups, each group's scale fits its own values, so the outlier only stretches its own group and the others keep their detail."}
 />
 
-<Predict
+<MCQ
   id="group-bits"
   devices={["phone","desktop"]}
-  prompt="int4 weights with one fp16 scale per group of 128 weights. Effective bits per weight?"
-  answer={4.125}
-  tolerance={{"mode":"absolute","value":0.01}}
-  unit="bits"
-  explanation="4 + 16/128 = 4.125 bits."
+  prompt={"You make int4 groups smaller, with one fp16 scale per group. What is the trade-off?"}
+  options={["Smaller rounding error, but more scales to store, so more bits per weight.", "Both get better: smaller error and less memory, because each scale covers fewer values.", "Larger error, because each group has fewer weights to average its rounding over.", "No change in error or memory: group size only affects how fast the kernel runs."]}
+  answer={0}
+  explanation={"A smaller group means each scale fits a narrower set of values, so outliers affect fewer weights. But every group carries its own scale, so smaller groups mean more scale bytes for the same weights. Formats choose a group size that balances the two."}
 />

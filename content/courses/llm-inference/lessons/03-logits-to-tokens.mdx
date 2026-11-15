@@ -50,13 +50,23 @@ After filtering, the survivors are renormalised and one is sampled at random. Tr
   explanation={"Dropping temperature towards 0 sharpens softmax until it is effectively argmax. Top-k = 1 gets there directly by deleting every other candidate. Both are \"greedy decoding\"."}
 />
 
+## Picking settings for a task
+
+Different products want different sampling.
+
+- **Code, extraction, short factual answers**: a low temperature or a tight top-p. The most likely token is usually right, and sampling from the tail invents names and facts.
+- **Creative writing and brainstorming**: a moderate temperature with top-p. Greedy decoding here keeps repeating safe phrases.
+- **Tests that must give the same output every run**: greedy decoding, which always takes the most likely token.
+
+Top-p adapts to the shape of the distribution: when the model is sure, the nucleus may hold one or two tokens; when it is unsure, it holds many. Top-k always keeps the same count, which can be too many when the model is sure and too few when it isn't.
+
 <MCQ
   id="temperature-effect"
   devices={["phone","desktop"]}
-  prompt="You raise temperature from 1.0 to 1.5. What happens to the distribution?"
-  options={["It gets sharper, so the top token wins more often","It gets flatter, so unlikely tokens are sampled more often","Nothing, temperature only affects speed","The vocabulary size increases"]}
+  prompt={"Two apps share one model. A code assistant at a high temperature sometimes invents function names that don't exist. A story app at a temperature near zero keeps writing the same bland openings. What change fits each?"}
+  options={["Raise it for both: a flatter distribution lets the model consider more options, so it finds real names and varied stories.", "Lower the temperature (or tighten top-p) for the code assistant, so it sticks to likely names, and raise it for the story app.", "Lower it for both: fewer random choices always make a model's output better, whatever the task.", "Raise it for the code assistant so it explores more real names, and lower it for the story app so its style settles."]}
   answer={1}
-  explanation={"Dividing logits by T > 1 shrinks the gaps between them, so softmax spreads probability more evenly. Creative, but more likely to wander off."}
+  explanation={"A high temperature flattens the distribution, so unlikely tokens, such as made-up names, get picked more often; the code assistant needs a sharper distribution. A temperature near zero is close to greedy decoding, which keeps choosing the same most-likely words; the story app needs more spread. Temperature changes which token is picked, not how good the model is."}
 />
 
 ## Write it yourself

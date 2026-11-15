@@ -20,14 +20,13 @@ keyIdeas:
 Older servers reserved one contiguous KV slab per request, sized for the maximum length. Most of it was
 never written. The vLLM authors measured only 20.4% to 38.2% of KV memory holding real token states.
 
-<Predict
+<MCQ
   id="waste-slab"
   devices={["phone","desktop"]}
-  prompt={"An old server reserves a 4,096-token contiguous KV slab per request. A request actually uses 1,000 tokens. What percentage of its reserved slab is wasted?"}
-  answer={75.6}
-  tolerance={{"mode":"absolute","value":0.5}}
-  unit="%"
-  explanation={"(4096 - 1000) / 4096 = 75.6%. That is the \"60-80% waste\" the vLLM authors describe."}
+  prompt={"Why did older servers reserve one contiguous KV slab sized for the maximum length, even though most of it was never used?"}
+  options={["GPUs can only allocate memory in maximum-length units for attention buffers.", "Attention needs the unused space as workspace for its score matrix.", "Output length is unknown in advance, and a contiguous buffer can't grow in place.", "Each request needs room for its own copy of the weights next to its cache."]}
+  answer={2}
+  explanation={"The output length is unknown when a request starts, and a contiguous buffer cannot be extended once neighbours are allocated after it, so servers reserved the worst case. That is where the reservation waste and fragmentation came from. GPUs can allocate any size, the score matrix is not stored in the KV slab, and all requests share one copy of the weights."}
 />
 
 ## Pages, but for keys and values
@@ -35,15 +34,16 @@ never written. The vLLM authors measured only 20.4% to 38.2% of KV memory holdin
 PagedAttention splits the cache into fixed blocks (16 tokens by default in vLLM). A sequence grabs a
 new block only when the last one fills up, so it wastes at most one partly-filled block.
 
-<Predict
+Block size is a trade-off. Bigger blocks waste more slots in each sequence's last block. Smaller
+blocks mean longer block tables and smaller, more scattered reads for the attention kernel.
+
+<MCQ
   id="blocks-needed"
   devices={["phone","desktop"]}
-  prompt="With a block size of 16 tokens, how many KV blocks does a 1,000-token sequence need?"
-  answer={63}
-  tolerance={{"mode":"absolute","value":0}}
-  unit="blocks"
-  hint="ceil(1000 / 16)"
-  explanation="ceil(1000/16) = 63 blocks = 1,008 slots, so only 8 slots are wasted. Compare reserving 4,096 slots up front."
+  prompt={"You make the KV block size much larger. What happens?"}
+  options={["Waste goes down, because there are fewer blocks per sequence to leave partly empty.", "Tables get shorter, but each sequence's last block wastes more slots, so fewer fit.", "Nothing changes for memory: block size only affects how fast the attention kernel runs.", "Prefix sharing stops working, because no prompt fills a large block exactly."]}
+  answer={1}
+  explanation={"Paging wastes only the unused slots in each sequence's last block, and that waste can be up to a whole block. Larger blocks mean fewer table entries and simpler bookkeeping, but more slots left empty at the end of every sequence. Prefix sharing still works for full blocks."}
 />
 
 ## The block table
@@ -55,13 +55,21 @@ Physical blocks can sit anywhere, and two sequences can point at the same block 
 
 ![Two sequences' logical blocks mapped through block tables to scattered physical blocks, with shared prefix blocks highlighted](/diagrams/llm-inference/06-paged-attention/01-kv-as-virtual-memory.png)
 
+## How the kernel reads scattered blocks
+
+The PagedAttention kernel receives each sequence's block table. To compute attention for a new query, it walks through the table: for logical block i it looks up the physical block, loads that block's keys and values, and computes the scores for those 16 tokens. Then it moves on to the next entry.
+
+Token index t lives in logical block t // 16, at slot t % 16. Physical blocks can sit anywhere in GPU memory, so a sequence never needs a contiguous region.
+
+The extra lookup costs a little time compared with one contiguous buffer, but it lets almost the whole pool be used and lets sequences share blocks.
+
 <MCQ
   id="block-table"
   devices={["phone","desktop"]}
-  prompt="What does a sequence's block table map?"
-  options={["Token ids to vocabulary strings","Logical KV block numbers to physical GPU memory blocks","Attention heads to GPUs","Layers to CUDA streams"]}
-  answer={1}
-  explanation={"It is the same structure as an operating system page table. Physical blocks need not be contiguous, and two sequences can point at the same block to share a prefix (copy-on-write)."}
+  prompt={"Two chats start with the same long system prompt, and the server shares prefixes. What do their block tables look like?"}
+  options={["Each table points to its own private copy of the prompt blocks, because tables can't share entries.", "One table holds all the shared prompt blocks, and the other holds only its own chat's blocks.", "Both tables have a single entry pointing to one big physical block holding the whole prompt.", "Their first entries point to the same physical blocks; after the shared prompt they point to different blocks."]}
+  answer={3}
+  explanation={"A block table maps each sequence's logical blocks to physical ones. Sharing means two tables list the same physical block ids for the shared part, with a reference count on each block. Where the chats differ, their entries point to their own blocks. Every block has the same fixed size."}
 />
 
 ## Background

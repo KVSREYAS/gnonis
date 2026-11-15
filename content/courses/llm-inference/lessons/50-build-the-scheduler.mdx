@@ -23,23 +23,31 @@ Strict **FIFO** (first in, first out) admission takes waiting requests only from
 
 ![Scheduler step: running decodes consume budget, waiting queue admitted FIFO until the budget line](/diagrams/llm-inference/12-capstone/02-build-the-scheduler.png)
 
-<Predict
+<MCQ
   id="admit-count"
   devices={["phone","desktop"]}
-  prompt={"Token budget 512 and 100 running decodes. The waiting prompts are 200, 150, 100 and 50 tokens long, with plenty of blocks. FIFO admission with no chunking: how many prompts join this step?"}
-  answer={2}
-  tolerance={{"mode":"absolute","value":0}}
-  unit="prompts"
-  explanation="Budget left = 412. 200 fits (212 left), 150 fits (62 left), and 100 doesn't fit, so FIFO stops there."
+  prompt={"Strict first-in-first-out admission, no chunking. The running decodes have used most of the step's token budget, and the request at the front of the queue is a prompt too long for what is left. Short prompts wait behind it. What happens, and what is a good fix?"}
+  options={["Nothing: the front prompt doesn't fit and blocks the queue. Chunk it, or allow limited skip-ahead.", "The short prompts are admitted around it, and the long one simply waits for a later, emptier step.", "All of them are admitted, and the step runs a little over budget to fit them.", "The running decodes are paused for one step so that the long prompt fits."]}
+  answer={0}
+  explanation={"Strict FIFO only ever looks at the front of the queue, so a request that doesn't fit stops everything behind it: head-of-line blocking. Chunked prefill lets the long prompt take whatever room is left; limited skip-ahead lets short ones pass without starving the long one."}
 />
+
+## Fair admission
+
+Strict FIFO is simple and fair in arrival order, but one big request at the head can block everything behind it. Two common fixes:
+
+- **Chunking**: a long prompt enters in budget-sized pieces, so it never needs more than one step's leftover budget.
+- **Bounded skip-ahead**: if the head doesn't fit, admit smaller requests behind it, but age the head so it can't be skipped forever.
+
+Each fix trades something. Chunking adds extra KV reads for each chunk. Skip-ahead gives up strict arrival order. Real schedulers usually combine chunked prefill with a priority or FCFS order.
 
 <MCQ
   id="hol"
   devices={["phone","desktop"]}
-  prompt="In strict FIFO admission, one 10,000-token prompt at the head of the queue exceeds the budget. What happens?"
-  options={["It's skipped automatically","Everything behind it waits too (head-of-line blocking), unless you chunk it","The GPU crashes","It runs at batch 1"]}
+  prompt={"The queue holds a prompt longer than the whole step budget at the front, then many short chat messages. Admission is strict FIFO with no chunking. What do users see, and what are two fixes?"}
+  options={["The short messages run first, because the scheduler always picks the requests that fit.", "Nothing behind the long prompt is admitted; chunk it or allow limited skip-ahead.", "The long prompt runs over several full steps, and then the short messages follow it in order.", "Everything runs, just slowly, because all the requests share the budget each step."]}
   answer={1}
-  explanation="Chunked prefill or skip-ahead policies fix it."
+  explanation={"Without chunking, a prompt must fit in one step, and this one never will. Under strict FIFO it stays at the front forever and blocks everyone behind it. Chunking makes it fit over several steps; skip-ahead lets short requests run meanwhile."}
 />
 
 ## Code it

@@ -3,7 +3,7 @@ id: llm-inference/11-serving-systems/01-ttft-tpot-and-prefix-caching
 title: "Serving Metrics and Prefix Caching"
 estMinutes: 3
 xp: 90
-fun: 3
+fun: 4
 missionIntro: TTFT, TPOT/ITL, throughput and goodput, plus reusing the KV cache
   of shared prompt prefixes.
 keyIdeas:
@@ -20,28 +20,37 @@ keyIdeas:
 
 ![Latency timeline with TTFT and TPOT marked, and a radix tree of requests sharing a cached system prompt](/diagrams/llm-inference/11-serving-systems/01-ttft-tpot-and-prefix-caching.png)
 
+## Where TTFT and TPOT come from
+
+TTFT = time waiting in the queue + prefill time (+ network). TPOT = decode step time, which depends on the batch and on context lengths.
+
+Each has its own levers:
+
+- **TTFT**: shorter queues (more capacity, better admission), less prefill work (prefix caching, shorter prompts), faster prefill (more tensor parallelism, FP8).
+- **TPOT**: fewer bytes per step (quantized weights, an FP8 KV cache), fewer steps (speculative decoding), smaller batches, and no prefill stalls (chunked prefill or disaggregation).
+
+Measure the queue wait separately. A TTFT spike at peak hours with normal prefill times is a capacity problem, not a kernel problem.
+
 <MCQ
   id="metric-match"
   devices={["phone","desktop"]}
-  prompt={"A chatbot feels \"laggy before it starts typing\". Which metric is bad?"}
-  options={["TTFT","TPOT","Total throughput","Model FLOPs utilisation"]}
-  answer={0}
-  explanation="Slow start = TTFT. Long prompts, queueing and big prefills hurt it; chunked prefill and prefix caching help."
+  prompt={"Two complaints: (a) \"it takes forever to start\", (b) \"it starts fast but types slowly\". Which metric is each about, and which lever fits?"}
+  options={["(a) is TPOT and (b) is TTFT; raising the batch size fixes both at once.", "Both are TTFT problems; prefix caching fixes both, because it skips repeated work.", "Both are TPOT problems; speculative decoding fixes both, because it makes tokens faster.", "(a) TTFT: prefix caching or more prefill capacity. (b) TPOT: smaller batches, quantization, speculation."]}
+  answer={3}
+  explanation={"TTFT is the wait until the first token: queue time plus prefill. TPOT is the gap between later tokens: decode step time. Prefix caching skips prefill work for shared prefixes, which helps (a). Fewer bytes per step (quantization), fewer steps (speculation) or smaller batches shorten decode steps, which helps (b). A larger batch usually makes TPOT worse."}
 />
 
 ## End-to-end latency
 
 Total time is roughly TTFT plus TPOT for every token after the first.
 
-<Predict
+<MCQ
   id="e2e-latency"
   devices={["phone","desktop"]}
-  prompt="TTFT is 200 ms and TPOT is 20 ms. How long, in seconds, until a 500-token answer finishes?"
-  answer={10.18}
-  tolerance={{"mode":"absolute","value":0.05}}
-  unit="s"
-  hint="TTFT + TPOT x (N - 1)"
-  explanation="0.2 + 0.02 x 499 = 10.18 s."
+  prompt={"Answers on your service are long. One option makes the first token arrive much sooner; another makes every token a little faster. Which cuts the average user's total wait more, and why?"}
+  options={["Faster tokens, because that saving repeats for every token of a long answer.", "Making the first token sooner, because the first token is what users wait for.", "Neither, because total wait depends only on throughput, not on per-request timings.", "They always save the same time, because both of them shorten the very same request."]}
+  answer={0}
+  explanation={"Total time ≈ TTFT + (tokens × time per token). The first-token saving happens once; the per-token saving is multiplied by the answer's length, so for long answers even a small per-token gain can win. For very short answers, such as autocomplete, the reverse holds."}
 />
 
 ## Prefix caching
@@ -52,14 +61,13 @@ How vLLM finds a match: each **full** KV block gets a hash computed from its own
 
 vLLM calls this automatic prefix caching. SGLang keeps cached prefixes in a radix tree (RadixAttention), where requests with a shared beginning share a path from the root.
 
-<Predict
+<MCQ
   id="prefix-saving"
   devices={["phone","desktop"]}
-  prompt={"Every request has a 2,000-token shared system prompt plus a 200-token user message. With a warm prefix cache, what percentage of prefill tokens are skipped?"}
-  answer={90.9}
-  tolerance={{"mode":"absolute","value":0.5}}
-  unit="%"
-  explanation="2000 / 2200 = 90.9% of prefill tokens come from the cache."
+  prompt={"Prefix caching worked well until someone put the current timestamp at the very start of the system prompt. Now the hit rate is near zero. Why?"}
+  options={["The timestamp can't be tokenized consistently, so the prompt's tokens differ even when the text matches.", "Each block's hash covers all tokens before it, so changing the first block changes every hash.", "The cache only stores prompts below a fixed length, and the timestamp pushed the prompt over it.", "Prefix caching only reuses a prompt's last block, and that block now always contains the timestamp."]}
+  answer={1}
+  explanation={"Keys and values depend on every earlier token, so the cache can only reuse a block when everything before it matches too. A timestamp in the first block makes every request's prefix unique. Moving the changing part to the end of the prompt restores the hits. Timestamps tokenize like any text, there is no length cutoff, and reuse runs from the first block forward."}
 />
 
 ## Summary

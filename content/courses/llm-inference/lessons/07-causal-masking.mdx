@@ -42,13 +42,19 @@ During training, masking lets the model learn from every position of a sequence 
 inference, decode computes just one new row (the newest query) against all cached keys. That row
 has no future keys anyway.
 
+## Masking inside real kernels
+
+Production kernels don't build a full N × N mask in memory. FlashAttention takes a causal flag: inside the kernel, tiles that lie entirely above the diagonal (all future keys) are skipped, and only tiles on the diagonal apply the −∞ entry by entry. That saves about half the work of a long prefill.
+
+A common bug when writing attention by hand is applying the mask after softmax, by zeroing future weights. Softmax has already shared out the row's total weight of 1 across all positions, so the remaining weights no longer add up to 1.
+
 <MCQ
   id="mask-order"
   devices={["phone","desktop"]}
-  prompt="Where must the causal mask be applied?"
-  options={["After softmax, by zeroing the future weights","Before softmax, by setting future scores to −∞","On the values, by zeroing future value vectors","Only during decoding, never in prefill"]}
-  answer={1}
-  explanation={"Setting scores to −∞ before softmax gives those keys exactly zero weight while the remaining weights still sum to 1. Zeroing after softmax leaves rows that no longer sum to 1."}
+  prompt={"A bug applies the causal mask after softmax, by zeroing the weights for future tokens instead of setting their scores to −∞ before softmax. What goes wrong?"}
+  options={["Rows no longer add up to 1: the weight given to future positions is thrown away, by a different amount in each row.", "Nothing goes wrong: a weight of zero after softmax gives exactly the same output as a score of −∞ before it.", "Future tokens still leak in, because the zeroed weights are only approximately zero after the floating-point softmax.", "Only decode is affected: prefill never needs a mask, because the whole prompt is processed together in one pass."]}
+  answer={0}
+  explanation={"Softmax spreads exactly 1 unit of weight across the whole row, including the future positions. Zeroing those afterwards throws their share away, so the remaining weights add up to less than 1. Row 1 of a 1,000-token prompt might keep only a tiny fraction, and later rows keep more. Setting scores to −∞ first gives future positions exp(−∞) = 0 inside softmax, so the past positions share the full 1. Zeroed weights are exact zeros, so nothing leaks; the problem is the wrong scale."}
 />
 
 ## Spot the leak

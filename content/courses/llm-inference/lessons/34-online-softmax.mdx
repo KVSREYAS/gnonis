@@ -19,22 +19,30 @@ Milakov and Gimelshein (2018) showed softmax can be computed in one pass. Keep m
 
 ![Two score tiles with their own max and sum, merged by rescaling into a single running max and sum](/diagrams/llm-inference/08-flash-attention/02-online-softmax.png)
 
+## Why fp16 overflows
+
+fp16 has a small maximum value, and exp grows extremely fast, so exp of even a moderately large score is already past it. The result becomes infinity, and infinity divided by infinity is NaN.
+
+Softmax doesn't change if every score shifts by the same amount, because the common factor cancels in the division. Subtracting the row's maximum makes the largest term exp(0) = 1 and every other term smaller than 1, so nothing can overflow.
+
+Online softmax keeps this safety while reading scores in tiles: it tracks the running max and rescales the running sum whenever the max grows.
+
 <MCQ
   id="why-max"
   devices={["phone","desktop"]}
-  prompt="Why subtract the max before exponentiating?"
-  options={["It's faster","To avoid overflow: exp of large scores is inf in fp16/fp32","To make the result sum to 2","It changes the result"]}
-  answer={1}
-  explanation="Softmax is shift-invariant, so subtracting the max changes nothing mathematically and keeps exp() in range."
+  prompt={"A custom fp16 softmax returns NaN for rows with large scores, but works for small ones. What is wrong, and what is the fix?"}
+  options={["fp16 can't represent large negative numbers well, so the scores should be shifted to be positive first.", "The row sum is too small for fp16 to hold, so the sum should be multiplied by √d_k before dividing.", "Large scores are outside what the model was trained on, so the model must be retrained.", "exp of a large score overflows fp16 to inf, and inf / inf is NaN; subtract the row max first."]}
+  answer={3}
+  explanation={"exp grows very fast and fp16 has a small maximum, so a moderately large score already overflows to inf. Dividing inf by an inf sum gives NaN. Subtracting the row's maximum makes the largest exponent exp(0) = 1 and every other one smaller, and the softmax result is mathematically unchanged."}
 />
 
-<Predict
+<MCQ
   id="online-l"
   devices={["phone","desktop"]}
-  prompt={"Scores arrive in two blocks: [1, 2] then [3]. After both, the running max is m = 3. What is the running sum l = Σ exp(x − m)?"}
-  answer={1.503}
-  tolerance={{"mode":"absolute","value":0.005}}
-  explanation="e^(−2) + e^(−1) + e^0 = 0.1353 + 0.3679 + 1 = 1.503."
+  prompt={"In online softmax, when a new score bigger than the running max arrives, why is the running sum l multiplied by exp(m_old − m_new)?"}
+  options={["To make the sum smaller and avoid overflow, at the cost of a small error.", "To discard the contribution of scores that came before the new max.", "The old terms used exp(x − m_old); the factor turns them into exp(x − m_new).", "Because softmax needs the scores in sorted order, and this re-sorts them."]}
+  answer={2}
+  explanation={"exp(x − m_old) × exp(m_old − m_new) = exp(x − m_new), exactly. So after rescaling, l is the same sum you would get with the final max known from the start: no error, nothing discarded, and no sorting needed."}
 />
 
 ## Merge two tiles

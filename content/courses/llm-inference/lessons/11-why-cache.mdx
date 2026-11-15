@@ -48,20 +48,29 @@ There is no Q cache. Only the newest query matters, so old ones are never used a
 The cache turns recomputation into memory: it grows by one entry per layer per token, for every
 sequence being served. The next lesson puts a number on it.
 
+## What the cache costs per step
+
+The cache removes repeated work, but it isn't free to read. Every decode step reads all the model's weights plus this sequence's whole KV cache, in every layer.
+
+- **Early in a conversation**, the cache is tiny next to the weights, so it barely affects the step.
+- **Deep into a long conversation**, the cache can grow to a large share of the weights' size, and every step must read it all, so steps get noticeably slower.
+
+That is why tokens stream more slowly late in a very long answer, and why long-context serving cares so much about bytes per cached token: GQA, fp8 caches and shorter maximum contexts all attack the same cost.
+
 <MCQ
   id="why-not-q"
   devices={["phone","desktop"]}
-  prompt="Why is there a KV cache but no Q cache?"
-  options={["Queries are too large to store","Only the newest token's query is needed, and past queries are never used again","Queries are recomputed from the keys","Queries are cached too, just inside the MLP"]}
-  answer={1}
-  explanation={"At each decode step, the new token's query is compared with every key. Old queries were only needed to produce old outputs, which already exist."}
+  prompt={"An engineer suggests caching each token's query alongside its key and value, \"so nothing needs recomputing\". What happens if you do it?"}
+  options={["Decode gets faster: old queries no longer have to be recomputed at every step, which is most of the attention work.", "Prefill gets faster: the prompt's queries are computed once and reused by every later step instead of recomputed.", "Memory per token grows and nothing gets faster, because no later step ever reads an old query.", "Nothing changes: each key already contains its token's query, so the extra cache is just a second copy of the same data."]}
+  answer={2}
+  explanation={"At decode step t, attention compares the new token's query with the keys of all earlier tokens and mixes their values. Old keys and values are reused every step, so caching them saves work. Old queries are used once, in their own step, and never again. Storing them takes memory (more than K with GQA, because there are more query heads) and saves nothing."}
 />
 
 <MCQ
   id="what-is-read"
   devices={["phone","desktop"]}
-  prompt="With a KV cache, what must a decode step still read from GPU memory?"
-  options={["Only the newest token's embedding","All model weights, plus that sequence's cached K and V for every layer","Only the attention weights","Nothing, because everything is in registers"]}
-  answer={1}
-  explanation={"The cache removes recomputation, not reading. Every step streams all weights and the whole KV history through the GPU, which is why decode is bandwidth-bound."}
+  prompt={"One user is deep into a very long conversation; another has just started an answer. Same model, batch 1. Why is each step slower for the first user?"}
+  options={["Each step recomputes keys and values for every earlier token, and there are more of them to redo.", "The weights grow as a conversation goes on, because every new token adds a row to the embedding table.", "The MLP mixes every earlier position together, so its work per step grows with the conversation.", "Each step reads the weights plus that user's whole KV cache, and the long conversation's cache is far bigger."]}
+  answer={3}
+  explanation={"With a KV cache nothing old is recomputed, but every step must read all cached keys and values so the new query can attend to them. Weight reads are the same for both users; cache reads grow with context. Late in a long conversation the cache can rival the weights in size. The MLP works on one position at a time."}
 />

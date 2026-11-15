@@ -21,25 +21,33 @@ Megatron-LM shards the first MLP weight by columns (each GPU computes part of th
 
 ![MLP split across 2 GPUs: column-parallel first matrix, row-parallel second, joined by an all-reduce](/diagrams/llm-inference/10-parallelism/01-tensor-parallelism.png)
 
-<Predict
+<MCQ
   id="allreduce-count"
   devices={["phone","desktop"]}
-  prompt="Llama 3 70B has 80 layers. With Megatron TP, how many all-reduces per forward pass (ignoring embeddings)?"
-  answer={160}
-  tolerance={{"mode":"absolute","value":0}}
-  explanation="2 per layer (attention + MLP) × 80 = 160, and every decode step pays them."
+  prompt={"In Megatron's MLP split, why is there an all-reduce after the second (row-split) matrix but no communication after the first (column-split) one?"}
+  options={["Each GPU has complete values for its slice after the column split, but only a partial sum after the row split.", "The first matrix is small enough that skipping communication after it costs no accuracy.", "The all-reduce sends the second matrix's weights to every GPU, and the first needs no weights moved.", "The activation can only run on one GPU, so the first result is gathered there without an all-reduce."]}
+  answer={0}
+  explanation={"Splitting A by columns gives each GPU whole columns of X A, and the activation works element by element, so no data needs to move. Splitting B by rows means each GPU's product is a partial sum of Y, so an all-reduce adds them. Attention splits the same way by heads, giving two all-reduces per block. The first matrix is not small, weights never move, and the activation runs on every GPU."}
 />
+
+## TP in practice
+
+In vLLM, TP is one flag: `--tensor-parallel-size 4` splits every layer across 4 GPUs. TensorRT-LLM sets the TP degree when it builds the engine.
+
+Weights per GPU shrink by the TP degree, and so do the bytes each GPU reads per step, which is why TP speeds up a single user. The memory that is freed goes to the KV cache, which is also split by heads across the GPUs.
+
+The usual choice is the smallest TP degree whose per-GPU weights leave enough room for the KV cache you need. Spare GPUs then run extra **replicas** (data parallelism), which add throughput with no communication between them.
 
 <Code
   id="tp-code"
   devices={["desktop"]}
   language="python"
-  prompt={"Write per_gpu_weight_gb(params_b, bytes_per_param, tp), the weight memory per GPU in decimal GB when weights are split evenly across tp GPUs."}
-  starter={"def per_gpu_weight_gb(params_b, bytes_per_param, tp):\n    return 0.0\n"}
-  tests={"def test_70b_tp4():\n    assert abs(per_gpu_weight_gb(70, 2, 4) - 35.0) < 1e-9\n\ndef test_8b_tp1():\n    assert abs(per_gpu_weight_gb(8, 2, 1) - 16.0) < 1e-9\n\ndef test_405b_fp8_tp8():\n    assert abs(per_gpu_weight_gb(405, 1, 8) - 50.625) < 1e-9\n"}
-  solution={"def per_gpu_weight_gb(params_b, bytes_per_param, tp):\n    return params_b * bytes_per_param / tp\n"}
-  hints={["Billions × bytes gives GB."]}
-  explanation="TP also divides the bytes read per decode step, so batch-1 latency drops too (minus the communication)."
+  prompt={"Megatron-style tensor parallelism for one MLP: y = relu(x A) B. Split A by columns and B by the matching rows into n shards. Each shard computes relu(x A_j) B_j on its own, with no communication, and the all-reduce adds the shards' results. Write tp_mlp(x, A, B, n) that does exactly that (the hidden size divides evenly by n). matvec(x, M) is given."}
+  starter={"def matvec(x, M):\n    return [sum(x[i] * M[i][j] for i in range(len(x))) for j in range(len(M[0]))]\n\ndef relu(v):\n    return [max(0.0, a) for a in v]\n\ndef tp_mlp(x, A, B, n):\n    h = len(A[0]) // n\n    total = [0.0] * len(B[0])\n    for j in range(n):\n        A_j = [row[j * h:(j + 1) * h] for row in A]\n        B_j = B[j * h:(j + 1) * h]\n        part = matvec(matvec(x, A_j), B_j)\n        total = [t + p for t, p in zip(total, part)]\n    # Bug: the activation is applied after the all-reduce.\n    return relu(total)\n"}
+  tests={"x = [1.0, -2.0]\nA = [[1.0, -1.0, 2.0, 0.5], [0.5, 1.0, -1.0, 2.0]]\nB = [[1.0, 2.0], [-1.0, 1.0], [0.5, -2.0], [2.0, 1.0]]\n\ndef unsplit(x, A, B):\n    return matvec(relu(matvec(x, A)), B)\n\ndef test_one_shard_matches():\n    assert tp_mlp(x, A, B, 1) == unsplit(x, A, B)\n\ndef test_two_shards_match():\n    assert tp_mlp(x, A, B, 2) == unsplit(x, A, B), (tp_mlp(x, A, B, 2), unsplit(x, A, B))\n\ndef test_four_shards_match():\n    assert tp_mlp(x, A, B, 4) == unsplit(x, A, B)\n"}
+  solution={"def matvec(x, M):\n    return [sum(x[i] * M[i][j] for i in range(len(x))) for j in range(len(M[0]))]\n\ndef relu(v):\n    return [max(0.0, a) for a in v]\n\ndef tp_mlp(x, A, B, n):\n    h = len(A[0]) // n\n    total = [0.0] * len(B[0])\n    for j in range(n):\n        A_j = [row[j * h:(j + 1) * h] for row in A]\n        B_j = B[j * h:(j + 1) * h]\n        part = matvec(relu(matvec(x, A_j)), B_j)\n        total = [t + p for t, p in zip(total, part)]\n    return total\n"}
+  hints={["After the column split, each shard holds complete hidden values for its slice.", "So the activation can run inside each shard, before the second matmul."]}
+  explanation={"The column split gives each GPU complete values for its slice of the hidden layer, so the activation runs locally with no communication. The row split leaves each GPU with a partial sum of the output, which is why the one all-reduce comes after the second matrix. Applying the activation after the sum gives a different, wrong function."}
 />
 
 ## Communication cost
@@ -50,21 +58,20 @@ That is fast on NVLink and painful across nodes.
 
 Source: [Megatron-LM](https://arxiv.org/abs/1909.08053)
 
-<Predict
+<MCQ
   id="ring-bytes"
   devices={["phone","desktop"]}
-  prompt="Ring all-reduce of a 64 MB tensor across 8 GPUs. How many MB does each GPU send?"
-  answer={112}
-  tolerance={{"mode":"relative","value":0.01}}
-  unit="MB"
-  explanation="2 × 7/8 × 64 = 112 MB."
+  prompt={"In a ring all-reduce, as you add more GPUs to a tensor-parallel group, what happens to each GPU's communication per step and to its share of the maths?"}
+  options={["Its communication shrinks in step with its maths, because each GPU holds a smaller slice.", "Its communication stays about the same while its maths shrinks, so communication grows as a share.", "Its communication grows in proportion to the number of GPUs, because every GPU talks to every other.", "Both stay the same, because the ring sends each piece of the tensor only once whatever the group size."]}
+  answer={1}
+  explanation={"A ring all-reduce has each GPU send and receive close to twice the tensor's size, whatever the group size, because the whole result has to pass through every GPU. Meanwhile each GPU's slice of the weights, and its maths, shrinks as GPUs are added. So scaling TP up makes communication a larger part of each step."}
 />
 
 <MCQ
   id="keep-in-node"
   devices={["phone","desktop"]}
-  prompt="Why is tensor parallelism usually kept within one node?"
-  options={["CUDA forbids cross-node TP","It needs frequent, latency-sensitive all-reduces, and NVLink (900 GB/s on H100) is far faster than the network","It uses less memory across nodes","Pipeline parallelism needs NVLink instead"]}
-  answer={1}
-  explanation="Many small all-reduces per token over InfiniBand would dominate latency."
+  prompt={"A team spreads tensor parallelism across two nodes linked by InfiniBand, instead of keeping TP within each node and using pipeline parallelism across them. Decode latency gets worse. Why?"}
+  options={["Spreading TP wider leaves each GPU with more weight bytes, so its share no longer fits well.", "Pipeline parallelism needs no communication at all, while TP across nodes needs some.", "CUDA runs kernels at reduced speed whenever they are part of a cross-node group.", "TP's two all-reduces per block, every step, now cross the much slower link between nodes."]}
+  answer={3}
+  explanation={"TP synchronises inside every block of every step, so it needs the fastest link: NVLink within a node. InfiniBand between nodes is much slower, and every all-reduce waits on it. PP only sends a token's activation at each stage boundary, which suits the slower link."}
 />

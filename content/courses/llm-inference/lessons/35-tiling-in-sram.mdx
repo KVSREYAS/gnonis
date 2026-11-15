@@ -20,23 +20,36 @@ Split Q into row blocks and K/V into column blocks. For each Q block, stream K/V
 
 ![Attention matrix divided into tiles; one Q row-block and one K/V block highlighted inside SRAM](/diagrams/llm-inference/08-flash-attention/03-tiling-in-sram.png)
 
-<Predict
+<MCQ
   id="tile-bytes"
   devices={["phone","desktop"]}
-  prompt="Q, K and V tiles of 128 × 128 fp16 each, loaded together. How many KiB of SRAM?"
-  answer={96}
-  tolerance={{"mode":"absolute","value":0.5}}
-  unit="KiB"
-  explanation="3 × 128 × 128 × 2 B = 98,304 B = 96 KiB, which fits inside an H100 SM's 228 KB."
+  prompt={"Why does FlashAttention use modest tiles instead of much bigger ones that would cover more of the sequence at once?"}
+  options={["Bigger tiles would change the result, because online softmax is exact only for small tiles.", "HBM can only transfer a fixed number of rows at once, so bigger tiles need several transfers.", "The Q, K and V tiles plus their scores must fit in one SM's on-chip SRAM, which is small.", "Bigger tiles would need more FLOPs, because each score would be computed more than once."]}
+  answer={2}
+  explanation={"The point of tiling is to keep the working set on chip, where reads are fast. Each SM has only a small amount of shared memory, so a tile must fit in it. Online softmax is exact for any tile size; the size is about fitting SRAM and keeping enough tiles to occupy every SM."}
 />
+
+## FlashAttention in real engines
+
+FlashAttention is the default attention kernel family in current serving engines. vLLM, for example, can use FlashAttention or FlashInfer kernels as its attention backend.
+
+Each version targets newer hardware:
+
+- **FlashAttention-1** (2022) removed the score-matrix traffic to HBM.
+- **FlashAttention-2** (2023) split work better across thread groups, roughly doubling speed.
+- **FlashAttention-3** (2024) uses Hopper features: TMA copies tiles without using threads, and warp specialisation lets some warps load while others compute. It reaches a much larger share of an H100's peak, and also supports fp8.
+
+All three compute exact attention. The speedups come from moving fewer bytes and keeping the tensor cores busy, not from skipping work.
+
+Sources: [FA2](https://arxiv.org/abs/2307.08691), [FA3](https://arxiv.org/abs/2407.08608)
 
 <MCQ
   id="exact-mcq"
   devices={["phone","desktop"]}
-  prompt="Compared with standard attention, FlashAttention's output is…"
-  options={["an approximation with bounded error","exactly the same maths (up to floating-point rounding)","sparser","lower rank"]}
+  prompt={"After switching from naive attention to FlashAttention, a team's outputs differ from before in the fourth decimal place. A reviewer says FlashAttention must be approximate. Who is right?"}
+  options={["The reviewer: FlashAttention skips very small scores to save time, so a few weights are slightly off.", "Neither concern holds: it is exact attention, and adding numbers in a different order changes the last bits.", "The reviewer: tiling uses a low-rank approximation of the score matrix to fit it in SRAM.", "Nobody: a difference in the fourth decimal place shows the naive version had a bug."]}
   answer={1}
-  explanation="It reorders the computation and changes nothing else. Approximate methods such as Linformer (which compresses K and V to a fixed shorter length) give a different result."
+  explanation={"Online softmax rescales partial sums exactly, so the maths matches standard attention. Floating-point addition isn't associative, so summing tiles in a different order changes the last few bits, which can show up in low decimal places in fp16 or bf16. FlashAttention does not skip scores or approximate them; that is what makes it a safe drop-in."}
 />
 
 ## Versions
@@ -47,12 +60,11 @@ During decode there is only one query row per head, so one Q tile cannot keep al
 
 Sources: [FA2](https://arxiv.org/abs/2307.08691), [FA3](https://arxiv.org/abs/2407.08608), [Flash-Decoding](https://crfm.stanford.edu/2023/10/12/flashdecoding.html)
 
-<Predict
+<MCQ
   id="fa3-util"
   devices={["phone","desktop"]}
-  prompt="FA3 reaches 740 TFLOP/s fp16 on an H100 with a 989 TFLOP/s dense peak. What percentage utilisation is that?"
-  answer={75}
-  tolerance={{"mode":"absolute","value":1}}
-  unit="%"
-  explanation="740 / 989 = 74.8%. FA2 managed about 35% on H100."
+  prompt={"FlashAttention-3 runs faster than FlashAttention-2 on an H100 while doing the same FLOPs. Where does the extra speed come from?"}
+  options={["It approximates attention by skipping scores that are too small to matter, which saves tensor-core time.", "It writes S to HBM in fp8 instead of fp16, which halves the traffic for the score matrix.", "It does fewer FLOPs by sharing one set of scores across all the heads in a group.", "Hopper features: TMA copies tiles without threads, and warp specialisation overlaps loads with maths."]}
+  answer={3}
+  explanation={"FA3 reaches about 75% of the H100's dense fp16 peak by hiding data movement behind the matmuls. It is still exact, it still never writes S to HBM, and each head still computes its own scores."}
 />

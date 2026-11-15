@@ -78,10 +78,22 @@ L = lambda x W
 
 Example: 5 requests/s, each taking 10 s end to end, gives L = 50 requests running at once on average. Multiply by tokens per request and KV bytes per token (module 3) to get the KV memory you need.
 
+## Worked scenario: reading a goodput report
+
+Two configurations serve the same traffic against the same TTFT and TPOT targets:
+
+- **Config A** uses more GPUs and serves more requests per second within the targets.
+- **Config B** uses fewer GPUs and serves slightly fewer.
+
+Which is cheaper per request depends on goodput **per GPU**: on-target requests per second divided by the GPUs used. A smaller config that does more on-target work per GPU wins even though its total is lower.
+
+Requests that miss a target don't count at all, however many tokens they produced. Goodput rewards configurations that waste nothing on requests users will be unhappy with.
+
 <MCQ
   id="concept-check"
-  prompt="TTFT is 400 ms and TPOT is 20 ms. Roughly how long does a 101-token answer take end to end?"
-  options={["2.0 s", "2.4 s", "4.4 s", "0.42 s"]}
-  answer={1}
-  explanation="0.4 + 0.02 x 100 = 2.4 s."
+  devices={["phone","desktop"]}
+  prompt={"You let more users share each GPU (a bigger batch). How do total throughput, time per output token and goodput move?"}
+  options={["All three improve, because the GPU does more useful work for every weight it reads from memory.", "Throughput falls, because each user gets slower, and goodput falls with it.", "Time per token improves, because a busier GPU runs at higher clocks, and goodput rises.", "Throughput rises, time per token worsens, and goodput rises until targets start to slip."]}
+  answer={3}
+  explanation={"A bigger batch shares weight reads among more users, so total throughput rises, while each step does more work, so each user's tokens come a little slower. Goodput follows throughput while requests still meet targets, then falls once they don't."}
 />
