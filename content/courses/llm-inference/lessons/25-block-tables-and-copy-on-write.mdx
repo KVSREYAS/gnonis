@@ -34,15 +34,13 @@ Each physical block records how many sequences point at it: its **reference coun
 
 The last prompt block is usually half full. When sample 2 writes its first new token there, vLLM copies just that one block and bumps the counts. Everything else stays shared.
 
-<Predict
+<MCQ
   id="cow-blocks"
   devices={["phone","desktop"]}
-  prompt={"A 1,000-token prompt with block size 16. You draw 4 parallel samples, each generating 200 tokens. Full prompt blocks are shared, and the partial last prompt block is copied per sample. How many physical blocks in total?"}
-  answer={114}
-  tolerance={{"mode":"absolute","value":0}}
-  unit="blocks"
-  hint="shared full blocks + 4 × private blocks"
-  explanation={"Full shared prompt blocks: floor(1000/16) = 62 (992 tokens). Each sample then holds 1,200 − 992 = 208 private tokens = 13 blocks. 62 + 4 × 13 = 114, versus 4 × 75 = 300 without sharing."}
+  prompt={"You ask for 4 parallel samples of a 1,000-token prompt (block size 16: 62 full blocks plus one block holding 8 tokens). Which blocks get copied when the samples start writing new tokens?"}
+  options={["All 63 prompt blocks, once per sample.", "Only the partly filled last prompt block, for each sample that writes into it while it is still shared.", "None: new tokens always go into fresh blocks.", "The full prompt blocks, because their reference count is above 1."]}
+  answer={1}
+  explanation={"Copy-on-write copies a shared block only when a sequence writes into it. The 62 full prompt blocks are never written again, so they stay shared with a reference count of 4. The last block has 8 free slots, so each sample's first new token is a write into a shared block, which triggers a copy. Later tokens go into each sample's own new blocks. A high reference count alone never causes a copy."}
 />
 
 ## Beams share more

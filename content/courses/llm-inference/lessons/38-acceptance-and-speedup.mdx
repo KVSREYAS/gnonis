@@ -20,14 +20,13 @@ If each drafted token is accepted with probability α and you draft γ, the targ
 
 ![Expected tokens per target pass against γ for α = 0.6, 0.8 and 0.9](/diagrams/llm-inference/09-speculative-decoding/02-acceptance-and-speedup.png)
 
-<Predict
+<MCQ
   id="low-alpha"
   devices={["phone","desktop"]}
-  prompt="α = 0.6, γ = 4. Expected tokens per target pass?"
-  answer={2.306}
-  tolerance={{"mode":"absolute","value":0.02}}
-  unit="tokens"
-  explanation="(1 − 0.6^5) / 0.4 = (1 − 0.07776) / 0.4 ≈ 2.31."
+  prompt={"Your draft model is a poor match and α drops from 0.8 to 0.6. What should you do with γ, the number of drafts per pass?"}
+  options={["Raise it: more drafts make up for the lower acceptance.", "Lower it: late drafts rarely survive (0.6⁴ ≈ 0.13), but each one still costs drafting time.", "Keep it: γ has no effect on speed.", "Raise it, or the output distribution will change."]}
+  answer={1}
+  explanation={"Each extra draft adds α^i tokens but always costs one more draft step. When α falls, the gain from late drafts shrinks faster than their cost, so the best γ gets smaller. More drafts cannot fix a poor match, γ clearly affects speed, and the accept rule keeps the output distribution exact at any γ."}
 />
 
 <MCQ
@@ -47,14 +46,13 @@ Drafting γ tokens costs γc target-passes of time, where c is the time of one d
 
 Source: [Leviathan et al. 2023](https://arxiv.org/abs/2211.17192)
 
-<Predict
+<MCQ
   id="speedup"
   devices={["phone","desktop"]}
-  prompt="α = 0.8, γ = 4, and the draft costs c = 0.05 of a target pass. Expected wall-clock speedup?"
-  answer={2.8}
-  tolerance={{"mode":"absolute","value":0.05}}
-  unit="x"
-  explanation={"Tokens per pass = 3.3616. Cost per iteration = 4 × 0.05 + 1 = 1.2. 3.3616 / 1.2 ≈ 2.80x (Leviathan et al., Theorem 3.8)."}
+  prompt={"α = 0.8 and γ = 4 give about 3.4 tokens per target pass, but the measured speedup is about 2.2x. Why lower?"}
+  options={["Rejected tokens are shown to the user and then deleted.", "The output distribution changed, so some tokens are wasted.", "The target model runs γ times per iteration.", "Drafting takes time too (γ draft steps per iteration), and the verify pass is a little slower than a normal decode step."]}
+  answer={3}
+  explanation={"Speedup = tokens per pass / time per iteration, and an iteration costs γ × c draft steps plus one target pass. With c ≈ 0.13 that is about 3.4 / 1.5 ≈ 2.2. Rejected drafts are never shown, the distribution is unchanged, and the target runs once per iteration."}
 />
 
 <Code

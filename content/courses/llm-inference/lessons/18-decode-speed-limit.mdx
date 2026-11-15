@@ -28,15 +28,13 @@ sampling all eat into it.
 
 ![Bar chart of batch-1 decode ceilings on A100 and H100 at fp16, int8 and int4](/diagrams/llm-inference/04-gpu-memory-roofline/04-decode-speed-limit.png)
 
-<Predict
+<MCQ
   id="a100-limit"
   devices={["phone","desktop"]}
-  prompt={"An A100 has about 2.0 TB/s of HBM bandwidth. What is the batch-1 decode ceiling for an 8B fp16 model (16 GB of weights), in tokens/s?"}
-  answer={125}
-  tolerance={{"mode":"relative","value":0.04}}
-  unit="tokens/s"
-  hint="tokens/s ≈ bandwidth / bytes per token"
-  explanation="2.0e12 / 16e9 = 125 tokens/s. No kernel trick beats this without reading fewer bytes."
+  prompt={"You move an 8B fp16 model's batch-1 decode from an H100 (989 TFLOP/s, 3.35 TB/s) to an A100 (312 TFLOP/s, 2.0 TB/s). About how much slower does it get?"}
+  options={["About 3.2x slower, the FLOP/s ratio.", "No slower: an 8B model is small for both GPUs.", "About 5x slower: both ratios multiplied.", "About 1.7x slower, the bandwidth ratio: roughly 209 → 125 tokens/s."]}
+  answer={3}
+  explanation={"At batch 1 each step reads all 16 GB of weights and does very little maths, so speed ≈ bandwidth / bytes: 3.35 TB/s gives about 209 tokens/s and 2.0 TB/s about 125. The FLOP/s gap barely matters while you are memory-bound. Model size does matter, because it sets the bytes read. And the two limits never multiply: the slower one sets the step time."}
 />
 
 ## Pulling the levers

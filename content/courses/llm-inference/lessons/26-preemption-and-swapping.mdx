@@ -19,14 +19,13 @@ keyIdeas:
 
 At startup vLLM profiles memory, subtracts weights and activations, and carves the rest into fixed blocks. Every running sequence needs ceil(tokens / 16) of them, plus room to grow.
 
-<Predict
+<MCQ
   id="pool-size"
   devices={["phone","desktop"]}
-  prompt="Llama 3 8B fp16 uses 128 KiB of KV per token, block size 16. You have 40 GB (decimal) free for KV. How many blocks fit?"
-  answer={19073}
-  tolerance={{"mode":"relative","value":0.01}}
-  unit="blocks"
-  explanation="Block = 16 × 131,072 B = 2 MiB = 2,097,152 B. 40e9 / 2,097,152 ≈ 19,073 blocks."
+  prompt={"Same GPU, same free memory for the KV cache. You switch from Llama 3 8B (32 layers) to a model with the same attention shape but 64 layers. What happens to the block pool?"}
+  options={["Each block now holds 8 tokens, and the number of blocks stays the same.", "Nothing: the block count depends only on free memory.", "Twice as many blocks, because each layer gets its own pool.", "Each block still holds 16 tokens but takes twice the bytes, so the pool has about half as many blocks."]}
+  answer={3}
+  explanation={"A block holds a fixed number of tokens (16 in vLLM), and each token's KV covers every layer: 2 × L × n_kv × d_head × bytes. Doubling L doubles the bytes per block, so the same memory holds half as many blocks and half as many tokens. The block size in tokens is a setting, not something the model changes, and the count depends on bytes per block as well as on free memory."}
 />
 
 <Code
@@ -63,12 +62,11 @@ Sources: [vLLM paper §4.5](https://arxiv.org/abs/2309.06180), [vLLM docs: preem
   explanation="FCFS protects earlier arrivals, so the newest work is evicted first."
 />
 
-<Predict
+<MCQ
   id="swap-time"
   devices={["phone","desktop"]}
-  prompt="Swapping a sequence's 2 GB of KV to CPU over a PCIe Gen4 x16 link at ~32 GB/s. Roughly how long, in ms?"
-  answer={62.5}
-  tolerance={{"mode":"relative","value":0.03}}
-  unit="ms"
-  explanation="2 / 32 s = 62.5 ms, one way. That's why recomputation often wins for short sequences."
+  prompt={"Blocks run out and two sequences must be preempted: one 200 tokens long and one 30,000 tokens long. On an engine that supports both modes, which mode fits each?"}
+  options={["Recompute the short one (a quick prefill later) and swap the long one (re-running 30,000 tokens of prefill costs more than copying its KV over PCIe).", "Swap both: copying is always cheaper than computing.", "Swap the short one and recompute the long one.", "Recompute both: PCIe is too slow to ever be worth it."]}
+  answer={0}
+  explanation={"Recompute costs a prefill over prompt plus generated tokens, which is cheap for 200 tokens because prefill is compute-efficient. For 30,000 tokens, prefill (with its quadratic attention) costs much more, while swapping costs only the PCIe copy of its KV. So short sequences are often cheaper to recompute and long ones cheaper to swap. Neither mode is always best. vLLM's V1 engine uses recompute only, trading this choice for simplicity."}
 />

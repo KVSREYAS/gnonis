@@ -30,7 +30,8 @@ Variants cut that cost:
 - **MQA** (multi-query): all query heads share a single K/V head.
 - **GQA** (grouped-query): query heads are split into groups, with one K/V head per group.
 
-GQA keeps most of MHA's quality at a fraction of the memory. Llama 3 uses it at every size.
+Every query head still computes its own attention pattern. Only the stored keys and values are
+shared. GQA keeps most of MHA's quality at a fraction of the memory. Llama 3 uses it at every size.
 
 ![Query heads mapped to KV heads in MHA (8), GQA (2) and MQA (1)](/diagrams/llm-inference/02-attention/03-heads-mha-gqa.png)
 
@@ -43,14 +44,13 @@ GQA keeps most of MHA's quality at a fraction of the memory. Llama 3 uses it at 
   explanation={"MHA has h query heads and h KV heads, MQA has 1 KV head, and GQA has g KV heads where 1 < g < h."}
 />
 
-<Predict
+<MCQ
   id="group-size"
   devices={["phone","desktop"]}
-  prompt="Llama 3 8B has 32 query heads and 8 KV heads. How many query heads share each KV head?"
-  answer={4}
-  tolerance={{"mode":"absolute","value":0}}
-  unit="query heads"
-  explanation="32 / 8 = 4. The KV cache is 4x smaller than it would be with full multi-head attention."
+  prompt={"A model is converted from MHA with 32 KV heads to GQA with 8 KV heads, keeping its 32 query heads. At decode time, what changes?"}
+  options={["Everything shrinks 4x, including the number of attention patterns.", "The KV cache and the bytes read per step shrink 4x. There are still 32 attention patterns, one per query head.", "Nothing at decode time. GQA only speeds up training.", "The cache grows, because each KV head now serves 4 query heads."]}
+  answer={1}
+  explanation={"Each group of 32 / 8 = 4 query heads shares one K/V head. Only keys and values are stored for past tokens, so the cache and the bytes read per decode step drop 4x. Every query head still computes its own scores, so there are still 32 patterns, which is why GQA keeps most of MHA's quality. The win is at decode time, and a shared head is stored once, not 4 times."}
 />
 
 ## Why it matters for serving

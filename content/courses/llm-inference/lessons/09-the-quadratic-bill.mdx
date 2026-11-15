@@ -25,14 +25,13 @@ dominates prefill.
 
 ![Log-scale bars of fp16 score-matrix size per head from 1k to 128k context](/diagrams/llm-inference/02-attention/04-the-quadratic-bill.png)
 
-<Predict
+<MCQ
   id="quad-factor"
   devices={["phone","desktop"]}
-  prompt="You grow the context from 4k to 16k tokens. By what factor does the number of attention scores per head grow?"
-  answer={16}
-  tolerance={{"mode":"absolute","value":0}}
-  unit="x"
-  explanation="4x the tokens gives 4² = 16x the scores. The MLP's cost only grows 4x."
+  prompt={"Context grows from 4k to 16k tokens. Prefill's attention work grows about 16x, but the attention work for each decode token grows only about 4x. Why the difference?"}
+  options={["Decode uses the KV cache, which makes each score cheaper to compute.", "The MLP takes over part of the attention work during decode.", "Prefill scores every query against every key (n × n). A decode step has one new query, so it scores one row of n keys.", "Decode skips the causal mask, so it computes fewer scores."]}
+  answer={2}
+  explanation={"4x more tokens means 4x more rows and 4x more columns in prefill's score matrix: 16x the scores. Decode adds one row at a time, and that row is 4x longer. The KV cache saves recomputing old keys and values, not computing scores: the new query must still score every cached key. The MLP does not do attention work. Decode needs no mask only because there are no future keys, which does not cut the work."}
 />
 
 ## Do not materialise it

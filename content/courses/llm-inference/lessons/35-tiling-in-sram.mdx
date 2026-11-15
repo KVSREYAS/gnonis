@@ -20,14 +20,13 @@ Split Q into row blocks and K/V into column blocks. For each Q block, stream K/V
 
 ![Attention matrix divided into tiles; one Q row-block and one K/V block highlighted inside SRAM](/diagrams/llm-inference/08-flash-attention/03-tiling-in-sram.png)
 
-<Predict
+<MCQ
   id="tile-bytes"
   devices={["phone","desktop"]}
-  prompt="Q, K and V tiles of 128 × 128 fp16 each, loaded together. How many KiB of SRAM?"
-  answer={96}
-  tolerance={{"mode":"absolute","value":0.5}}
-  unit="KiB"
-  explanation="3 × 128 × 128 × 2 B = 98,304 B = 96 KiB, which fits inside an H100 SM's 228 KB."
+  prompt={"Why does FlashAttention use tiles of about 128 rows instead of much bigger ones, such as 1,024 × 1,024?"}
+  options={["Bigger tiles would change the result.", "HBM can only transfer 128 rows at a time.", "The Q, K and V tiles plus their block of scores must fit in one SM's on-chip SRAM, which is a few hundred KB.", "Bigger tiles would need more FLOPs."]}
+  answer={2}
+  explanation={"Three 128 × 128 fp16 tiles take 96 KiB, which fits in an H100 SM's roughly 228 KB of shared memory. One 1,024 × 1,024 fp16 tile alone is 2 MiB. The result is exact at any tile size, HBM has no 128-row limit, and the FLOPs are the same however you tile."}
 />
 
 <MCQ
@@ -47,12 +46,11 @@ During decode there is only one query row per head, so one Q tile cannot keep al
 
 Sources: [FA2](https://arxiv.org/abs/2307.08691), [FA3](https://arxiv.org/abs/2407.08608), [Flash-Decoding](https://crfm.stanford.edu/2023/10/12/flashdecoding.html)
 
-<Predict
+<MCQ
   id="fa3-util"
   devices={["phone","desktop"]}
-  prompt="FA3 reaches 740 TFLOP/s fp16 on an H100 with a 989 TFLOP/s dense peak. What percentage utilisation is that?"
-  answer={75}
-  tolerance={{"mode":"absolute","value":1}}
-  unit="%"
-  explanation="740 / 989 = 74.8%. FA2 managed about 35% on H100."
+  prompt={"FlashAttention-3 runs faster than FlashAttention-2 on an H100 while doing the same FLOPs. Where does the extra speed come from?"}
+  options={["It approximates attention by skipping small scores.", "It writes S to HBM in fp8 to cut traffic.", "It does fewer FLOPs by sharing scores across heads.", "Hopper features: the TMA copies tiles without using threads, and warp specialisation overlaps loading with maths, keeping the tensor cores busier."]}
+  answer={3}
+  explanation={"FA3 reaches about 75% of the H100's dense fp16 peak by hiding data movement behind the matmuls. It is still exact, it still never writes S to HBM, and each head still computes its own scores."}
 />

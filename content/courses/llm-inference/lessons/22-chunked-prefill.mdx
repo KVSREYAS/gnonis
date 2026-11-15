@@ -72,14 +72,13 @@ Sarathi-Serve (OSDI 2024) introduced this "stall-free" schedule. vLLM and SGLang
   explanation={"Decode is one token per sequence. Prefill fills the remaining compute, because prefill tokens are cheap to batch together."}
 />
 
-<Predict
+<MCQ
   id="budget-left"
   devices={["phone","desktop"]}
-  prompt="The step token budget is 2,048. There are 96 running decodes. How many prefill tokens can join this step?"
-  answer={1952}
-  tolerance={{"mode":"absolute","value":0}}
-  unit="tokens"
-  explanation="Each decode uses 1 token of budget: 2,048 − 96 = 1,952."
+  prompt={"Budget 2,048 tokens per step. An 8,192-token prompt is being prefilled while 96 users decode. Then 500 more users start decoding (596 in total). What happens to the long prompt?"}
+  options={["Its chunks shrink to 1,452 tokens, so its prefill takes more steps and its TTFT rises. The decoding users still get one token per step.", "The decoding users are paused until the prompt finishes.", "Its chunks stay at 1,952 tokens and the step goes over budget.", "Nothing changes: decodes don't count against the budget."]}
+  answer={0}
+  explanation={"Running decodes are served first, one token each, and the prefill chunk gets what is left: 2,048 − 596 = 1,452. Smaller chunks mean more steps for the same prompt, so its first token arrives later. Pausing decoders is exactly the stall the budget prevents. The budget is a cap the step stays under. And each decode does cost one token of it."}
 />
 
 ## A timeline with and without chunks
@@ -126,25 +125,21 @@ Same cost model, 8,192-token prompt:
 
 Smaller chunks protect the decoding users (shorter gaps, better TPOT and ITL) but make the long prompt wait longer for its first token (worse TTFT). This model overstates the cost of small chunks, because real steps stay nearly flat for the first few hundred tokens, but the direction is right.
 
-<Predict
+<MCQ
   id="stall-ms"
   devices={["phone","desktop"]}
-  prompt="Same cost model: 10 ms per step plus 0.04 ms per prefill token. With a chunk size of 1,024, how long is each step that carries a chunk, in ms?"
-  answer={50.96}
-  tolerance={{"mode":"relative","value":0.02}}
-  unit="ms"
-  hint="10 + 0.04 × 1,024"
-  explanation="10 + 40.96 = 50.96 ms. Each decoding user sees a 51 ms gap during those steps instead of 10 ms."
+  prompt={"You raise the chunk size from 512 to 1,024 tokens (cost model: 10 ms per step plus 0.04 ms per prefill token). Which statement is right?"}
+  options={["Both improve: bigger chunks are more efficient for everyone.", "The prompt's total prefill compute halves.", "Decoding users see longer gaps during the prefill (about 51 ms instead of 30.5 ms), but the long prompt's TTFT drops because it needs half as many steps.", "Decoders' gaps shrink, because fewer steps carry a chunk."]}
+  answer={2}
+  explanation={"A step that carries a chunk costs 10 + 0.04 × chunk ms, so 1,024-token chunks make those steps about 51 ms. The prompt's own compute (8,192 × 0.04 = 328 ms) is the same at any chunk size; what changes is how many 10 ms step costs it pays: 8 instead of 16. So its TTFT improves (about 408 ms instead of 488) while decoders' gaps get worse. Fewer chunk steps does not make each gap shorter."}
 />
 
-<Predict
+<Ordering
   id="chunk-count"
   devices={["phone","desktop"]}
-  prompt="An 8,192-token prompt is prefilled in chunks of 512 tokens. How many scheduler steps does its prefill take?"
-  answer={16}
-  tolerance={{"mode":"absolute","value":0}}
-  unit="steps"
-  explanation="8,192 / 512 = 16 steps, with decodes for everyone else riding along in each one."
+  prompt={"Put what happens to a long request C in order, from arrival until it streams, when the server uses chunked prefill."}
+  items={["C arrives and waits in the queue", "A step gives every running decode its one token from the budget", "C's first chunk fills the budget left over in that same step", "Later steps carry C's next chunks until the whole prompt is done", "The step with C's last chunk produces C's first output token", "C becomes a running decode and gets one token per step"]}
+  explanation={"Decodes are served first in every step and prefill chunks take what is left, so C's prompt is spread over several steps. Only the last chunk yields C's first token, which is why smaller chunks mean a later TTFT for C. After that, C is a decode like everyone else."}
 />
 
 ## Tune the chunk size
@@ -204,15 +199,13 @@ Chunking does not change how much KV cache a request needs in the end: 8,192 tok
 
 Sarathi-Serve reports that the extra reads cost little: with 2,048-token chunks the overhead is almost zero, and with 512-token chunks the total prefill takes at most about 25% longer.
 
-<Predict
+<MCQ
   id="kv-reread"
   devices={["phone","desktop"]}
-  prompt="An 8,192-token prompt is prefilled in 16 chunks of 512 tokens. Chunk k reads the KV of the (k − 1) × 512 tokens before it. How many tokens' worth of KV are read again in total, across all 16 chunks?"
-  answer={61440}
-  tolerance={{"mode":"relative","value":0.01}}
-  unit="tokens"
-  hint="512 × (0 + 1 + 2 + … + 15)"
-  explanation="512 × 120 = 61,440 token-KVs. At 128 KiB each that is about 8 GB, roughly 2.4 ms of HBM time on an H100 spread over 16 steps. Small next to 328 ms of prefill compute."
+  prompt={"Compared with one big prefill of the same prompt, what new cost does chunked prefill add?"}
+  options={["Each chunk reads the keys and values of all earlier chunks back from HBM.", "Extra attention FLOPs, because each chunk recomputes the earlier chunks' keys and values.", "A bigger final KV cache, because every chunk stores its own copy of the prompt.", "Extra weight memory, because each chunk loads its own copy of the model."]}
+  answer={0}
+  explanation={"Chunk k attends over the whole prompt so far, so it reads chunks 1 to k − 1 back from the KV cache. The arithmetic and the final cache size are the same as one big prefill: earlier keys and values are read, not recomputed or duplicated. The weights are shared by everything in the step. Sarathi-Serve found the extra reads cheap: near zero with 2,048-token chunks and at most about 25% more prefill time with 512."}
 />
 
 ## How real systems use it

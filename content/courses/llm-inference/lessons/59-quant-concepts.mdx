@@ -61,8 +61,9 @@ Keys tend to have outlier channels, so good KV schemes use per-channel scales fo
 
 <MCQ
   id="concept-check"
-  prompt="Symmetric INT8 with max |x| = 2.54. What is the scale, and what integer stores 1.0?"
-  options={["scale 0.02, q = 50", "scale 0.01, q = 100", "scale 2.54, q = 1", "scale 0.02, q = 127"]}
+  devices={["phone","desktop"]}
+  prompt={"A group of values is [0.5, −1.27, 0.02], so the int8 scale is 0.01 and 0.02 is stored as 2. Now an outlier, 12.7, joins the group. What happens to 0.02?"}
+  options={["The scale grows to 0.1, so 0.02 rounds to 0 and is lost.", "Nothing: each value keeps its own scale.", "It is stored more precisely, as 20.", "The outlier is clipped to 1.27 and 0.02 is unchanged."]}
   answer={0}
-  explanation="scale = 2.54/127 = 0.02. q = round(1.0/0.02) = 50."
+  explanation={"The group shares one scale, max|x| / 127 = 12.7 / 127 = 0.1. Now 0.02 / 0.1 = 0.2 rounds to 0. One big value made every small value less precise, which is why groups are kept small. Symmetric quantization sets the scale from the max, so the outlier is not clipped."}
 />

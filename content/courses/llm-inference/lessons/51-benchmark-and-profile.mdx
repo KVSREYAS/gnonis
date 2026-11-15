@@ -47,12 +47,11 @@ Fire requests at increasing rates (Poisson arrivals) and record per-request TTFT
 
 Sources: [Databricks: LLM inference performance (MBU)](https://www.databricks.com/blog/llm-inference-performance-engineering-best-practices), [vLLM benchmarks](https://github.com/vllm-project/vllm/tree/main/benchmarks)
 
-<Predict
+<MCQ
   id="mbu"
   devices={["phone","desktop"]}
-  prompt="8B fp16 model (16 GB) at batch 1 decodes 150 tokens/s on an H100 (3.35 TB/s). MBU as a percentage?"
-  answer={71.6}
-  tolerance={{"mode":"absolute","value":1}}
-  unit="%"
-  explanation="16 GB × 150 = 2.4 TB/s. 2.4 / 3.35 = 71.6%."
+  prompt={"An 8B fp16 model at batch 1 reaches only 30% MBU on an H100. What does that tell you?"}
+  options={["The GPU is compute-bound; it needs more FLOP/s.", "An 8B model is too small, so MBU is always low for it.", "Most of each step is spent outside the weight reads: overhead such as Python, kernel launches and sampling.", "MBU is meaningless at batch 1."]}
+  answer={2}
+  explanation={"MBU = achieved bytes per second / peak bandwidth. At batch 1 the step should be almost pure weight reading, so a good engine gets well above 60%. 30% means the GPU is idle or busy with other work most of the time. Batch-1 decode is memory-bound, not compute-bound, and batch 1 is exactly where MBU is most telling."}
 />

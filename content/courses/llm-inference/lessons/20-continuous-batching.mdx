@@ -25,15 +25,13 @@ linearly until you hit the compute roof or run out of KV memory.
 
 In a static batch, every slot stays reserved until the longest request finishes.
 
-<Predict
+<MCQ
   id="static-waste"
   devices={["phone","desktop"]}
-  prompt={"A static batch of 4 requests generates 100, 100, 100 and 1,000 tokens. The batch runs until the longest finishes. What fraction of the 4 x 1,000 decode slots does useful work? (Answer as a percentage.)"}
-  answer={32.5}
-  tolerance={{"mode":"absolute","value":1}}
-  unit="%"
-  hint="useful tokens / (batch size x longest length)"
-  explanation={"(100+100+100+1000) / 4000 = 1300/4000 = 32.5%. The other 67.5% of slots are padding. Continuous batching fills them with new requests."}
+  prompt={"Which workload loses the most throughput under static batching?"}
+  options={["Requests that all produce about the same number of tokens.", "Requests with long prompts but identical output lengths.", "Requests that all have very short outputs.", "Requests whose output lengths vary widely, such as one-line replies mixed with long essays."]}
+  answer={3}
+  explanation={"A static batch holds every slot until its longest request ends. If one request writes 1,000 tokens and three write 100, those three slots sit idle for 900 steps: only about a third of the slots do useful work, and new requests wait the whole time. Similar output lengths finish together, so little is wasted. Prompt length does not cause this idling."}
 />
 
 ## Iteration-level scheduling

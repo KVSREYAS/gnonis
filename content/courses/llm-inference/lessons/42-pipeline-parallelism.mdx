@@ -19,14 +19,13 @@ keyIdeas:
 
 Each stage owns a block of layers. Stage k finishes a micro-batch and sends its activations to stage k + 1. In inference, different requests or micro-batches fill the pipeline.
 
-<Predict
+<MCQ
   id="pp-mem"
   devices={["phone","desktop"]}
-  prompt="Llama 3 70B in fp16 (140 GB) split across 4 pipeline stages. Weights per GPU in GB?"
-  answer={35}
-  tolerance={{"mode":"relative","value":0.01}}
-  unit="GB"
-  explanation="140 / 4. The same as TP = 4, but with very different communication."
+  prompt={"You serve a 70B model with 4 pipeline stages. Compared with one GPU big enough to hold the whole model, does one user's next token arrive faster?"}
+  options={["Yes, about 4x, because each stage reads only a quarter of the weights.", "Yes, because the stages add their partial results with an all-reduce.", "No, it is about 4x slower, because each stage waits for an all-reduce.", "No. The stages work on that token one after another, so PP mainly lets the model fit and keeps throughput up with micro-batches."]}
+  answer={3}
+  explanation={"Each stage reads a quarter of the weights, but stage 2 cannot start a token until stage 1 hands it over, so the times add up to about the same as one GPU plus small transfers. PP sends activations point to point between neighbours; it has no all-reduce. To make one user faster, split each layer instead (tensor parallelism)."}
 />
 
 <MCQ
@@ -46,12 +45,11 @@ Sources: [GPipe](https://arxiv.org/abs/1811.06965), [Megatron-LM PP](https://arx
 
 ![Pipeline timeline for 4 stages and 6 micro-batches with idle bubble cells at the start and end](/diagrams/llm-inference/10-parallelism/02-pipeline-parallelism.png)
 
-<Predict
+<MCQ
   id="bubble"
   devices={["phone","desktop"]}
-  prompt="4 pipeline stages, 12 micro-batches. What percentage of the time is bubble?"
-  answer={20}
-  tolerance={{"mode":"absolute","value":0.5}}
-  unit="%"
-  explanation="(4 − 1) / (12 + 4 − 1) = 3/15 = 20%."
+  prompt={"With p pipeline stages and m micro-batches, the idle share is (p − 1) / (m + p − 1). How do you shrink the bubble, and what does that need?"}
+  options={["Use more micro-batches, which needs enough requests in flight to fill them.", "Add more stages; more stages always shrink the bubble.", "Use fewer, bigger micro-batches.", "Put all the stages on one GPU."]}
+  answer={0}
+  explanation={"A bigger m makes the start and end gaps a smaller share of the run: p = 4 gives 43% idle with 4 micro-batches and 20% with 12. In inference the micro-batches come from different requests, so you need enough concurrent traffic. More stages raise p and grow the bubble, fewer micro-batches grow it too, and one GPU means no pipeline at all."}
 />

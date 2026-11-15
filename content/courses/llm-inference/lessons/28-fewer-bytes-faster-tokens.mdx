@@ -18,15 +18,13 @@ keyIdeas:
 
 Batch-1 decode is bandwidth divided by bytes read. Halve the bytes per weight and the ceiling roughly doubles.
 
-<Predict
+<MCQ
   id="int4-70b"
   devices={["phone","desktop"]}
-  prompt="Ignoring scales and zero points, how many GB do the weights of a 70B-parameter model take at 4 bits per weight?"
-  answer={35}
-  tolerance={{"mode":"relative","value":0.03}}
-  unit="GB"
-  hint="params x bits / 8"
-  explanation="70e9 x 0.5 bytes = 35 GB, versus 140 GB in fp16. Group-wise scales add a few percent."
+  prompt={"A 70B model needs 140 GB in fp16 but about 35 GB in int4, so it fits on one 80 GB GPU. Besides fitting, what is the biggest serving win, and what is the main risk?"}
+  options={["Prefill gets 4x faster because the FLOPs drop 4x, and there is no risk.", "The KV cache also shrinks 4x, so 4x more sequences fit.", "Nothing besides fitting: decode speed depends only on the GPU.", "Batch-1 decode reads about 4x fewer bytes per token, so it can run up to about 4x faster. The risk is lost accuracy, which you must measure."]}
+  answer={3}
+  explanation={"Decode is memory-bound, so its ceiling is bandwidth divided by bytes read: 4x fewer bytes, up to 4x more tokens/s. Quantization is lossy, so accuracy must be checked. Weight-only formats still do the matmul in 16 bits, so prefill FLOPs do not drop. The KV cache is separate and keeps its own format unless you quantize it too. Speed depends on bytes read as well as on the GPU."}
 />
 
 ## The methods
@@ -47,7 +45,7 @@ Both are **post-training** methods: they quantize a finished model, using a few 
 
 ## Weight-only vs W8A8
 
-GPTQ and AWQ are **weight-only**: weights are stored in 4 bits and turned back into 16-bit numbers inside the matmul kernel (**dequantized on the fly**), so the arithmetic still runs in 16 bits. **W8A8** means weights and activations are both 8-bit, so the matmul itself runs in int8 or fp8.
+GPTQ and AWQ are **weight-only**: weights are stored in 4 bits and turned back into 16-bit numbers inside the matmul kernel (**dequantized on the fly**), so the arithmetic still runs in 16 bits. **W8A8** means weights and activations are both 8-bit, so the matmul itself runs in int8 or fp8. Tensor cores run 8-bit matmuls at about twice the FLOP/s of 16-bit ones, so W8A8 also speeds up compute-bound work such as long prefills. Weight-only formats mainly speed up memory-bound decode.
 
 <MCQ
   id="awq-idea"
@@ -65,15 +63,19 @@ bits and 3 mantissa bits, **E5M2** has 5 and 2. More exponent bits give more ran
 bits give more precision. NVIDIA Hopper (H100) and Ada (L4, RTX 40) GPUs have tensor cores that
 compute in FP8 directly.
 
+For inference, E4M3 is the usual choice for weights and activations. With a scale per tensor
+the values fit its range, and the extra mantissa bit gives more precision. E5M2's wider range
+matters more for gradients in training.
+
 ![Bit layouts of FP16, BF16, FP8 E4M3, FP8 E5M2 and INT4, plus 70B weight sizes against an 80 GB GPU](/diagrams/llm-inference/07-quantization/01-fewer-bytes-faster-tokens.png)
 
-<Predict
+<MCQ
   id="e4m3-max"
   devices={["phone","desktop"]}
-  prompt="What is the largest finite value representable in FP8 E4M3 (the OCP/NVIDIA variant)?"
-  answer={448}
-  tolerance={{"mode":"absolute","value":0}}
-  explanation="E4M3 trades range for precision; max 448. E5M2 reaches 57,344. Source - Micikevicius et al., arXiv 2209.05433."
+  prompt={"Why do inference engines usually store FP8 weights and activations as E4M3 rather than E5M2?"}
+  options={["With a scale per tensor the values fit E4M3's range, and its extra mantissa bit gives finer precision.", "E4M3 has the wider range.", "E5M2 does not run on any GPU.", "E4M3 uses fewer bits per value."]}
+  answer={0}
+  explanation={"Both formats are 8 bits. E4M3 trades one exponent bit for one mantissa bit: less range, more precision. Scaling brings weights and activations into E4M3's range (largest finite value 448), so precision is the better buy. E5M2 has the wider range (up to 57,344), which matters more for gradients in training, and Hopper and Ada tensor cores run both."}
 />
 
 ## Summary

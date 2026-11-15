@@ -36,25 +36,22 @@ Long contexts change the maths. At batch 64 with 2k tokens each, the KV cache is
 
 ![Throughput and per-step latency against batch size for an 8B model on an H100](/diagrams/llm-inference/05-batching/02-batch-size-vs-latency.png)
 
-<Predict
+<MCQ
   id="step-time"
   devices={["phone","desktop"]}
-  prompt={"Llama 3 8B fp16 (16 GB of weights, 128 KiB of KV per token) on an H100 (3.35 TB/s). Batch 64, each sequence holds 2,048 tokens of context. Roughly how long is one decode step, in ms?"}
-  answer={9.9}
-  tolerance={{"mode":"relative","value":0.04}}
-  unit="ms"
-  hint="(weights + batch × context × KV per token) / bandwidth"
-  explanation="KV = 64 × 2,048 × 131,072 B ≈ 17.2 GB. Total read ≈ 16 + 17.2 = 33.2 GB. 33.2e9 / 3.35e12 ≈ 9.9 ms."
+  prompt={"At short context, going from batch 1 to batch 16 barely changes the decode step time. At 2,048 tokens of context, batch 64 roughly doubles it. What changed?"}
+  options={["The step became compute-bound at batch 64.", "The weights are read once per sequence at large batch sizes.", "The KV cache: 64 sequences × 2,048 tokens of cache is more bytes than the weights, and every step reads all of it.", "The scheduler's overhead grows with the batch size."]}
+  answer={2}
+  explanation={"Bytes per step = weights + Σ(context × KV bytes per token). For Llama 3 8B: 16 GB of weights plus 64 × 2,048 × 128 KiB ≈ 17 GB of KV, so each step reads about twice as much. The weight matmuls run at about 64 FLOP/byte, still well below the H100 ridge of about 295, so the step is not compute-bound. The weights are still read once per step for the whole batch, and scheduler overhead is not what doubles the time."}
 />
 
-<Predict
+<MCQ
   id="batch-throughput"
   devices={["phone","desktop"]}
-  prompt="Same setup: 64 sequences each get one token per 9.9 ms step. Aggregate throughput, in tokens/s?"
-  answer={6465}
-  tolerance={{"mode":"relative","value":0.04}}
-  unit="tokens/s"
-  explanation={"64 / 0.0099 s ≈ 6,465 tokens/s, about 31x the batch-1 ceiling of ~209 tokens/s, even though each user's speed dropped from ~209 to ~101 tokens/s."}
+  prompt={"Your product promises every user at least 100 tokens/s. From the batching table: batch 64 gives about 101 tokens/s per user and 6,465 in total; batch 128 gives about 67 per user and 8,530 in total. What batch cap do you set?"}
+  options={["64. Batch 128 has more total throughput, but each user falls below the 100 tokens/s promise.", "128, because higher total throughput is always better.", "1, because that gives each user the most speed.", "No cap: per-user speed does not depend on batch size."]}
+  answer={0}
+  explanation={"Bigger batches raise total throughput with diminishing returns, but every step gets longer, so each user gets slower. The right cap is the largest batch that still meets the per-user target: 64 here. Batch 1 meets the target but wastes most of the GPU (about 204 tokens/s in total). The table shows per-user speed falling as the batch grows."}
 />
 
 ## Write the spreadsheet

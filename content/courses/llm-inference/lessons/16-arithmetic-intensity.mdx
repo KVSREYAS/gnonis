@@ -25,15 +25,17 @@ compute units spend most of their time waiting.
 
 A matmul $[m \times k] \cdot [k \times n]$ does $2mkn$ FLOPs (a multiply and an add per term).
 
-<Predict
+For a square $n \times n$ matmul the FLOPs grow as $n^3$, but the data moved (two inputs and one
+output) grows only as $n^2$, so each loaded number is reused about $n$ times. At $n = 4{,}096$ in
+fp16 the intensity is about 1,365 FLOP/byte.
+
+<MCQ
   id="square-ai"
   devices={["phone","desktop"]}
-  prompt={"A 4096 x 4096 by 4096 x 4096 matmul in fp16 does 2·n³ FLOPs and moves two inputs plus one output (3·n² elements of 2 bytes each). What is its arithmetic intensity in FLOP/byte?"}
-  answer={1365.3}
-  tolerance={{"mode":"relative","value":0.03}}
-  unit="FLOP/byte"
-  hint="2n³ / (2 · 3n²) = n / 3"
-  explanation="2·4096³ / (6·4096²) = 4096 / 3 ≈ 1,365. Comfortably compute-bound on any GPU."
+  prompt={"A large square matmul (4096 × 4096 times 4096 × 4096) reaches over 1,000 FLOP/byte, while a batch-1 GEMV sits near 1. What makes the difference?"}
+  options={["The square matmul reads from faster memory.", "The GEMV kernel is badly written; a better one would also reach 1,000 FLOP/byte.", "The square matmul skips zero entries.", "In the square matmul every loaded number is reused in thousands of multiply-adds; in a GEMV each weight is used in exactly one."]}
+  answer={3}
+  explanation={"FLOPs grow as n³ but the data moved grows as n², so the square matmul gets more maths out of every byte as n grows. A GEMV reads each weight once and uses it once, so no kernel can push it far past 1 FLOP/byte. Only batching, with more vectors reusing the same weights, can. Both read from the same HBM, and nothing is skipped."}
 />
 
 ## Decode is a matrix-vector product
@@ -47,12 +49,12 @@ token's vector by a big weight matrix. Every weight is read once and used once.
 <Predict
   id="gemv-ai"
   devices={["phone","desktop"]}
-  prompt={"Now batch size 1: a [1 x 4096] vector times a [4096 x 4096] fp16 weight matrix. Ignoring the tiny input and output vectors, what is the arithmetic intensity?"}
+  prompt={"Batch size 1: one token's vector times a 4096 x 4096 fp16 weight matrix. Each 2-byte weight is read once and used in one multiply-add (2 FLOPs). Reason it out rather than count: what arithmetic intensity does that give? (Ignore the tiny input and output vectors.)"}
   answer={1}
   tolerance={{"mode":"relative","value":0.05}}
   unit="FLOP/byte"
   hint="Each 2-byte weight is used for one multiply and one add."
-  explanation="2·4096² FLOPs over 2·4096² bytes = 1 FLOP/byte. Three orders of magnitude below the square matmul."
+  explanation="2 FLOPs per 2 bytes = about 1 FLOP/byte, and a bigger matrix does not change it, because FLOPs and bytes both grow with the number of weights. An H100 needs about 295 FLOP/byte to keep its tensor cores busy, so batch-1 decode uses well under 1% of the compute. Only reusing each weight for more tokens (batching) moves this number."
 />
 
 ## Element-wise operations

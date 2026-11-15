@@ -30,7 +30,7 @@ Dettmers et al. (LLM.int8()) showed that above about 6.7B parameters, a handful 
 
 ## Smooth it over
 
-SmoothQuant divides each activation channel by s_j and multiplies the matching weight row by s_j. With α = 0.5 the difficulty is split evenly. Both sides then quantize well to int8, so the layer can run as **W8A8** (8-bit weights and 8-bit activations, with an int8 matmul).
+SmoothQuant divides each activation channel by s_j and multiplies the matching weight row by s_j. α sets how much range moves: near 0 the activations keep it, near 1 the weights take nearly all of it, and 0.5 splits it evenly. Both sides then quantize well to int8, so the layer can run as **W8A8** (8-bit weights and 8-bit activations, with an int8 matmul).
 
 Why not just give each activation channel its own scale? In Y = XW, channel j of X is the inner dimension of the matmul, the one that is summed over. A fast int8 matmul can only apply scales per row of X (per token) or per column of W (per output) after the sum. A per-channel scale on X would be needed inside the sum. SmoothQuant moves that per-channel factor into W, where it can be applied once, offline.
 
@@ -38,13 +38,13 @@ Sources: [LLM.int8()](https://arxiv.org/abs/2208.07339), [SmoothQuant](https://a
 
 ![Per-channel activation max before smoothing (a few huge spikes) and after (flat), with weights growing to match](/diagrams/llm-inference/07-quantization/03-activation-outliers-smoothquant.png)
 
-<Predict
+<MCQ
   id="smooth-s"
   devices={["phone","desktop"]}
-  prompt="Channel j has max|X_j| = 64 and max|W_j| = 0.25. With α = 0.5, what is the smoothing factor s_j?"
-  answer={16}
-  tolerance={{"mode":"relative","value":0.01}}
-  explanation="s = √64 / √0.25 = 8 / 0.5 = 16. After smoothing, max|X| = 4 and max|W| = 4. Balanced."
+  prompt={"In SmoothQuant, what happens if you push α from 0.5 toward 1?"}
+  options={["The layer's output changes, because XW is no longer preserved.", "More of the outlier range moves from the activations into the weights, until the weights become the hard part to quantize.", "The activations get bigger outliers.", "Nothing; α only matters during training."]}
+  answer={1}
+  explanation={"α sets how much range moves: near 0 the activations keep their outliers, near 1 almost all of the range lands in the weights, and 0.5 splits it evenly so both sides quantize well. Whatever α is, X is divided by s and W multiplied by s, so XW is unchanged before rounding. Activations get smaller, not bigger, and α is chosen when the model is quantized, after training."}
 />
 
 <MCQ

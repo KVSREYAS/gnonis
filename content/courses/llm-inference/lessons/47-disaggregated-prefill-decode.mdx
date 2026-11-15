@@ -38,14 +38,13 @@ Sources: [DistServe](https://arxiv.org/abs/2401.09670), [Splitwise](https://arxi
 
 ![Prefill GPU pool computing KV, sending it over the interconnect to a decode GPU pool](/diagrams/llm-inference/11-serving-systems/03-disaggregated-prefill-decode.png)
 
-<Predict
+<MCQ
   id="transfer-ms"
   devices={["phone","desktop"]}
-  prompt={"Llama 3 8B prompt of 4,096 tokens (128 KiB/token of KV). Shipping its KV from the prefill GPU to the decode GPU at 50 GB/s takes how many ms?"}
-  answer={10.7}
-  tolerance={{"mode":"relative","value":0.03}}
-  unit="ms"
-  explanation="4,096 × 131,072 B = 0.537 GB. 0.537 / 50 GB/s ≈ 10.7 ms, small compared with a multi-second answer."
+  prompt={"What is the main new cost of disaggregating prefill and decode, and when does it hurt most?"}
+  options={["Running each prompt's prefill twice, once in each pool.", "Shipping each request's KV cache from the prefill GPU to the decode GPU; it hurts most with long prompts over a slow link.", "Decode needs twice the FLOPs on a separate GPU.", "Each pool needs its own tokenizer, which is slow."]}
+  answer={1}
+  explanation={"The decode GPU needs the cache the prefill GPU built: about 1 GiB for an 8k-token Llama 3 8B request. Over NVLink or RDMA that takes milliseconds; over a slow network, much longer. Prefill runs once, decode FLOPs are unchanged, and tokenizing is cheap."}
 />
 
 <MCQ

@@ -20,14 +20,13 @@ Naive attention runs as separate kernels, and each one writes its N×N result to
 
 ![Naive attention writing S and P matrices to HBM versus FlashAttention keeping tiles in on-chip SRAM](/diagrams/llm-inference/08-flash-attention/01-the-hbm-bottleneck.png)
 
-<Predict
+<MCQ
   id="s-size"
   devices={["phone","desktop"]}
-  prompt="One layer, batch 1, 32 heads, N = 4,096, fp16. How many GiB does materialising S for all heads take?"
+  prompt={"Naive attention writes S and P (both N × N) to HBM, but its output O is only N × d. What happens as the context grows?"}
+  options={["S and P stay the same size, so nothing changes.", "The HBM traffic for S and P grows with N² while the output grows only with N, so the kernels spend more and more of their time moving data.", "The FLOPs grow with N², but the HBM traffic stays constant.", "O grows with N², so the output dominates the traffic."]}
   answer={1}
-  tolerance={{"mode":"relative","value":0.02}}
-  unit="GiB"
-  explanation="4,096² × 2 B × 32 = 1,073,741,824 B = 1 GiB, and P doubles that. Per layer, per forward."
+  explanation={"S and P have one entry per query-key pair, so they grow as N², and each is written and read back. O has one d-sized row per token. At 4k tokens and 32 heads, S alone is about a GiB per layer. That traffic, not the FLOPs, is what makes naive attention slow at long context."}
 />
 
 <Ordering

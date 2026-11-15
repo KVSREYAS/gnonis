@@ -80,8 +80,9 @@ Example: 5 requests/s, each taking 10 s end to end, gives L = 50 requests runnin
 
 <MCQ
   id="concept-check"
-  prompt="TTFT is 400 ms and TPOT is 20 ms. Roughly how long does a 101-token answer take end to end?"
-  options={["2.0 s", "2.4 s", "4.4 s", "0.42 s"]}
-  answer={1}
-  explanation="0.4 + 0.02 x 100 = 2.4 s."
+  devices={["phone","desktop"]}
+  prompt={"You let more users share each GPU (a bigger batch). How do total throughput, TPOT and goodput move?"}
+  options={["Throughput rises, TPOT gets worse, and goodput rises only until requests start missing their SLOs, then falls.", "All three improve.", "Throughput falls, because each user gets slower.", "TPOT improves, because the GPU is busier."]}
+  answer={0}
+  explanation={"A bigger batch shares each weight read among more users, so total tokens per second rise, but each step takes longer, so every user's TPOT grows. Goodput counts only requests that meet their targets, so it peaks at the largest batch that still meets them. Busier does not mean faster per user."}
 />

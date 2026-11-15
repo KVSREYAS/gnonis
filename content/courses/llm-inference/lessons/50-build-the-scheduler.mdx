@@ -23,14 +23,13 @@ Strict **FIFO** (first in, first out) admission takes waiting requests only from
 
 ![Scheduler step: running decodes consume budget, waiting queue admitted FIFO until the budget line](/diagrams/llm-inference/12-capstone/02-build-the-scheduler.png)
 
-<Predict
+<MCQ
   id="admit-count"
   devices={["phone","desktop"]}
-  prompt={"Token budget 512 and 100 running decodes. The waiting prompts are 200, 150, 100 and 50 tokens long, with plenty of blocks. FIFO admission with no chunking: how many prompts join this step?"}
-  answer={2}
-  tolerance={{"mode":"absolute","value":0}}
-  unit="prompts"
-  explanation="Budget left = 412. 200 fits (212 left), 150 fits (62 left), and 100 doesn't fit, so FIFO stops there."
+  prompt={"Budget 512 tokens and 100 running decodes. The waiting queue holds a 450-token prompt, then two 50-token prompts. Strict FIFO, no chunking. What happens, and what is a good fix?"}
+  options={["Nothing is admitted: the 450-token prompt does not fit in the 412 left and blocks the queue. Chunking it lets 412 of its tokens start now.", "The two 50-token prompts are admitted and the 450-token one waits.", "All three are admitted, and the step runs a little over budget.", "The running decodes are paused so the 450-token prompt fits."]}
+  answer={0}
+  explanation={"Decodes take 100 tokens, leaving 412. Strict FIFO only takes from the front, so the big prompt blocks the small ones: head-of-line blocking. Admitting the small ones first is skip-ahead, which strict FIFO does not do (and needs a limit so the big one is not starved). The budget is a cap, and pausing decoders is the stall the budget prevents."}
 />
 
 <MCQ

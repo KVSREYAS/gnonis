@@ -45,14 +45,13 @@ right of it waste bandwidth.
 | A100 80GB | 312 TFLOP/s | 2.0 TB/s | ~156 |
 | H100 SXM | 989 TFLOP/s | 3.35 TB/s | ~295 |
 
-<Predict
+<MCQ
   id="ridge-h100"
   devices={["phone","desktop"]}
-  prompt="An H100 SXM does about 989 dense BF16 TFLOP/s with 3.35 TB/s of HBM bandwidth. Where is its ridge point in FLOP/byte?"
-  answer={295}
-  tolerance={{"mode":"relative","value":0.03}}
-  unit="FLOP/byte"
-  explanation="989 / 3.35 ≈ 295. Any kernel below about 295 FLOP/byte cannot reach peak compute on this chip."
+  prompt={"New GPU generations have added peak FLOP/s faster than memory bandwidth. What does that do to the ridge point, and to batch-1 decode?"}
+  options={["The ridge moves left, so decode becomes compute-bound.", "The ridge stays put; it is a property of the model, not the GPU.", "The ridge moves right, so batch-1 decode (about 1 FLOP/byte) uses an even smaller share of the compute and still runs at bandwidth speed.", "Batch-1 decode speeds up in proportion to the extra FLOP/s."]}
+  answer={2}
+  explanation={"Ridge = peak FLOP/s / bandwidth. If FLOP/s grows faster, the ridge rises: about 156 FLOP/byte on the A100 and about 295 on the H100. Batch-1 decode stays near 1 FLOP/byte, so it sits even further left on the slope. It does not become compute-bound, the ridge belongs to the GPU, and decode speed follows bandwidth, not FLOP/s."}
 />
 
 ## Move the dot

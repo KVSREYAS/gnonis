@@ -55,8 +55,9 @@ That number sets the **maximum batch size**, and batch size sets throughput. So 
 
 <MCQ
   id="concept-check"
-  prompt="A model has L = 40, n_kv = 8, d_head = 128, FP16. KV bytes per token?"
-  options={["80 KiB", "160 KiB", "320 KiB", "40 KiB"]}
-  answer={1}
-  explanation="2 x 40 x 8 x 128 x 2 = 163,840 bytes = 160 KiB."
+  devices={["phone","desktop"]}
+  prompt={"Same model: which needs more KV cache memory, 32 users with 1,000-token chats or 1 user with a 32,000-token document?"}
+  options={["About the same: the cache depends on the total tokens held, not on how many users hold them.", "The 32 users, because each request has a large fixed cost.", "The single user, because long sequences store a bigger entry per token.", "Neither: the cache size depends only on the model."]}
+  answer={0}
+  explanation={"Bytes per token is fixed by the model: 2 × L × n_kv × d_head × bytes. Both cases hold 32,000 tokens, so both need about 32,000 × 128 KiB ≈ 4 GiB for Llama 3 8B. There is no large fixed cost per request, a token's entry does not grow with sequence length, and the cache grows with tokens, not just with the model."}
 />

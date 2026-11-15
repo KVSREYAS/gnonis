@@ -28,15 +28,13 @@ weights and profiling activations, the remainder becomes the pool of KV blocks.
 
 ![Stacked bars of 16 GB weights plus KV cache for 1, 16 and 48 sequences against an 80 GB limit](/diagrams/llm-inference/03-kv-cache/03-the-memory-budget.png)
 
-<Predict
+<MCQ
   id="max-seqs"
   devices={["phone","desktop"]}
-  prompt={"Llama 3 8B in fp16 (16 GB of weights) on an 80 GB GPU, using 90% of memory. Each 8k-token sequence needs 1.074 GB of KV. How many full 8k sequences fit at once?"}
-  answer={52}
-  tolerance={{"mode":"absolute","value":1}}
-  unit="sequences"
-  hint="(80 x 0.9 − 16) / 1.074, rounded down"
-  explanation="(72 − 16) / 1.074 ≈ 52.1, so 52 sequences. Activations and fragmentation cost a little more in practice."
+  prompt={"Llama 3 8B in fp16 on an 80 GB GPU (90% used) fits about 52 sequences of 8k tokens. You switch to a 4-bit version of the same model, so the weights drop from 16 GB to about 4 GB. Roughly how many 8k sequences fit now?"}
+  options={["About 208: 4x smaller weights means 4x more sequences.", "Still 52: weight precision has no effect on memory.", "About 63: the 12 GB saved goes to the KV cache, but each sequence still needs about 1.07 GB.", "Fewer than 52: the 4-bit scales take more memory than they save."]}
+  answer={2}
+  explanation={"0.9 × 80 = 72 GB. With 16 GB of weights, 56 GB is left for KV: about 52 sequences. With 4 GB of weights, 68 GB is left: about 63. Quantizing the weights only frees what the weights used, and each sequence's KV is unchanged, so concurrency grows about 20%, not 4x. To fit many more sequences, shrink the KV cache itself (fp8 KV, fewer KV heads, shorter contexts). Scales add only a few percent to 4-bit weights."}
 />
 
 ## Long contexts eat concurrency

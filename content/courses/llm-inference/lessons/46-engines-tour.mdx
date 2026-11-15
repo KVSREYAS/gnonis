@@ -45,22 +45,20 @@ Sources: [vLLM](https://github.com/vllm-project/vllm), [SGLang](https://github.c
   explanation="llama.cpp targets local hardware, including Apple Metal."
 />
 
-<Predict
+<MCQ
   id="q4-bits"
   devices={["phone","desktop"]}
-  prompt="GGUF Q4_0 stores blocks of 32 weights as 4-bit values plus one fp16 scale. Bits per weight?"
-  answer={4.5}
-  tolerance={{"mode":"absolute","value":0.01}}
-  unit="bits"
-  explanation="(32 × 4 + 16) / 32 = 4.5 bits."
+  prompt={"GGUF Q4_0 stores a separate fp16 scale for every 32 weights instead of one per tensor. Why spend the extra bits?"}
+  options={["The scales hold the most significant bits of each weight.", "GPUs require one scale per 32 values.", "A large weight then stretches the step size of only its own 32 weights, so rounding error stays small everywhere else.", "It makes the file smaller."]}
+  answer={2}
+  explanation={"This is the same idea as per-group scales in GPTQ and AWQ. It costs 16 / 32 = 0.5 bits per weight, so Q4_0 is 4.5 bits per weight, slightly bigger than plain 4-bit, but far more accurate. The scale is one multiplier for the whole group, not extra bits of each weight, and no hardware demands groups of 32: it is a format choice that trades bits for accuracy."}
 />
 
-<Predict
+<MCQ
   id="q4-size"
   devices={["phone","desktop"]}
-  prompt="An 8B model in Q4_0 (4.5 bits per weight). File size in GB?"
-  answer={4.5}
-  tolerance={{"mode":"relative","value":0.02}}
-  unit="GB"
-  explanation="8e9 × 4.5 / 8 = 4.5 GB, which fits a laptop."
+  prompt={"You run an 8B model on a laptop with llama.cpp. Switching the file from fp16 to Q4_0 makes generation about 3x faster. Why?"}
+  options={["Decode is memory-bound, and Q4_0 reads about 4.5 GB per token instead of 16 GB.", "4-bit arithmetic is 4x faster than 16-bit on every CPU.", "Q4_0 skips half of the layers.", "GGUF files tokenize faster."]}
+  answer={0}
+  explanation={"The ceiling is bandwidth / bytes per token, and 16 / 4.5 ≈ 3.6x fewer bytes; overheads bring the real gain to about 3x. The gain tracks bytes read, not arithmetic speed: a memory-bound decode is waiting on memory, so faster maths alone would barely help. All layers still run, and the tokenizer is not the bottleneck."}
 />

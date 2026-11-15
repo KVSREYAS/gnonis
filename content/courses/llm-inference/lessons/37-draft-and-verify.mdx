@@ -42,15 +42,13 @@ If each draft token is accepted with probability alpha (α) and the draft propos
 expected number of tokens per target pass is (1 - alpha^(gamma+1)) / (1 - alpha). This is the same
 formula as the concept page, with a = α and k = γ. It assumes each draft is accepted independently.
 
-<Predict
+<MCQ
   id="expected-tokens"
   devices={["phone","desktop"]}
-  prompt="Acceptance rate alpha = 0.8 and the draft proposes gamma = 4 tokens. Expected tokens produced per target-model pass?"
-  answer={3.36}
-  tolerance={{"mode":"absolute","value":0.05}}
-  unit="tokens"
-  hint="(1 - 0.8^5) / (1 - 0.8)"
-  explanation="(1 - 0.32768) / 0.2 = 3.36. Formula from Leviathan et al. 2023, Eq. 1."
+  prompt={"With acceptance rate α and γ drafts, tokens per target pass = (1 − α^(γ+1)) / (1 − α). Why does each extra draft add less than the one before?"}
+  options={["A draft only counts if every draft before it was accepted, so draft i survives with probability α^i, which shrinks fast.", "The target model gets slower with each extra draft token.", "Later drafts are rejected on purpose to protect quality.", "Each extra draft lowers α for all the others."]}
+  answer={0}
+  explanation={"The first rejection throws away all drafts after it, so the i-th draft adds α^i expected tokens. With α = 0.8: 0.8, 0.64, 0.51, 0.41 and so on. The formula is a count of tokens, not of time. Nothing is rejected on purpose, and α depends on how well the draft matches the target, not on γ."}
 />
 
 ## When it backfires

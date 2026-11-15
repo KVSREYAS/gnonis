@@ -48,15 +48,13 @@ $$T \approx \text{TTFT} + (N - 1) \times \text{TPOT}$$
 
 ![Timeline showing one large prefill block then many small decode steps, with TTFT and TPOT marked](/diagrams/llm-inference/01-tokens-forward-pass/04-prefill-and-decode.png)
 
-<Predict
+<MCQ
   id="total-latency"
   devices={["phone","desktop"]}
-  prompt={"A server has a TTFT of 200 ms and a steady time-per-output-token of 20 ms. How long until a 101-token answer is complete?"}
-  answer={2200}
-  tolerance={{"mode":"relative","value":0.01}}
-  unit="ms"
-  hint="The first token arrives at TTFT, and each of the remaining 100 tokens adds one TPOT."
-  explanation="200 + 100 x 20 = 2,200 ms. For long answers, decode dominates."
+  prompt={"Server A: TTFT 150 ms, TPOT 40 ms. Server B: TTFT 600 ms, TPOT 15 ms. You run code autocomplete (about 5 output tokens) and long chat answers (about 300 tokens). Which server suits which?"}
+  options={["A for both: the lower TTFT always wins.", "B for both: the lower TPOT always wins.", "A for autocomplete, B for long chat answers.", "B for autocomplete, A for long chat answers."]}
+  answer={2}
+  explanation={"Total time ≈ TTFT + (N − 1) × TPOT. With 5 tokens, TTFT is most of the wait: A takes about 0.3 s and B about 0.66 s. With 300 tokens the TPOT term dominates: A takes about 12 s and B about 5 s. Which number matters depends on how long the output is, so neither 'always' answer holds, and the last option has both choices backwards."}
 />
 
 ## Different bottlenecks

@@ -25,14 +25,13 @@ Both build a **tree** of candidates: several options for the next token, several
 
 ![A candidate token tree: 3 first-token options each with 2 children, verified in one pass](/diagrams/llm-inference/09-speculative-decoding/03-medusa-eagle-and-lookup.png)
 
-<Predict
+<MCQ
   id="tree-nodes"
   devices={["phone","desktop"]}
-  prompt={"A Medusa-style tree has 3 candidates for the next token and 2 children under each. How many candidate tokens does one verification pass check?"}
-  answer={9}
-  tolerance={{"mode":"absolute","value":0}}
-  unit="tokens"
-  explanation="3 + 3 × 2 = 9 tokens, checked in one forward pass with a tree-shaped attention mask."
+  prompt={"In tree verification, each candidate may attend to the prompt and its own ancestors, but not to its siblings or cousins. Why?"}
+  options={["Siblings are alternative futures; if a candidate could see them, its score would depend on text that will not exist on its own path.", "To save memory, because the tree is too big to attend over.", "Siblings are always rejected, so attending to them is wasted work.", "The causal mask only lets a token attend to the token right before it."]}
+  answer={0}
+  explanation={"Each root-to-leaf path is one possible continuation. The tree mask makes every candidate see exactly the text it would follow in normal decoding, so one pass checks all paths correctly. Memory is not the reason, any sibling might be the accepted one, and the causal mask allows attending to all earlier tokens, not just one."}
 />
 
 <MCQ

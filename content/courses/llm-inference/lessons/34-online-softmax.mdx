@@ -28,13 +28,13 @@ Milakov and Gimelshein (2018) showed softmax can be computed in one pass. Keep m
   explanation="Softmax is shift-invariant, so subtracting the max changes nothing mathematically and keeps exp() in range."
 />
 
-<Predict
+<MCQ
   id="online-l"
   devices={["phone","desktop"]}
-  prompt={"Scores arrive in two blocks: [1, 2] then [3]. After both, the running max is m = 3. What is the running sum l = Σ exp(x − m)?"}
-  answer={1.503}
-  tolerance={{"mode":"absolute","value":0.005}}
-  explanation="e^(−2) + e^(−1) + e^0 = 0.1353 + 0.3679 + 1 = 1.503."
+  prompt={"In online softmax, when a new score bigger than the running max arrives, why is the running sum l multiplied by exp(m_old − m_new)?"}
+  options={["To make the sum smaller and avoid overflow, at the cost of a small error.", "To discard the scores that came before the new max.", "The old terms were computed as exp(x − m_old); multiplying turns them into exp(x − m_new), so every term uses the new max.", "Because softmax needs the scores in sorted order."]}
+  answer={2}
+  explanation={"exp(x − m_old) × exp(m_old − m_new) = exp(x − m_new), exactly. So after rescaling, l is the same sum you would get with the final max known from the start: no error, nothing discarded, and no sorting needed."}
 />
 
 ## Merge two tiles

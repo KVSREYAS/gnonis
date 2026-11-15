@@ -22,15 +22,13 @@ entry. Token id 644 selects row 644, a vector of `d_model` numbers (4,096 for Ll
 So a prompt of $n$ tokens becomes a matrix of shape $[n \times d_{model}]$. Everything after this
 point is matrix maths on that hidden state.
 
-<Predict
+<MCQ
   id="embedding-params"
   devices={["phone","desktop"]}
-  prompt={"Llama 3 8B has a vocabulary of 128,256 and a hidden size of 4,096. How many parameters are in its embedding table, in millions?"}
-  answer={525.3}
-  tolerance={{"mode":"relative","value":0.02}}
-  unit="million"
-  hint="rows x columns"
-  explanation={"128,256 x 4,096 ≈ 525 million parameters, about 6.5% of the model. The LM head is another matrix of the same shape (Llama 3 8B does not share them)."}
+  prompt={"Llama 3 grew the vocabulary from Llama 2's 32,000 tokens to 128,256. What does a bigger vocabulary buy, and what does it cost?"}
+  options={["Nothing at inference. Vocabulary size only matters during training.", "Each token covers more text, so an answer needs fewer forward passes. The cost is a bigger embedding table and a bigger LM head.", "It makes every transformer block wider, so each block does about 4 times more maths.", "It removes the need for a tokenizer, because every word now has its own id."]}
+  answer={1}
+  explanation={"More text per token means fewer decode steps for the same answer. The price is paid at both ends of the model: the embedding table and the LM head ([d_model × vocab]) both grow with the vocabulary. It does matter at inference, because fewer tokens means fewer passes. The blocks depend on d_model, not on vocabulary size. And a tokenizer is still needed: even 128k entries cannot cover every word, so rare words still split."}
 />
 
 ## The block, repeated

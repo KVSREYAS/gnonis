@@ -64,13 +64,11 @@ token for the same reason.
 A useful rule of thumb for English is **about 0.75 words per token**. Code, maths and many
 non-English languages tokenize less efficiently, sometimes 2 to 3 times worse.
 
-<Predict
+<MCQ
   id="tokens-per-essay"
   devices={["phone","desktop"]}
-  prompt="Using the rule of thumb of about 0.75 English words per token, roughly how many tokens is a 1,200-word blog post?"
-  answer={1600}
-  tolerance={{"mode":"relative","value":0.1}}
-  unit="tokens"
-  hint="tokens ≈ words / 0.75"
-  explanation="1,200 / 0.75 = 1,600. Code, numbers and non-English text usually need more tokens per word."
+  prompt={"You send the same 1,200-word essay to a model twice: once in English, once translated into a language the tokenizer handles poorly. What changes in the second request, and why?"}
+  options={["It may need 2 to 3 times more tokens, so prefill takes longer, the KV cache is bigger and a per-token API bills more.", "Nothing. The model reads meaning, so cost depends on words, not tokens.", "It needs fewer tokens, because rare words are stored as single whole-word tokens.", "Only the output gets slower. Prompt length has no effect on cost."]}
+  answer={0}
+  explanation={"Every cost is counted in tokens, and many non-English languages (and code) tokenize 2 to 3 times worse than English. More prompt tokens means more prefill work, more KV cache and a bigger bill. The model never sees words, only token ids, so 'cost depends on words' is wrong. Rare words are split into several pieces, not stored whole. And prompt length drives prefill time and memory, so it does affect cost."}
 />

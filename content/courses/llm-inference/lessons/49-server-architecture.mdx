@@ -3,7 +3,7 @@ id: llm-inference/12-capstone/01-server-architecture
 title: Architecture of a Tiny Server
 estMinutes: 3
 xp: 100
-fun: 3
+fun: 4
 missionIntro: "Every LLM server has the same components: API, tokenizer, scheduler,
   block manager, model runner, sampler and a streamer."
 keyIdeas:
@@ -43,12 +43,11 @@ Little's law tells you how many sequences you'll hold at once, and so how many K
 
 Source: [vLLM architecture overview](https://docs.vllm.ai/en/latest/design/arch_overview.html)
 
-<Predict
+<MCQ
   id="littles-law"
   devices={["phone","desktop"]}
-  prompt="Requests arrive at 5 per second and each takes 10 seconds end to end. On average, how many are in the system at once?"
-  answer={50}
-  tolerance={{"mode":"absolute","value":0}}
-  unit="requests"
-  explanation="Little's law: L = λW = 5 × 10 = 50. Size your KV pool for that."
+  prompt={"Traffic stays at 5 requests/s, but answers get twice as long, so each request spends twice as long in the system. What happens to the number of requests held at once, and to the KV memory you need?"}
+  options={["Concurrency doubles (L = λ × W), and KV memory more than doubles, because each request also holds more tokens.", "Nothing changes, because the arrival rate is the same.", "Concurrency halves.", "Concurrency doubles, but KV memory stays the same."]}
+  answer={0}
+  explanation={"Little's law: L = 5 × 2W, so twice as many requests are in flight. Each of them is also longer, so KV per request grows too. Arrival rate alone does not set concurrency, and more concurrent, longer sequences cannot use the same memory."}
 />

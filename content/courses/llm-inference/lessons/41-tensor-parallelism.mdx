@@ -21,13 +21,13 @@ Megatron-LM shards the first MLP weight by columns (each GPU computes part of th
 
 ![MLP split across 2 GPUs: column-parallel first matrix, row-parallel second, joined by an all-reduce](/diagrams/llm-inference/10-parallelism/01-tensor-parallelism.png)
 
-<Predict
+<MCQ
   id="allreduce-count"
   devices={["phone","desktop"]}
-  prompt="Llama 3 70B has 80 layers. With Megatron TP, how many all-reduces per forward pass (ignoring embeddings)?"
-  answer={160}
-  tolerance={{"mode":"absolute","value":0}}
-  explanation="2 per layer (attention + MLP) × 80 = 160, and every decode step pays them."
+  prompt={"In Megatron's MLP split, why is there an all-reduce after the second (row-split) matrix but no communication after the first (column-split) one?"}
+  options={["After the column split each GPU holds complete values for its slice of the hidden layer, so the activation runs locally; after the row split each GPU holds a partial sum of the whole output, and the parts must be added.", "The first matrix is small enough to skip communication.", "The all-reduce sends the second matrix's weights to every GPU.", "The activation can only run on one GPU, so the first result is gathered there."]}
+  answer={0}
+  explanation={"Splitting A by columns gives each GPU whole columns of X A, and the activation works element by element, so no data needs to move. Splitting B by rows means each GPU's product is a partial sum of Y, so an all-reduce adds them. Attention splits the same way by heads, giving two all-reduces per block. The first matrix is not small, weights never move, and the activation runs on every GPU."}
 />
 
 <Code
@@ -50,14 +50,13 @@ That is fast on NVLink and painful across nodes.
 
 Source: [Megatron-LM](https://arxiv.org/abs/1909.08053)
 
-<Predict
+<MCQ
   id="ring-bytes"
   devices={["phone","desktop"]}
-  prompt="Ring all-reduce of a 64 MB tensor across 8 GPUs. How many MB does each GPU send?"
-  answer={112}
-  tolerance={{"mode":"relative","value":0.01}}
-  unit="MB"
-  explanation="2 × 7/8 × 64 = 112 MB."
+  prompt={"In a ring all-reduce each GPU sends 2(N − 1)/N times the tensor size. What happens to each GPU's traffic as you go from TP = 2 to TP = 8?"}
+  options={["It rises from 1x to 1.75x the tensor size, close to the 2x limit, while each GPU's share of the maths shrinks, so communication becomes a bigger part of each step.", "It shrinks to 1/8, because each GPU holds less of the model.", "It stays exactly the same as at TP = 2.", "It grows 4x, in proportion to the number of GPUs."]}
+  answer={0}
+  explanation={"The tensor being reduced is the activation, which has the same size at any TP degree. 2(N − 1)/N is 1 at N = 2 and 1.75 at N = 8, so each GPU sends a bit more while doing a quarter of the maths. That is one reason TP stops scaling well and stays on fast NVLink. Weights never move in an all-reduce, and the traffic never grows in proportion to N."}
 />
 
 <MCQ

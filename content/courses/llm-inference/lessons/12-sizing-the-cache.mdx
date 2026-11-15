@@ -38,22 +38,24 @@ $$\text{bytes/token} = 2 \times L \times H_{kv} \times d_{head} \times b$$
 
 ## A real model
 
-Llama 3 8B: $L = 32$, $H_{kv} = 8$, $d_{head} = 128$, with an fp16 cache.
+Llama 3 8B: $L = 32$, $H_{kv} = 8$, $d_{head} = 128$, with an fp16 cache:
+$2 \times 32 \times 8 \times 128 \times 2 = 131{,}072$ bytes, or 128 KiB per token.
 
-<Predict
+Notice what is missing from the formula: query heads. Queries are never cached, so only the
+KV heads count.
+
+<MCQ
   id="llama3-per-token"
   devices={["phone","desktop"]}
-  prompt={"Llama 3 8B has 32 layers, 8 KV heads and a head dim of 128, with an fp16 cache (2 bytes). How many bytes of KV cache does one token need?"}
-  answer={131072}
-  tolerance={{"mode":"relative","value":0.01}}
-  unit="bytes"
-  hint="2 x 32 x 8 x 128 x 2"
-  explanation="2 x 32 x 8 x 128 x 2 = 131,072 bytes = 128 KiB per token."
+  prompt={"Which change does NOT shrink the KV cache per token?"}
+  options={["Adding query heads while keeping the same KV heads and head size.", "Using fewer KV heads (GQA instead of MHA).", "Storing the cache in fp8 instead of fp16.", "Using a model with fewer layers, all else equal."]}
+  answer={0}
+  explanation={"Bytes per token = 2 × layers × KV heads × head dim × bytes per element. Query heads are not in the formula, because queries are never cached. Fewer KV heads, fewer bytes per element and fewer layers each shrink one factor."}
 />
 
 ## Per sequence
 
-That is 128 KiB per token. An 8,192-token conversation needs
+At 128 KiB per token, an 8,192-token conversation needs
 $131{,}072 \times 8{,}192 \approx 1.07$ GB, just for one sequence's cache.
 
 ## Play with it
