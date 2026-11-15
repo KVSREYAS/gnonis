@@ -30,7 +30,9 @@ Dettmers et al. (LLM.int8()) showed that above about 6.7B parameters, a handful 
 
 ## Smooth it over
 
-SmoothQuant divides each activation channel by s_j and multiplies the matching weight row by s_j. With α = 0.5 the difficulty is split evenly. Both sides then quantize well to int8.
+SmoothQuant divides each activation channel by s_j and multiplies the matching weight row by s_j. With α = 0.5 the difficulty is split evenly. Both sides then quantize well to int8, so the layer can run as **W8A8** (8-bit weights and 8-bit activations, with an int8 matmul).
+
+Why not just give each activation channel its own scale? In Y = XW, channel j of X is the inner dimension of the matmul, the one that is summed over. A fast int8 matmul can only apply scales per row of X (per token) or per column of W (per output) after the sum. A per-channel scale on X would be needed inside the sum. SmoothQuant moves that per-channel factor into W, where it can be applied once, offline.
 
 Sources: [LLM.int8()](https://arxiv.org/abs/2208.07339), [SmoothQuant](https://arxiv.org/abs/2211.10438)
 

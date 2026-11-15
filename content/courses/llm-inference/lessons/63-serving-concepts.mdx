@@ -21,7 +21,7 @@ For one request:
 
 Example: TTFT 300 ms, TPOT 25 ms, 200 output tokens: 0.3 + 0.025 x 199 = about 5.3 s.
 
-Services set targets as percentiles, such as "p99 TTFT under 1 s". **p99** means 99% of requests are at least this fast. **Goodput** is the request rate the system can handle while still meeting those targets.
+Services set targets as percentiles, such as "p99 TTFT under 1 s". **p99** means 99% of requests are at least this fast. **Goodput** is the highest request rate the system can handle while still meeting those targets for a required share of requests (DistServe uses 90%). Throughput that misses the targets does not count.
 
 ![TTFT and TPOT on a request timeline](/diagrams/llm-inference/11-serving-systems/01-ttft-tpot-and-prefix-caching.png)
 
@@ -35,14 +35,14 @@ Many requests start with the same tokens: a long system prompt, a shared documen
 2. Find the longest run of blocks that already exist.
 3. Reuse those blocks, and prefill only the remaining tokens.
 
-A 4,000-token system prompt plus a 50-token question then costs about 50 tokens of prefill. TTFT falls sharply. Cached blocks are evicted least-recently-used when memory is needed. vLLM calls this automatic prefix caching. SGLang uses a radix tree (RadixAttention).
+A 4,000-token system prompt plus a 50-token question then costs about 50 tokens of prefill. TTFT falls sharply. When memory is needed, cached blocks that no running request uses are evicted, **least recently used (LRU)** first. vLLM calls this automatic prefix caching. SGLang stores cached prefixes in a **radix tree** (RadixAttention): a tree in which each edge holds a run of tokens, so requests that share a beginning share the path from the root, and finding the longest cached prefix is a walk down the tree.
 
 ## Engines
 
 An **inference engine** is the server software that runs all these techniques together:
 
 - **vLLM**: paged attention, continuous batching, prefix caching. Wide model support.
-- **SGLang**: RadixAttention prefix sharing, fast scheduling, structured output.
+- **SGLang**: RadixAttention prefix sharing, fast scheduling, structured output (forcing the answer to follow a format such as a JSON schema).
 - **TensorRT-LLM**: NVIDIA's compiled kernels, high single-GPU efficiency.
 - **TGI** (Hugging Face) and **llama.cpp** (CPU and consumer GPUs, GGUF quantized files).
 
@@ -57,7 +57,7 @@ Prefill is compute-bound and bursty. Decode is memory-bound and steady. On one G
 **Disaggregation** uses two pools of GPUs:
 
 1. A prefill worker processes the prompt and produces the KV cache and first token.
-2. The KV cache is transferred over a fast network (NVLink, InfiniBand, RDMA) to a decode worker.
+2. The KV cache is transferred over a fast link (NVLink inside a server, or InfiniBand between servers using **RDMA**, remote direct memory access, which copies GPU memory to another machine without going through its CPU) to a decode worker.
 3. The decode worker generates the remaining tokens.
 
 Each pool can use its own batch size and parallelism, and the pools can be sized separately to meet TTFT and TPOT targets. The cost is the KV transfer: 1 GiB for an 8K-token Llama-3-8B request at the size from module 3.

@@ -41,13 +41,13 @@ For comparison, the weights are about 16 GB. The cache can easily be larger than
 
 ## The memory budget
 
-A GPU's memory (HBM) holds three things:
+A GPU's main memory (HBM, high-bandwidth memory, covered in module 4) holds three things:
 
 1. **weights**: fixed, e.g. 16 GB for 8B parameters in FP16
 2. **activations and workspace**: temporary buffers, a few GB
 3. **KV cache**: everything left
 
-On an 80 GB GPU: 80 - 16 - about 4 = about 60 GB for KV. At 128 KiB per token that is about 490,000 tokens of cache, shared by all active requests: 60 requests at 8K tokens, or 15 at 32K.
+On an 80 GB GPU: 80 - 16 - about 4 = about 60 GB for KV. At 128 KiB (131,072 bytes) per token that is 60 × 10^9 / 131,072 ≈ 458,000 tokens of cache, shared by all active requests: about 55 requests at 8K tokens, or 13 at 32K.
 
 That number sets the **maximum batch size**, and batch size sets throughput. So every technique that shrinks KV (GQA, KV quantization, paging to waste less) turns directly into more concurrent users.
 

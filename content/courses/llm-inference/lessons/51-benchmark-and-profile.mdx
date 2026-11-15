@@ -16,7 +16,7 @@ keyIdeas:
 
 ## Sweep the load
 
-Fire requests at increasing rates (Poisson arrivals) and record per-request TTFT and TPOT. Plot p50 and p99 against the rate. The knee is your capacity.
+Fire requests at increasing rates (Poisson arrivals) and record per-request TTFT and TPOT. Plot p50 and p99 against the rate. While the arrival rate is below what the server can process, queues stay short and latency is flat. Once arrivals exceed that rate, the queue grows every second and TTFT climbs steeply. The rate where the curve bends upward (the **knee**) is your capacity.
 
 ![p50 and p99 latency against request rate, flat then shooting up at the saturation knee](/diagrams/llm-inference/12-capstone/03-benchmark-and-profile.png)
 
@@ -43,7 +43,7 @@ Fire requests at increasing rates (Poisson arrivals) and record per-request TTFT
 
 ## Check the roofline
 
-At batch 1, compare tokens/s × bytes read per token to peak bandwidth. Far below 60% means overhead: Python, kernel launches, sampling.
+**Model bandwidth utilisation (MBU)** = achieved bytes per second / peak HBM bandwidth, where achieved bytes per second = tokens/s × bytes read per token (weights, plus KV at long context). It is the decode counterpart of MFU from module 4. At batch 1, an MBU far below 60% means overhead: Python, kernel launches, sampling.
 
 Sources: [Databricks: LLM inference performance (MBU)](https://www.databricks.com/blog/llm-inference-performance-engineering-best-practices), [vLLM benchmarks](https://github.com/vllm-project/vllm/tree/main/benchmarks)
 

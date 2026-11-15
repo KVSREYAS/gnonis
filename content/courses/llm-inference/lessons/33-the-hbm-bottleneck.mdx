@@ -8,7 +8,8 @@ missionIntro: Standard attention writes the full N×N score and probability
   matrices to slow HBM, then reads them back. That's the real cost.
 keyIdeas:
   - Naive attention materialises S = QKᵀ and P = softmax(S), both N×N, in HBM.
-  - Softmax, masking and dropout are memory-bound elementwise ops over N² values.
+  - Softmax, masking and dropout (dropout is used only in training) are memory-bound elementwise ops
+    over N² values.
   - "FlashAttention is IO-aware: it cuts HBM traffic rather than FLOPs (3x
     faster GPT-2 training at 1k context)."
 ---
@@ -39,7 +40,7 @@ Naive attention runs as separate kernels, and each one writes its N×N result to
 
 ## IO, not FLOPs
 
-Dao et al. counted HBM accesses: Θ(Nd + N²) for standard attention versus Θ(N²d²/M) for FlashAttention, where M is the SRAM size. Same maths, far less traffic.
+Dao et al. counted HBM reads and writes. For standard attention they grow like N·d + N² (the N² is the score matrix). For FlashAttention they grow like N²·d² / M, where M is the SRAM size per SM. With d = 128 and M around 100 KB, d²/M is well below 1, so FlashAttention moves many times fewer bytes. The FLOPs are the same.
 
 Source: [FlashAttention](https://arxiv.org/abs/2205.14135)
 

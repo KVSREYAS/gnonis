@@ -15,7 +15,9 @@ keyIdeas:
 
 A 70B model in FP16 has 140 GB of weights, more than one 80 GB GPU. Even when a model fits, splitting it can make each step faster, because several GPUs read their share of the weights at the same time, adding up bandwidth.
 
-The cost is **communication**: GPUs must exchange intermediate results. Within one server, GPUs are linked by **NVLink** (hundreds of GB/s per GPU). Between servers, links are usually much slower. Which split to use depends on how much data each needs to send and over which link.
+The cost is **communication**: GPUs must exchange intermediate results. Within one server, GPUs are linked by **NVLink** (hundreds of GB/s per GPU). Between servers, links such as **InfiniBand** (a datacenter network, about 50 GB/s per GPU) are much slower.
+
+The simplest option, **data parallelism**, does not split the model at all: each GPU (or group of GPUs) holds a full copy and serves different requests. It adds throughput but does not help a model that does not fit. Which split to use depends on how much data each needs to send and over which link.
 
 ## Tensor parallelism
 
@@ -25,7 +27,7 @@ For an MLP, Y = act(X A) B:
 
 1. Split A by **columns**: GPU i holds A_i and computes act(X A_i) for its slice. No communication needed, since the activation is applied per element.
 2. Split B by **rows**: GPU i computes a partial Y_i = act(X A_i) B_i.
-3. **All-reduce**: every GPU sums all partial Y_i and gets the full Y.
+3. **All-reduce**: a collective operation in which every GPU contributes its partial Y_i and every GPU ends up holding the sum, the full Y.
 
 Attention splits the same way by heads. So TP costs two all-reduces per transformer block, every step. That is fine over NVLink, so TP is typically used within one server (2-8 GPUs).
 
@@ -43,7 +45,7 @@ PP does not make a single token faster. It mainly lets a model that is too big f
 
 ## Mixture of experts and expert parallelism
 
-A **mixture-of-experts (MoE)** layer has many MLPs called **experts** (e.g. 64), and a small **router** that, for each token, picks the top k (e.g. 2) and combines their outputs.
+A **mixture-of-experts (MoE)** layer has many MLPs called **experts** (e.g. 64), and a small **router** (one linear layer plus softmax) that scores every expert for each token, picks the top k (e.g. 2) and adds their outputs, weighted by those scores.
 
 So total parameters are large, but each token uses only a fraction. Mixtral 8x7B has about 47B parameters but about 13B active per token.
 

@@ -38,6 +38,17 @@ Batch-1 decode is bandwidth divided by bytes read. Halve the bytes per weight an
 | SmoothQuant | weights + activations (int8) | migrate outliers into weights |
 | FP8 | weights + activations (+KV) | hardware-native float format |
 
+## How GPTQ and AWQ work
+
+Both are **post-training** methods: they quantize a finished model, using a few hundred example inputs (the **calibration data**) to see which errors matter.
+
+- **GPTQ** quantizes a weight matrix one column at a time. After rounding a column, it adjusts the columns not yet quantized so that the layer's output on the calibration inputs changes as little as possible. The adjustment uses the **Hessian** of that output error, which for a linear layer is built from the calibration inputs (X^T X). This is the "second-order" information.
+- **AWQ** (activation-aware weight quantization) looks at activation sizes. Weight channels that multiply large activations matter most, about 1%. AWQ multiplies those weight channels by a factor greater than 1 before rounding, which makes their relative rounding error smaller, and divides the matching activations by the same factor so the product is unchanged.
+
+## Weight-only vs W8A8
+
+GPTQ and AWQ are **weight-only**: weights are stored in 4 bits and turned back into 16-bit numbers inside the matmul kernel (**dequantized on the fly**), so the arithmetic still runs in 16 bits. **W8A8** means weights and activations are both 8-bit, so the matmul itself runs in int8 or fp8.
+
 <MCQ
   id="awq-idea"
   devices={["phone","desktop"]}
@@ -49,7 +60,10 @@ Batch-1 decode is bandwidth divided by bytes read. Halve the bytes per weight an
 
 ## FP8 formats
 
-FP8 comes in two variants. E4M3 has more precision and E5M2 has more range.
+FP8 comes in two variants. The name gives the bit split after the sign bit: **E4M3** has 4 exponent
+bits and 3 mantissa bits, **E5M2** has 5 and 2. More exponent bits give more range, more mantissa
+bits give more precision. NVIDIA Hopper (H100) and Ada (L4, RTX 40) GPUs have tensor cores that
+compute in FP8 directly.
 
 ![Bit layouts of FP16, BF16, FP8 E4M3, FP8 E5M2 and INT4, plus 70B weight sizes against an 80 GB GPU](/diagrams/llm-inference/07-quantization/01-fewer-bytes-faster-tokens.png)
 

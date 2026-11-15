@@ -36,14 +36,16 @@ Split Q into row blocks and K/V into column blocks. For each Q block, stream K/V
   prompt="Compared with standard attention, FlashAttention's output is…"
   options={["an approximation with bounded error","exactly the same maths (up to floating-point rounding)","sparser","lower rank"]}
   answer={1}
-  explanation="It reorders the computation and changes nothing else. Approximate methods like Linformer are different."
+  explanation="It reorders the computation and changes nothing else. Approximate methods such as Linformer (which compresses K and V to a fixed shorter length) give a different result."
 />
 
 ## Versions
 
-FA2 (2023) parallelises over the sequence and cuts non-matmul FLOPs, about 2x faster than FA1. FA3 (2024) uses Hopper's TMA and warp specialisation plus FP8.
+FA2 (2023) parallelises over the sequence and cuts non-matmul FLOPs, about 2x faster than FA1. FA3 (2024) is written for Hopper (H100) GPUs. It uses the **TMA** (tensor memory accelerator, a hardware unit that copies tiles between HBM and shared memory without using threads) and **warp specialisation** (some warps only load data while others only compute, so loading and maths overlap). It also supports FP8.
 
-Sources: [FA2](https://arxiv.org/abs/2307.08691), [FA3](https://arxiv.org/abs/2407.08608)
+During decode there is only one query row per head, so one Q tile cannot keep all SMs busy. **Flash-Decoding** splits the cached K and V along the sequence across SMs, computes partial results with their own max and sum, and merges them with the same rescaling rule.
+
+Sources: [FA2](https://arxiv.org/abs/2307.08691), [FA3](https://arxiv.org/abs/2407.08608), [Flash-Decoding](https://crfm.stanford.edu/2023/10/12/flashdecoding.html)
 
 <Predict
   id="fa3-util"

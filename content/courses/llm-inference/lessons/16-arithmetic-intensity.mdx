@@ -38,8 +38,9 @@ A matmul $[m \times k] \cdot [k \times n]$ does $2mkn$ FLOPs (a multiply and an 
 
 ## Decode is a matrix-vector product
 
-At decode time with batch size 1, each linear layer multiplies **one** token's vector by a big
-weight matrix. Every weight is read once and used once.
+A matrix-matrix multiply is called a **GEMM** (general matrix multiply), and a matrix-vector multiply
+is a **GEMV**. At decode time with batch size 1, each linear layer is a GEMV: it multiplies **one**
+token's vector by a big weight matrix. Every weight is read once and used once.
 
 ![Log-log plot of arithmetic intensity for square GEMM versus GEMV against the H100 ridge](/diagrams/llm-inference/04-gpu-memory-roofline/02-arithmetic-intensity.png)
 
@@ -53,6 +54,14 @@ weight matrix. Every weight is read once and used once.
   hint="Each 2-byte weight is used for one multiply and one add."
   explanation="2·4096² FLOPs over 2·4096² bytes = 1 FLOP/byte. Three orders of magnitude below the square matmul."
 />
+
+## Element-wise operations
+
+Some kernels do almost no maths per byte. Adding two fp16 tensors element by element reads 2 bytes
+from each input and writes 2 bytes of output (6 bytes) to do 1 FLOP, so the intensity is
+1/6 ≈ 0.17 FLOP/byte. Activation functions, normalisation and softmax are similar. They are always
+memory-bound, which is why engines **fuse** them into the matmul kernel before or after them, so the
+data is not written to HBM and read back.
 
 ## Batching to the rescue
 

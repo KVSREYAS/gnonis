@@ -66,7 +66,7 @@ for x in ax: x.set_xticks([]); x.set_yticks([])
 f.suptitle("SCALED DOT-PRODUCT ATTENTION",color=G,fontweight="bold",fontsize=15); save(f,"01-queries-keys-values")
 
 # 02-causal-masking
-f,a=fig("The causal mask: no spoilers",6,6); n=6; M=np.tril(np.ones((n,n)))
+f,a=fig("The causal mask",6,6); n=6; M=np.tril(np.ones((n,n)))
 a.imshow(M,cmap=matplotlib.colors.ListedColormap([GR,G]))
 for i in range(n):
     for j in range(n): a.text(j,i,"✓" if j<=i else "−∞",ha="center",va="center",color="white",fontweight="bold")
@@ -142,7 +142,7 @@ a.set_xticks(x,["fp16 (16 GB)","int8 (8 GB)","int4 (4 GB)"]); a.set_ylabel("max 
 
 # NEW 01-continuous-batching
 f,ax=plt.subplots(2,1,figsize=(11,5.5),sharex=True); L=[3,9,4,6]; rq=[[3,9,4,6],[3,5,4,6,2,4,3]]
-for k,(a,t) in enumerate(zip(ax,["STATIC: wait for the slowpoke","CONTINUOUS: refill a slot at every step"])):
+for k,(a,t) in enumerate(zip(ax,["STATIC: slots wait for the longest request","CONTINUOUS: refill a slot at every step"])):
     a.set_title(t,loc="left",fontweight="bold",color=[R,G][k]); a.set_yticks(range(4),[f"slot {i}" for i in range(4)])
     if k==0:
         for s,l in enumerate(L): a.barh(s,l,color=B); a.barh(s,9-l,left=l,color=GR,alpha=.5)
@@ -213,26 +213,57 @@ MOD.update({"02-batch-size-vs-latency":"05-batching","03-chunked-prefill":"05-ba
 "01-the-hbm-bottleneck":"08-flash-attention","02-online-softmax":"08-flash-attention","03-tiling-in-sram":"08-flash-attention",
 "02-acceptance-and-speedup":"09-speculative-decoding","03-medusa-eagle-and-lookup":"09-speculative-decoding",
 "01-tensor-parallelism":"10-parallelism","02-pipeline-parallelism":"10-parallelism","03-moe-and-expert-parallelism":"10-parallelism",
-"02-engines-tour":"11-serving-systems","03-disaggregated-prefill-decode":"11-serving-systems",
+"02-engines-tour":"11-serving-systems","04-chunked-prefill-timeline":"05-batching","03-disaggregated-prefill-decode":"11-serving-systems",
 "01-server-architecture":"12-capstone","02-build-the-scheduler":"12-capstone","03-benchmark-and-profile":"12-capstone"})
 
 # 02-batch-size-vs-latency
-f,a=fig("The batch-size bargain (8B fp16, H100, 2k ctx)"); b=np.array([1,2,4,8,16,32,64,128])
+f,a=fig("Batch size vs step time (8B fp16, H100, 2k ctx)"); b=np.array([1,2,4,8,16,32,64,128])
 step=(16e9+b*2048*131072)/3.35e12*1e3; a.plot(b,b/step*1e3,"o-",color=G,lw=2.5,label="throughput (tokens/s)")
 a.set_xscale("log",base=2); a.set_xlabel("batch size"); a.set_ylabel("tokens/s",color=G)
 a2=a.twinx(); a2.plot(b,step,"s--",color=R,lw=2.5,label="step time (ms)"); a2.set_ylabel("decode step time (ms)",color=R)
-a.text(10,7600,"past batch ~16, KV reads\ndominate the step time",color=INK,fontsize=9,ha="right")
+a.text(10,7600,"past batch ~60, KV reads exceed\nthe 16 GB weight read",color=INK,fontsize=9,ha="right")
 for x,y in zip(b,step): a2.text(x,y+0.6,f"{y:.1f}",color=R,fontsize=8,ha="center")
 a.legend(loc="upper left",facecolor=BG); a2.legend(loc="center left",facecolor=BG); save(f,"02-batch-size-vs-latency")
 
 # 03-chunked-prefill
 f,ax=plt.subplots(1,2,figsize=(12,4.5),sharey=True)
-for k,(a,t) in enumerate(zip(ax,["NO CHUNKING: one monster step","CHUNKED: every step under budget"])):
+for k,(a,t) in enumerate(zip(ax,["NO CHUNKING: one very long step","CHUNKED: every step under budget"])):
     a.set_title(t,loc="left",fontweight="bold",color=[R,G][k]); steps=np.arange(1,9); dec=np.full(8,96)
     pre=np.array([0,0,8192,0,0,0,0,0]) if k==0 else np.array([0,0,1952,1952,1952,1952,384,0])
     a.bar(steps,dec,color=P,label="decode tokens (96 users)"); a.bar(steps,pre,bottom=dec,color=GOLD,label="prefill tokens (8k prompt)")
     a.axhline(2048,color=INK,ls="--"); a.text(0.6,2150,"token budget 2,048",fontsize=9); a.set_xlabel("scheduler step"); a.set_xticks(steps)
 ax[0].set_ylabel("tokens in step"); ax[0].legend(facecolor=BG,loc="upper right",fontsize=9); save(f,"03-chunked-prefill")
+
+# 04-chunked-prefill-timeline
+f,ax=plt.subplots(2,1,figsize=(12,6.2),sharex=True)
+def lane(a,y,x0,w,c,txt="",fc=None):
+    a.add_patch(FancyBboxPatch((x0+1.5,y-0.32),max(w-3,0.5),0.64,boxstyle="round,pad=0.02,rounding_size=0.1",fc=fc or c,ec=c,lw=1.5))
+    if txt and w>30: a.text(x0+w/2,y,txt,ha="center",va="center",fontsize=8,color="white" if fc is None else INK,fontweight="bold")
+for k,a in enumerate(ax):
+    a.set_ylim(-0.7,2.7); a.set_yticks([2,1,0],["user A (decoding)","user B (decoding)","request C (8,192-token prompt)"])
+    t=0
+    if k==0:
+        a.set_title("WITHOUT CHUNKING: C's whole prefill is one 338 ms step. A and B get no token during it",loc="left",fontweight="bold",color=R,fontsize=11)
+        steps=[(10,None),(10,None),(338,"C prefill: all 8,192 tokens"),(10,"d"),(10,"d")]
+    else:
+        a.set_title("WITH 2,048-TOKEN CHUNKS: A and B get a token every 92 ms. C's TTFT is 368 ms instead of 338 ms",loc="left",fontweight="bold",color=G,fontsize=11)
+        steps=[(10,None),(10,None)]+[(92,f"C chunk {i+1}/4") for i in range(4)]+[(10,"d")]
+    for w,c in steps:
+        a.axvline(t,color=GR,lw=0.6,ls=":")
+        decodes = c is None or c in ("first","d") or c.startswith("C chunk")
+        if decodes:
+            lane(a,2,t,w,P,"1 token"); lane(a,1,t,w,B,"1 token")
+        if c and c.startswith("C"): lane(a,0,t,w,GOLD,c,fc=GOLD+"55")
+        if c=="d": lane(a,0,t,w,G,"tok")
+        if c and c.startswith("C prefill"):
+            a.text(t+w/2,1.5,"A and B wait 338 ms (normal gap: 10 ms)",ha="center",va="center",color=R,fontsize=10,fontweight="bold")
+        if c and (c.startswith("C prefill") or c=="C chunk 4/4"):
+            a.plot([t+w],[0.5],marker="*",ms=16,color=R); a.text(t+w,0.5,"  C's 1st token",va="center",fontsize=9,color=R,fontweight="bold")
+        t+=w
+    a.set_xlim(0,430); a.grid(False)
+ax[1].set_xlabel("time (ms), cost model: 10 ms per step + 0.04 ms per prefill token")
+f.text(0.99,0.01,"each step: decodes first (1 token per user), then a prefill chunk",ha="right",fontsize=9,color=GR)
+save(f,"04-chunked-prefill-timeline")
 
 # 02-block-tables-and-copy-on-write
 f,a=fig("Copy-on-write: 4 samples share the prompt",12,5); blank(a,(0,12),(0,5))
@@ -269,7 +300,7 @@ ax[1].text(-0.072,ax[1].get_ylim()[1]*0.85,"fine steps\nacross the bulk",color=G
 # 03-activation-outliers-smoothquant
 f,ax=plt.subplots(1,2,figsize=(12,4.5)); ch=np.arange(16); rng=np.random.default_rng(5); xa=rng.uniform(0.5,2,16); xa[[3,11]]=[64,40]; wa=rng.uniform(0.1,0.4,16); wa[3]=0.25
 s=np.sqrt(xa)/np.sqrt(wa)
-ax[0].bar(ch-0.2,xa,0.4,color=R,label="max|X| activations"); ax[0].bar(ch+0.2,wa,0.4,color=B,label="max|W| weights"); ax[0].set_title("BEFORE: monster activation channels",loc="left",color=R,fontweight="bold",fontsize=11)
+ax[0].bar(ch-0.2,xa,0.4,color=R,label="max|X| activations"); ax[0].bar(ch+0.2,wa,0.4,color=B,label="max|W| weights"); ax[0].set_title("BEFORE: a few very large activation channels",loc="left",color=R,fontweight="bold",fontsize=11)
 ax[1].bar(ch-0.2,xa/s,0.4,color=R,label="max|X/s|"); ax[1].bar(ch+0.2,wa*s,0.4,color=B,label="max|s·W|"); ax[1].set_title("AFTER SmoothQuant (α = 0.5): balanced",loc="left",color=G,fontweight="bold",fontsize=11)
 for a in ax: a.set_xlabel("hidden channel"); a.legend(facecolor=BG)
 ax[1].set_ylim(0,4.8); ax[1].text(3,4.15,"ch 3: 64 → 4",ha="center",fontsize=9,fontweight="bold"); save(f,"03-activation-outliers-smoothquant")
@@ -358,7 +389,7 @@ a.set_xlim(0,800)
 save(f,"03-moe-and-expert-parallelism")
 
 # 02-engines-tour
-f,a=fig("The engine dealership",9,6.5); blank(a,(0,10),(0,10))
+f,a=fig("Inference engines by target",9,6.5); blank(a,(0,10),(0,10))
 a.axhline(5,color=GR,lw=1); a.axvline(5,color=GR,lw=1)
 a.text(5,9.6,"datacenter GPUs",ha="center",color=GR); a.text(5,0.2,"laptops / CPUs / Apple",ha="center",color=GR); a.text(0.2,5.2,"flexible, open",color=GR); a.text(9.8,5.2,"peak NVIDIA perf",ha="right",color=GR)
 box(a,1.2,7,3,1.3,"vLLM\nPagedAttention, broad HW",G,fs=9); box(a,1.2,5.4,3,1.2,"SGLang\nRadixAttention, structured out",P,fs=9)

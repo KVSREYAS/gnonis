@@ -19,6 +19,8 @@ keyIdeas:
 
 Running users are mid-conversation, so they always get their token. Their cost comes out of the step budget first, and new prompts get whatever is left.
 
+Strict **FIFO** (first in, first out) admission takes waiting requests only from the front of the queue. If the request at the front does not fit, nothing behind it is admitted either, even small prompts that would fit. This is **head-of-line blocking**. Two fixes: chunk the big prompt so a piece of it always fits (module 5), or let the scheduler **skip ahead** and admit smaller requests behind it, with a limit so the big one is not starved forever.
+
 ![Scheduler step: running decodes consume budget, waiting queue admitted FIFO until the budget line](/diagrams/llm-inference/12-capstone/02-build-the-scheduler.png)
 
 <Predict

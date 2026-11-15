@@ -48,7 +48,9 @@ new block only when the last one fills up, so it wastes at most one partly-fille
 
 ## The block table
 
-Each sequence keeps a table from logical block numbers to physical blocks, just like an OS page table.
+Each sequence keeps a table from logical block numbers (its 1st, 2nd, 3rd block of tokens) to physical
+blocks (where in GPU memory those tokens' K and V actually sit). Operating systems use the same
+structure, a page table, to map virtual memory pages to physical memory.
 Physical blocks can sit anywhere, and two sequences can point at the same block to share a prompt prefix.
 
 ![Two sequences' logical blocks mapped through block tables to scattered physical blocks, with shared prefix blocks highlighted](/diagrams/llm-inference/06-paged-attention/01-kv-as-virtual-memory.png)
@@ -59,7 +61,7 @@ Physical blocks can sit anywhere, and two sequences can point at the same block 
   prompt="What does a sequence's block table map?"
   options={["Token ids to vocabulary strings","Logical KV block numbers to physical GPU memory blocks","Attention heads to GPUs","Layers to CUDA streams"]}
   answer={1}
-  explanation={"Exactly like an OS page table. Physical blocks need not be contiguous, and two sequences can point at the same block to share a prefix (copy-on-write)."}
+  explanation={"It is the same structure as an operating system page table. Physical blocks need not be contiguous, and two sequences can point at the same block to share a prefix (copy-on-write)."}
 />
 
 ## Background
