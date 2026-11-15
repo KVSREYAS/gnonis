@@ -43,17 +43,17 @@ Source: [vLLM docs: optimization](https://docs.vllm.ai/en/latest/configuration/o
 <MCQ
   id="max-seqs"
   devices={["phone","desktop"]}
-  prompt={"Llama 3 8B in fp16 on an 80 GB GPU (90% used) fits about 52 sequences of 8k tokens. You switch to a 4-bit version of the same model, so the weights drop from 16 GB to about 4 GB. Roughly how many 8k sequences fit now?"}
-  options={["About 208: 4x smaller weights means 4x more sequences.", "Still 52: weight precision has no effect on memory.", "About 63: the 12 GB saved goes to the KV cache, but each sequence still needs about 1.07 GB.", "Fewer than 52: the 4-bit scales take more memory than they save."]}
-  answer={2}
-  explanation={"0.9 × 80 = 72 GB. With 16 GB of weights, 56 GB is left for KV: about 52 sequences. With 4 GB of weights, 68 GB is left: about 63. Quantizing the weights only frees what the weights used, and each sequence's KV is unchanged, so concurrency grows about 20%, not 4x. To fit many more sequences, shrink the KV cache itself (fp8 KV, fewer KV heads, shorter contexts). Scales add only a few percent to 4-bit weights."}
+  prompt={"A service is limited by how many long chats fit in GPU memory. You quantize the weights to 4 bits and keep the cache in fp16. How does the number of chats that fit change?"}
+  options={["It goes up in proportion to the weight savings, because each chat's cache shrinks along with the weights.", "It stays the same, because weight memory and cache memory are separate pools that never share space.", "It goes down, because 4-bit weights must be unpacked into a 16-bit copy that takes up the cache space.", "It goes up, because the freed weight memory joins the cache pool, but each chat's cache is just as big as before."]}
+  answer={3}
+  explanation={"Weight-only quantization shrinks the weights, and vLLM gives the freed memory to the KV pool, so more chats fit. Each token's cache is still fp16, so the gain is only the freed memory divided by the same per-chat cost. Unpacking happens inside the kernel, tile by tile, not as a full copy."}
 />
 
 ## Long contexts eat concurrency
 
-At 32k tokens, one Llama 3 8B sequence needs 4.3 GB of fp16 cache. Long-context products hit the
-wall fast. The levers are fewer bytes per element, fewer KV heads, shorter contexts, or more
-memory.
+A very long context makes each sequence's cache several times bigger, so far fewer sequences fit in the
+same pool. Long-context products hit the wall fast. The levers are fewer bytes per element, fewer KV
+heads, shorter contexts, or more memory.
 
 <Simulator
   id="fit-sixteen"
@@ -86,10 +86,10 @@ counts query heads, while `num_key_value_heads` counts KV heads.
   id="capacity-code"
   devices={["desktop"]}
   language="python"
-  prompt={"Write max_sequences(gpu_gb, params_b, layers, kv_heads, head_dim, seq_len, kv_bytes=2, util=0.9). It returns how many full sequences fit, using fp16 weights (2 bytes per parameter) and decimal GB. It must never return a negative number."}
-  starter={"def max_sequences(gpu_gb, params_b, layers, kv_heads, head_dim, seq_len, kv_bytes=2, util=0.9):\n    \"\"\"How many full sequences of seq_len tokens fit in the KV budget?\"\"\"\n    # budget = gpu memory * util - weights\n    # per_seq = kv bytes per token * seq_len\n    return 0\n"}
-  tests={"def test_llama3_8b_on_80gb():\n    \"\"\"Llama 3 8B, 8k context, 80 GB -> 52\"\"\"\n    assert max_sequences(80, 8, 32, 8, 128, 8192) == 52, max_sequences(80, 8, 32, 8, 128, 8192)\n\ndef test_small_gpu():\n    \"\"\"Llama 3 8B, 8k context, 24 GB -> 5\"\"\"\n    assert max_sequences(24, 8, 32, 8, 128, 8192) == 5, max_sequences(24, 8, 32, 8, 128, 8192)\n\ndef test_fp8_cache():\n    \"\"\"fp8 cache at 32k on 80 GB -> 26\"\"\"\n    assert max_sequences(80, 8, 32, 8, 128, 32768, kv_bytes=1) == 26\n\ndef test_does_not_fit():\n    \"\"\"weights larger than budget -> 0, never negative\"\"\"\n    assert max_sequences(80, 70, 80, 8, 128, 8192) == 0\n\ndef test_returns_int():\n    \"\"\"returns an int\"\"\"\n    assert isinstance(max_sequences(80, 8, 32, 8, 128, 8192), int)\n"}
-  solution={"def max_sequences(gpu_gb, params_b, layers, kv_heads, head_dim, seq_len, kv_bytes=2, util=0.9):\n    budget = gpu_gb * 1e9 * util - params_b * 1e9 * 2\n    per_seq = 2 * layers * kv_heads * head_dim * kv_bytes * seq_len\n    return max(0, int(budget // per_seq))\n"}
-  hints={["Work in bytes. 1 GB = 1e9 bytes here.","Use max(0, ...) for models that do not fit at all."]}
-  explanation="This is roughly the calculation vLLM runs at startup when it profiles memory and sizes its KV block pool."
+  prompt={"An engine sizes each token's KV cache from the model's config, never from its parameter count. Write kv_shape(config), which returns (layers, kv_heads, head_dim) for a Hugging Face-style config dict. Read num_key_value_heads when it is present; when it is missing the model is plain MHA, so every attention head keeps its own K and V. Read head_dim when present, otherwise use hidden_size // num_attention_heads. Ignore every other key."}
+  starter={"def kv_shape(config):\n    \"\"\"(layers, kv_heads, head_dim) for one token's cache.\"\"\"\n    # Bug to fix: this treats every model as MHA.\n    layers = config[\"num_hidden_layers\"]\n    heads = config[\"num_attention_heads\"]\n    return (layers, heads, config[\"hidden_size\"] // heads)\n"}
+  tests={"def test_gqa_model():\n    \"\"\"Llama 3 8B-style config: GQA, few KV heads\"\"\"\n    cfg = {\"num_hidden_layers\": 32, \"num_attention_heads\": 32, \"num_key_value_heads\": 8, \"hidden_size\": 4096}\n    assert kv_shape(cfg) == (32, 8, 128), kv_shape(cfg)\n\ndef test_mha_model():\n    \"\"\"Llama 2 7B-style config: no num_key_value_heads, so MHA\"\"\"\n    cfg = {\"num_hidden_layers\": 32, \"num_attention_heads\": 32, \"hidden_size\": 4096}\n    assert kv_shape(cfg) == (32, 32, 128)\n\ndef test_explicit_head_dim():\n    \"\"\"some models set head_dim directly, and it wins\"\"\"\n    cfg = {\"num_hidden_layers\": 26, \"num_attention_heads\": 8, \"num_key_value_heads\": 4, \"hidden_size\": 2304, \"head_dim\": 256}\n    assert kv_shape(cfg) == (26, 4, 256)\n\ndef test_parameter_count_ignored():\n    \"\"\"a bigger model with the same attention shape has the same cache per token\"\"\"\n    small = {\"num_hidden_layers\": 32, \"num_attention_heads\": 32, \"num_key_value_heads\": 8, \"hidden_size\": 4096, \"intermediate_size\": 14336}\n    big = dict(small, intermediate_size=28672, vocab_size=256000)\n    assert kv_shape(small) == kv_shape(big)\n"}
+  solution={"def kv_shape(config):\n    layers = config[\"num_hidden_layers\"]\n    heads = config[\"num_attention_heads\"]\n    kv_heads = config.get(\"num_key_value_heads\", heads)\n    head_dim = config.get(\"head_dim\", config[\"hidden_size\"] // heads)\n    return (layers, kv_heads, head_dim)\n"}
+  hints={["dict.get(key, default) handles the missing-key case.", "When num_key_value_heads is missing, the KV heads equal the attention heads."]}
+  explanation={"These three numbers, plus the cache's number format, are everything that sets cache per token. The MLP width and the vocabulary change the parameter count but not the cache, which is why a smaller MHA model can need more cache per token than a larger GQA one. The 'wrong-heads' bug below is this same mistake in a real estimator."}
 />

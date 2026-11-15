@@ -22,7 +22,7 @@ Fire requests at increasing rates (Poisson arrivals) and record per-request TTFT
 
 ## Why tails matter
 
-Users notice the slow requests, and they send many requests. If 1% of requests are slow, a user who sends 20 a day has a 1 − 0.99²⁰ ≈ 18% chance of meeting at least one slow request every day.
+Users notice the slow requests, and they send many requests. Even if only a small share of requests are slow, a user who sends many each day has a good chance of meeting one, often every day.
 
 That is why latency targets are set on percentiles such as p95 or p99, not on the mean. A slow tail usually has a specific cause that the mean hides: long prompts stalling decode, bursts filling the queue, or preemption repeating work.
 
@@ -31,10 +31,10 @@ When benchmarking, use random (Poisson) arrivals rather than evenly spaced ones,
 <MCQ
   id="why-p99"
   devices={["phone","desktop"]}
-  prompt={"Mean TTFT is 300 ms, but p99 TTFT is 6 s. The dashboard shows only the mean. Why is that a problem for a user who sends 50 requests a day?"}
-  options={["It isn't a problem: the mean already includes the slow requests, so it reflects them.", "1 in 100 requests waits 20x longer, so about 40% of such users hit a 6 s wait daily.", "p99 matters for offline batch jobs, not chat, because chat users don't send many requests.", "The user has about a 1% chance of a slow day, since only 1% of requests are slow."]}
-  answer={1}
-  explanation={"The chance of avoiding the slowest 1% in 50 requests is 0.99⁵⁰ ≈ 0.61, so about 39% of such users hit it at least once a day. One slow request out of 100 barely moves the mean, which is why SLOs are set on percentiles like p99."}
+  prompt={"Mean TTFT looks fine, but p99 TTFT is many times higher. The dashboard shows only the mean. Why is that a problem for a user who sends many requests a day?"}
+  options={["It isn't a problem, because the mean already includes the slow requests and reflects them.", "p99 only matters for offline batch jobs, because chat users send few requests.", "With many requests, a user will likely hit a slow one most days, and the mean hides it.", "The user's chance of a slow day equals the share of slow requests, which is tiny."]}
+  answer={2}
+  explanation={"p99 means one request in a hundred is at least that slow. Each request is another chance to hit one, so a heavy user meets the tail often. A few slow requests barely move the mean. That's why serving targets use percentiles."}
 />
 
 <Code
@@ -58,8 +58,8 @@ Sources: [Databricks: LLM inference performance (MBU)](https://www.databricks.co
 <MCQ
   id="mbu"
   devices={["phone","desktop"]}
-  prompt={"An 8B fp16 model at batch 1 reaches only 30% MBU on an H100. What does that tell you?"}
-  options={["The GPU is compute-bound at batch 1, so it needs more FLOP/s to read faster.", "An 8B model is too small to measure: MBU is always low for small models.", "Most of each step goes outside the weight reads: Python, kernel launches, sampling.", "MBU is meaningless at batch 1, because no weights are shared between sequences."]}
+  prompt={"Batch-1 decode on a big GPU uses only a small share of the memory bandwidth (low MBU). What does that tell you?"}
+  options={["The GPU is compute-bound at batch 1, so it needs more FLOP/s to read faster.", "The model is too small to measure, because MBU is always low for small models.", "Much of each step goes outside the weight reads: Python, kernel launches, sampling.", "MBU is meaningless at batch 1, because no weights are shared between sequences."]}
   answer={2}
-  explanation={"MBU = achieved bytes per second / peak bandwidth. At batch 1 the step should be almost pure weight reading, so a good engine gets well above 60%. 30% means the GPU is idle or busy with other work most of the time. Batch-1 decode is memory-bound, not compute-bound, and batch 1 is exactly where MBU is most telling."}
+  explanation={"Batch-1 decode should be memory-bound, so a well-tuned server spends most of each step reading weights near full bandwidth. Low MBU means time is lost elsewhere: CPU work between kernels, many small kernel launches, sampling. CUDA graphs and fused kernels are the usual fixes."}
 />

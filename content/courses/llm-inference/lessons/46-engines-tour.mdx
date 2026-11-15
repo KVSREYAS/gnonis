@@ -33,10 +33,10 @@ The workload decides: prefix-heavy, local, or peak NVIDIA throughput.
 <MCQ
   id="pick-engine"
   devices={["phone","desktop"]}
-  prompt={"An agent framework sends thousands of requests that share a 6,000-token system prompt and then branch into different few-shot examples and tool results. TTFT is dominated by prefill. Which capability helps most, and why?"}
-  options={["A bigger KV block size, so each long prompt takes fewer blocks and is prefilled faster.", "Speculative decoding, which lets the draft model prefill the shared prompt cheaply.", "Disaggregation on its own, which moves prefill to other GPUs so it no longer counts.", "Radix-tree prefix caching (as in SGLang): shared prefixes are prefilled once and reused."]}
-  answer={3}
-  explanation={"Every request repeats the same 6,000 tokens, plus shared few-shot branches. A prefix cache stores their KV blocks and reuses them, so each request only prefills its new tokens. A radix tree also shares branches below the common root. Block size doesn't remove repeated work, speculation speeds decode, and disaggregation moves prefill elsewhere without removing it."}
+  prompt={"An agent framework sends thousands of requests that share a long system prompt and then branch into different examples and tool results. TTFT is dominated by prefill. Which capability helps most, and why?"}
+  options={["A bigger KV block size, so each long prompt takes fewer blocks and is prefilled faster.", "Radix-tree prefix caching (as in SGLang): shared prefixes are prefilled once and reused.", "Speculative decoding, which lets the draft model prefill the shared prompt cheaply.", "Disaggregation on its own, which moves prefill to other GPUs so it no longer counts."]}
+  answer={1}
+  explanation={"When most of every prompt is shared, the cheapest prefill is the one you skip. A radix tree stores cached prefixes and their branches, so each request reuses the longest prefix it has in common with earlier ones and prefills only the new part. Speculative decoding speeds up decode, not prefill, and disaggregation moves prefill without removing it."}
 />
 
 ## Local engine
@@ -48,26 +48,26 @@ Sources: [vLLM](https://github.com/vllm-project/vllm), [SGLang](https://github.c
 <MCQ
   id="laptop"
   devices={["phone","desktop"]}
-  prompt={"A journalist must run an 8B model offline on a MacBook with 16 GB of unified memory. What setup fits?"}
-  options={["vLLM with the fp16 weights (16 GB), because unified memory lets the GPU use all of it.", "TensorRT-LLM with an fp8 engine, which halves the weights to fit beside the OS.", "SGLang with the fp16 weights and prefix caching, which saves memory on repeated prompts.", "llama.cpp (or Ollama on top of it) with a 4-bit GGUF file of about 4.5 GB."]}
-  answer={3}
-  explanation={"The fp16 weights alone take all 16 GB, leaving nothing for the OS or the cache. A 4-bit GGUF is about 4.5 GB and llama.cpp runs it on Apple's Metal GPU backend. vLLM and SGLang target datacenter GPUs, and TensorRT-LLM needs NVIDIA GPUs, which a MacBook doesn't have."}
+  prompt={"A journalist must run a mid-sized model offline on a MacBook whose unified memory couldn't hold the fp16 weights alongside everything else. What setup fits?"}
+  options={["vLLM with the fp16 weights, because unified memory lets the GPU use all of it.", "TensorRT-LLM with an fp8 engine, which halves the weights to fit beside the OS.", "llama.cpp (or Ollama on top of it) with a 4-bit GGUF file.", "SGLang with the fp16 weights and prefix caching, which saves memory on repeated prompts."]}
+  answer={2}
+  explanation={"llama.cpp runs on Apple silicon through Metal and loads quantized GGUF files, so a 4-bit model fits beside the operating system and decodes faster because it reads fewer bytes. TensorRT-LLM needs NVIDIA GPUs, and vLLM and SGLang target data-centre GPUs; prefix caching doesn't shrink the weights."}
 />
 
 <MCQ
   id="q4-bits"
   devices={["phone","desktop"]}
-  prompt={"GGUF Q4_0 stores a separate fp16 scale for every 32 weights instead of one per tensor. Why spend the extra bits?"}
-  options={["The scales hold the most significant bits of each weight, so more scales mean more precision.", "GPUs and CPUs require one scale per 32 values, so the format has no other choice.", "A large weight then stretches the step of only its own 32 weights, so error stays small elsewhere.", "It makes the file smaller, because each scale lets the weights use fewer bits."]}
-  answer={2}
-  explanation={"This is the same idea as per-group scales in GPTQ and AWQ. It costs 16 / 32 = 0.5 bits per weight, so Q4_0 is 4.5 bits per weight, slightly bigger than plain 4-bit, but far more accurate. The scale is one multiplier for the whole group, not extra bits of each weight, and no hardware demands groups of 32: it is a format choice that trades bits for accuracy."}
+  prompt={"GGUF's 4-bit formats store a separate scale for every small block of weights instead of one per tensor. Why spend the extra bits?"}
+  options={["The scales hold the most significant bits of each weight, so more scales mean more precision.", "A large weight then stretches the step of only its own block, so error stays small everywhere else.", "CPUs and GPUs require one scale per small block of values, so the format has no other choice.", "It makes the file smaller, because each scale lets the weights use fewer bits."]}
+  answer={1}
+  explanation={"With one scale per tensor, one outlier sets the step size for every weight, and small weights lose their detail. A scale per small block confines that damage to the outlier's own block. The cost is a little extra storage per weight."}
 />
 
 <MCQ
   id="q4-size"
   devices={["phone","desktop"]}
-  prompt={"You run an 8B model on a laptop with llama.cpp. Switching the file from fp16 to Q4_0 makes generation about 3x faster. Why?"}
-  options={["Decode is memory-bound, and Q4_0 reads about 4.5 GB per token instead of 16 GB.", "4-bit arithmetic is 4x faster than 16-bit on every CPU.", "Q4_0 skips half of the layers.", "GGUF files tokenize faster."]}
+  prompt={"On a laptop with llama.cpp, switching from the fp16 file to a 4-bit file makes generation much faster. Why?"}
+  options={["Decode is memory-bound, and the 4-bit file has far fewer bytes to read.", "4-bit arithmetic runs much faster than 16-bit arithmetic on every laptop CPU.", "The 4-bit file skips some of the model's layers.", "4-bit GGUF files tokenize text faster, so each step starts sooner."]}
   answer={0}
-  explanation={"The ceiling is bandwidth / bytes per token, and 16 / 4.5 ≈ 3.6x fewer bytes; overheads bring the real gain to about 3x. The gain tracks bytes read, not arithmetic speed: a memory-bound decode is waiting on memory, so faster maths alone would barely help. All layers still run, and the tokenizer is not the bottleneck."}
+  explanation={"Each token reads every weight once, and the time goes on reading. A 4-bit file is a fraction of the fp16 size, so each token takes a fraction of the reading. The arithmetic still happens at higher precision after unpacking, and every layer still runs."}
 />

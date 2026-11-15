@@ -40,10 +40,10 @@ blocks mean longer block tables and smaller, more scattered reads for the attent
 <MCQ
   id="blocks-needed"
   devices={["phone","desktop"]}
-  prompt={"You change the KV block size from 16 tokens to 256. What happens?"}
-  options={["Tables get shorter, but each sequence can waste up to 255 slots, so fewer fit.", "Waste goes down, because there are fewer blocks per sequence to leave partly empty.", "Nothing changes for memory: block size only affects how fast the kernel runs.", "Prefix sharing stops working, because prompts rarely fill a 256-token block exactly."]}
-  answer={0}
-  explanation={"A sequence wastes at most one partly filled block, so the worst-case waste per sequence grows from 15 slots to 255. Across many short sequences that adds up and cuts concurrency. Fewer blocks to track does not mean less waste. Block size clearly affects memory. Full blocks can still be shared at any block size."}
+  prompt={"You make the KV block size much larger. What happens?"}
+  options={["Waste goes down, because there are fewer blocks per sequence to leave partly empty.", "Tables get shorter, but each sequence's last block wastes more slots, so fewer fit.", "Nothing changes for memory: block size only affects how fast the attention kernel runs.", "Prefix sharing stops working, because no prompt fills a large block exactly."]}
+  answer={1}
+  explanation={"Paging wastes only the unused slots in each sequence's last block, and that waste can be up to a whole block. Larger blocks mean fewer table entries and simpler bookkeeping, but more slots left empty at the end of every sequence. Prefix sharing still works for full blocks."}
 />
 
 ## The block table
@@ -66,10 +66,10 @@ The extra lookup costs a little time compared with one contiguous buffer, but it
 <MCQ
   id="block-table"
   devices={["phone","desktop"]}
-  prompt={"Two chats share the same 1,600-token system prompt, and the server shares prefixes (block size 16). What do their block tables look like?"}
-  options={["Each table points to its own 100 private copies of the prompt blocks, because block tables can't share entries.", "One table holds all 100 shared prompt blocks, and the other holds only its own chat-specific blocks.", "Their first 100 entries point to the same physical blocks; the entries after that point to different blocks.", "Both tables have a single entry pointing to one big physical block that holds all 1,600 prompt tokens."]}
-  answer={2}
-  explanation={"1,600 / 16 = 100 blocks of prompt. A block table maps a sequence's logical blocks, in order, to physical blocks; two tables can map to the same physical block, with a reference count tracking how many do. Each sequence keeps a complete table, so it sees an ordinary continuous cache. Every block holds 16 tokens, so the prompt is 100 blocks, not one."}
+  prompt={"Two chats start with the same long system prompt, and the server shares prefixes. What do their block tables look like?"}
+  options={["Each table points to its own private copy of the prompt blocks, because tables can't share entries.", "One table holds all the shared prompt blocks, and the other holds only its own chat's blocks.", "Both tables have a single entry pointing to one big physical block holding the whole prompt.", "Their first entries point to the same physical blocks; after the shared prompt they point to different blocks."]}
+  answer={3}
+  explanation={"A block table maps each sequence's logical blocks to physical ones. Sharing means two tables list the same physical block ids for the shared part, with a reference count on each block. Where the chats differ, their entries point to their own blocks. Every block has the same fixed size."}
 />
 
 ## Background

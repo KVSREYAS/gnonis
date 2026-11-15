@@ -47,10 +47,10 @@ Total time is roughly TTFT plus TPOT for every token after the first.
 <MCQ
   id="e2e-latency"
   devices={["phone","desktop"]}
-  prompt={"TTFT is 200 ms, TPOT is 20 ms, and answers average 500 tokens. Which cuts the average user's total wait more: halving TTFT, or cutting TPOT by 10%?"}
-  options={["Halving TTFT, because the first token is what users wait for.", "They save the same time.", "Neither changes total time; only throughput does.", "Cutting TPOT by 10%: it saves about 1 s, while halving TTFT saves 0.1 s."]}
-  answer={3}
-  explanation={"Total ≈ TTFT + 499 × TPOT ≈ 0.2 + 10 s. A 2 ms cut in TPOT is paid back 499 times, about 1 s. Halving TTFT saves 100 ms once. TTFT still matters for how quick the start feels, but for long answers TPOT sets most of the wait."}
+  prompt={"Answers on your service are long. One option makes the first token arrive much sooner; another makes every token a little faster. Which cuts the average user's total wait more, and why?"}
+  options={["Faster tokens, because that saving repeats for every token of a long answer.", "Making the first token sooner, because the first token is what users wait for.", "Neither, because total wait depends only on throughput, not on per-request timings.", "They always save the same time, because both of them shorten the very same request."]}
+  answer={0}
+  explanation={"Total time ≈ TTFT + (tokens × time per token). The first-token saving happens once; the per-token saving is multiplied by the answer's length, so for long answers even a small per-token gain can win. For very short answers, such as autocomplete, the reverse holds."}
 />
 
 ## Prefix caching

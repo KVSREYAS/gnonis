@@ -42,12 +42,12 @@ The usual choice is the smallest TP degree whose per-GPU weights leave enough ro
   id="tp-code"
   devices={["desktop"]}
   language="python"
-  prompt={"Plan a server of n_gpus GPUs. Write split_plan(params_b, bytes_per_param, gpu_gb, n_gpus, reserve=0.3). Choose the smallest tensor-parallel degree tp from 1, 2, 4, 8 (and at most n_gpus) whose weights per GPU (params_b × bytes_per_param / tp, in GB) fit in gpu_gb × (1 − reserve), keeping the reserve for the KV cache. Use the remaining GPUs as data-parallel replicas: return (tp, n_gpus // tp). Return None if no allowed tp fits."}
-  starter={"def split_plan(params_b, bytes_per_param, gpu_gb, n_gpus, reserve=0.3):\n    # Smallest TP that fits, then as many replicas as the GPUs allow.\n    return None\n"}
-  tests={"def test_8b_replicas():\n    \"\"\"8B fits on one GPU, so 8 independent copies\"\"\"\n    assert split_plan(8, 2, 80, 8) == (1, 8)\n\ndef test_70b_fp16():\n    \"\"\"140 GB: TP 2 gives 70 GB > 56, TP 4 gives 35 GB\"\"\"\n    assert split_plan(70, 2, 80, 8) == (4, 2)\n\ndef test_70b_fp8():\n    \"\"\"fp8 halves the weights, so TP 2 and 4 replicas\"\"\"\n    assert split_plan(70, 1, 80, 8) == (2, 4)\n\ndef test_too_few_gpus():\n    assert split_plan(70, 2, 80, 2) is None\n\ndef test_too_big():\n    \"\"\"405B in bf16 doesn't fit even at TP 8\"\"\"\n    assert split_plan(405, 2, 80, 8) is None\n"}
-  solution={"def split_plan(params_b, bytes_per_param, gpu_gb, n_gpus, reserve=0.3):\n    budget = gpu_gb * (1 - reserve)\n    for tp in (1, 2, 4, 8):\n        if tp > n_gpus:\n            break\n        if params_b * bytes_per_param / tp <= budget:\n            return (tp, n_gpus // tp)\n    return None\n"}
-  hints={["Billions of parameters × bytes per parameter gives GB.", "Stop trying once tp is larger than n_gpus."]}
-  explanation={"More TP than needed adds all-reduce cost to every step and buys only latency. Replicas add throughput with no communication at all. So the usual plan is the smallest TP that fits with room for the cache, then as many replicas as the GPUs allow. fp8 weights often halve the TP degree and double the replicas."}
+  prompt={"Megatron-style tensor parallelism for one MLP: y = relu(x A) B. Split A by columns and B by the matching rows into n shards. Each shard computes relu(x A_j) B_j on its own, with no communication, and the all-reduce adds the shards' results. Write tp_mlp(x, A, B, n) that does exactly that (the hidden size divides evenly by n). matvec(x, M) is given."}
+  starter={"def matvec(x, M):\n    return [sum(x[i] * M[i][j] for i in range(len(x))) for j in range(len(M[0]))]\n\ndef relu(v):\n    return [max(0.0, a) for a in v]\n\ndef tp_mlp(x, A, B, n):\n    h = len(A[0]) // n\n    total = [0.0] * len(B[0])\n    for j in range(n):\n        A_j = [row[j * h:(j + 1) * h] for row in A]\n        B_j = B[j * h:(j + 1) * h]\n        part = matvec(matvec(x, A_j), B_j)\n        total = [t + p for t, p in zip(total, part)]\n    # Bug: the activation is applied after the all-reduce.\n    return relu(total)\n"}
+  tests={"x = [1.0, -2.0]\nA = [[1.0, -1.0, 2.0, 0.5], [0.5, 1.0, -1.0, 2.0]]\nB = [[1.0, 2.0], [-1.0, 1.0], [0.5, -2.0], [2.0, 1.0]]\n\ndef unsplit(x, A, B):\n    return matvec(relu(matvec(x, A)), B)\n\ndef test_one_shard_matches():\n    assert tp_mlp(x, A, B, 1) == unsplit(x, A, B)\n\ndef test_two_shards_match():\n    assert tp_mlp(x, A, B, 2) == unsplit(x, A, B), (tp_mlp(x, A, B, 2), unsplit(x, A, B))\n\ndef test_four_shards_match():\n    assert tp_mlp(x, A, B, 4) == unsplit(x, A, B)\n"}
+  solution={"def matvec(x, M):\n    return [sum(x[i] * M[i][j] for i in range(len(x))) for j in range(len(M[0]))]\n\ndef relu(v):\n    return [max(0.0, a) for a in v]\n\ndef tp_mlp(x, A, B, n):\n    h = len(A[0]) // n\n    total = [0.0] * len(B[0])\n    for j in range(n):\n        A_j = [row[j * h:(j + 1) * h] for row in A]\n        B_j = B[j * h:(j + 1) * h]\n        part = matvec(relu(matvec(x, A_j)), B_j)\n        total = [t + p for t, p in zip(total, part)]\n    return total\n"}
+  hints={["After the column split, each shard holds complete hidden values for its slice.", "So the activation can run inside each shard, before the second matmul."]}
+  explanation={"The column split gives each GPU complete values for its slice of the hidden layer, so the activation runs locally with no communication. The row split leaves each GPU with a partial sum of the output, which is why the one all-reduce comes after the second matrix. Applying the activation after the sum gives a different, wrong function."}
 />
 
 ## Communication cost
@@ -61,17 +61,17 @@ Source: [Megatron-LM](https://arxiv.org/abs/1909.08053)
 <MCQ
   id="ring-bytes"
   devices={["phone","desktop"]}
-  prompt={"In a ring all-reduce each GPU sends 2(N − 1)/N times the tensor size. What happens to each GPU's traffic as you go from TP = 2 to TP = 8?"}
-  options={["It rises from 1x to 1.75x the tensor size, while each GPU's share of the maths shrinks.", "It shrinks to 1/8 of the tensor, because each GPU holds an eighth of the model.", "It stays exactly the same as at TP = 2, because the ring always sends each piece once.", "It grows 4x, in proportion to the number of GPUs, because every GPU talks to every other."]}
-  answer={0}
-  explanation={"The tensor being reduced is the activation, which has the same size at any TP degree. 2(N − 1)/N is 1 at N = 2 and 1.75 at N = 8, so each GPU sends a bit more while doing a quarter of the maths. That is one reason TP stops scaling well and stays on fast NVLink. Weights never move in an all-reduce, and the traffic never grows in proportion to N."}
+  prompt={"In a ring all-reduce, as you add more GPUs to a tensor-parallel group, what happens to each GPU's communication per step and to its share of the maths?"}
+  options={["Its communication shrinks in step with its maths, because each GPU holds a smaller slice.", "Its communication stays about the same while its maths shrinks, so communication grows as a share.", "Its communication grows in proportion to the number of GPUs, because every GPU talks to every other.", "Both stay the same, because the ring sends each piece of the tensor only once whatever the group size."]}
+  answer={1}
+  explanation={"A ring all-reduce has each GPU send and receive close to twice the tensor's size, whatever the group size, because the whole result has to pass through every GPU. Meanwhile each GPU's slice of the weights, and its maths, shrinks as GPUs are added. So scaling TP up makes communication a larger part of each step."}
 />
 
 <MCQ
   id="keep-in-node"
   devices={["phone","desktop"]}
-  prompt={"A team runs TP = 16 across two 8-GPU nodes linked by InfiniBand (about 50 GB/s per GPU) instead of TP = 8 within each node with PP = 2. Decode latency gets worse. Why?"}
-  options={["TP = 16 holds more weight bytes per GPU than TP = 8, so each GPU's share no longer fits well.", "Two all-reduces per block every step now run at InfiniBand speed instead of NVLink speed.", "PP would have needed no communication at all, while TP = 16 needs some.", "CUDA runs kernels at half speed whenever they are part of a cross-node group."]}
-  answer={1}
-  explanation={"Each transformer block in TP ends its attention and MLP with an all-reduce, so an 80-layer model does 160 of them per step, each waiting for the slowest link. Over InfiniBand at about 50 GB/s against 900 GB/s for NVLink, those small, frequent transfers take far longer. TP = 16 actually uses less memory per GPU. PP does communicate, but only one activation hand-off per stage boundary."}
+  prompt={"A team spreads tensor parallelism across two nodes linked by InfiniBand, instead of keeping TP within each node and using pipeline parallelism across them. Decode latency gets worse. Why?"}
+  options={["Spreading TP wider leaves each GPU with more weight bytes, so its share no longer fits well.", "Pipeline parallelism needs no communication at all, while TP across nodes needs some.", "CUDA runs kernels at reduced speed whenever they are part of a cross-node group.", "TP's two all-reduces per block, every step, now cross the much slower link between nodes."]}
+  answer={3}
+  explanation={"TP synchronises inside every block of every step, so it needs the fastest link: NVLink within a node. InfiniBand between nodes is much slower, and every all-reduce waits on it. PP only sends a token's activation at each stage boundary, which suits the slower link."}
 />

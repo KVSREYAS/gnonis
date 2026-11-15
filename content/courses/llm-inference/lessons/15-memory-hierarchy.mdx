@@ -48,17 +48,17 @@ can, and writes results back. The more work per byte loaded, the less it waits.
 
 ## Why weights can't stay on chip
 
-An H100 has about 50 MB of L2 cache and up to 228 KB of shared memory per SM, across 132 SMs. An 8B model in fp16 is 16 GB, more than 300 times the L2 cache.
+A GPU's on-chip memory (registers, shared memory, L2 cache) is fast but tiny: tens of megabytes in total. Even a small language model's weights take gigabytes.
 
-So weights live in HBM, and each decode step streams all of them through the chip once. Nothing useful stays on chip from one step to the next, because the next step needs the same 16 GB again and it can't all fit.
+So weights live in HBM, and each decode step streams all of them through the chip. Nothing useful stays on chip from one step to the next, because the next step needs all the weights again and they can't fit.
 
-That is why batch-1 decode speed is close to HBM bandwidth divided by model bytes, and why the main levers are fewer bytes (quantization) or more tokens per read (batching).
+That is why batch-1 decode speed is set by HBM bandwidth and the model's size in bytes, and why the main levers are fewer bytes (quantization) or more tokens per read (batching, speculative decoding).
 
 <MCQ
   id="where-weights"
   devices={["phone","desktop"]}
-  prompt={"A teammate suggests keeping an 8B fp16 model's weights in the H100's 50 MB L2 cache to speed up decode. What actually happens?"}
-  options={["It works if the weights are loaded once at startup and pinned in L2, so later steps never touch HBM.", "It works for the attention weights, which are the only weights a decode step needs to read.", "It can't fit: 16 GB is about 320x the L2 cache, so every step streams the weights from HBM.", "It makes no difference either way, because decode is limited by tensor-core FLOP/s, not by memory."]}
+  prompt={"A teammate suggests keeping a model's weights in the GPU's L2 cache so decode stops waiting on HBM. What is wrong with the plan?"}
+  options={["L2 is slower than HBM for large reads, so the plan would make decode slower.", "Weights already live in L2; it is the KV cache that is read from HBM each step.", "L2 is tiny next to the weights, so each step still streams nearly all of them from HBM.", "Nothing: L2 holds the weights between steps, which is what FlashAttention does."]}
   answer={2}
-  explanation={"16 GB / 50 MB ≈ 320, so the weights can't fit in any on-chip memory; they live in HBM. Each decode step uses every weight once, so it has to read all of them from HBM each time. At batch 1 that read dominates the step, which is why tokens per second ≈ bandwidth / model bytes. The MLP weights are read too, and decode is memory-bound, not compute-bound."}
+  explanation={"On-chip caches are measured in tens of megabytes, while even a small model's weights take gigabytes. A decode step touches every weight, so nearly all of them must come from HBM each time. L2 is faster than HBM; it is simply far too small. FlashAttention keeps attention tiles on chip, not the weights."}
 />

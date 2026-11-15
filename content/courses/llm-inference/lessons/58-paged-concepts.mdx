@@ -65,19 +65,19 @@ All beams share the prompt, and beams that split from the same parent share thei
 
 ## Worked scenario: choosing a block size
 
-Each sequence wastes only the empty slots in its last block, so the waste depends on the block size and on how long sequences are.
+Each sequence wastes only the empty slots in its last block, so the waste depends on the block size compared with typical sequence length.
 
-- 20-token sequences, block size 16: 2 blocks, 32 slots, 12 empty (38%).
-- Same sequences, block size 128: 1 block, 108 empty (84%).
-- 4,000-token sequences, block size 128: 32 blocks, 96 empty (2%).
+- **Long sequences**: one partly empty block is a tiny share of many full ones, so almost any block size wastes little.
+- **Very short sequences** with large blocks: most of each sequence's single block sits empty, so most of the pool is wasted.
+- **Small blocks** waste little, but cost a longer block table and smaller, more scattered reads for the kernel.
 
-Small blocks cost a longer block table and smaller, more scattered reads. vLLM's default of 16 tokens is a middle ground. Short-sequence workloads gain the most from small blocks.
+vLLM's default block size is a middle ground. Workloads made of many short sequences gain the most from small blocks.
 
 <MCQ
   id="concept-check"
   devices={["phone","desktop"]}
-  prompt={"A service runs thousands of short sequences of about 40 tokens each. Compare block size 16 with block size 128. Which wastes more memory in partly filled blocks, and roughly how much?"}
-  options={["Block size 16 wastes more, because each sequence needs 3 blocks instead of 1, and each block has some waste.", "They waste about the same: paging removes almost all waste, whatever the block size.", "Block size 128 wastes more, but only about 2x more, because both waste at most one block.", "Block size 128: about 88 empty slots each, against 8 with blocks of 16, so about 11x more."]}
+  prompt={"A service runs thousands of very short sequences. Compare a small block size with a large one. Which wastes more memory in partly filled blocks, and why?"}
+  options={["The small block size, because each sequence needs several blocks, and each has some waste.", "They waste about the same: paging removes almost all waste, whatever the block size.", "Neither wastes anything, because the empty slots are given to other sequences.", "The large block size, because most of each short sequence's only block sits empty."]}
   answer={3}
-  explanation={"40 tokens need 3 blocks of 16 (48 slots, 8 empty) or 1 block of 128 (88 empty). 88 / 8 = 11. Waste is limited to the last block, but that block's size matters, especially for short sequences. More blocks means a longer table, not more waste."}
+  explanation={"Each sequence wastes only what is empty in its last block. When sequences are much shorter than a large block, nearly the whole block is empty for every sequence. With small blocks the leftover is small. The empty slots can't be lent out, because a block belongs to one sequence (or one shared prefix)."}
 />

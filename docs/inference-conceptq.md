@@ -6,6 +6,66 @@ Base: `origin/main` at `4d28a80` (after PR #22; PR #19 merged as `0abd72a`). Rou
 
 Follow-up from Sreyas: "just replace them with questions that make me think … something like: some people have this, so what would they require?" and "expand a little bit more, go into a bit more detail", with no analogies. That is round 2, below.
 
+Second follow-up from Sreyas: "I don't want to do calculations … I want to do the concepts. Teach me conceptually. Or if calculation is really needed for this, then correct me." That is round 3, below; it supersedes the calculation-flavoured parts of rounds 1 and 2.
+
+## Round 3 (Sreyas: "no calculations, teach me conceptually")
+
+Base: `origin/main` at `4d28a80`. Applied on top of round 2 (`798cc13`) by `cqgen/apply4.py` (data in `cqgen/q4a.py`–`q4e.py`, `l4.py`, `code4.py`, `cards4.py`, `edits4.py`).
+
+### Counts
+
+- **135 graded items rewritten** so that none needs computing, not even mentally: 89 standalone MCQs, 43 boss MCQ parts, 1 boss Ordering (`ridge#3`, items renamed from sizes to kinds of operation), the Fill `budget-fill`, and the Predict `gemv-ai`.
+- Boss part `row#5` changed type from Predict to MCQ (what a pass emits at the first mismatch, and why later drafts are dropped).
+- Scenarios are kept but described in words ("much more compute, the same bandwidth", "a very long context", "far fewer tokens"). Questions ask why, which direction, what breaks, which approach fits and why, or which claim is wrong. Distractors are the usual misconceptions, and every explanation walks through the reasoning.
+- MCQ answer positions across all 176 MCQs: **44 / 44 / 44 / 44**. The correct option is the strictly longest in 35 of the 132 rewritten MCQs (27%, close to chance), and never more than 1.2x the average of the other three.
+- **9 coding exercises** replaced with mechanism code (same ids): see the table below.
+- **32 teaching cards** from round 2 rewritten around mechanism, trade-offs and failure modes; worked arithmetic removed. **21 original prose sections** rewritten the same way (lessons 12, 13, 16, 18, 21, 22, 26, 37, 38 and concept pages 53, 55, 56, 57, 61), plus one worked example in concept page 64 and lesson 38's key ideas. Real-system facts (papers, engines, flags) stay; magnitudes appear only in passing ("roughly a hundred kilobytes per token").
+- All 41 diagrams kept. `kv-code` moved below the KIVI card in lesson 31 so it is taught before it is tested.
+- Ids and slugs unchanged. Fun ratings reviewed and left as they are: the lessons got easier to read, not more or less fun.
+
+### Items that still carry a number, and why
+
+Graded items (prompt or options):
+
+| Item | Number | Why it stays |
+|---|---|---|
+| `gemv-ai` (Predict, lesson 16) | answer 1: a loaded weight is used for one token at batch 1 | The course must keep one Predict (unit test `covers every original widget type`). The answer is a count you read off the mechanism, not a calculation; the text states the conclusion (about one FLOP per byte, so memory-bound). |
+| `score-count` (lesson 6) | t vs t² | Symbolic growth (one row vs the whole matrix), not arithmetic. |
+| `mask-order` (lesson 7) | rows "add up to 1" | The defining property of softmax that the bug breaks. |
+| Labels such as batch 1, 4-bit, fp8, int4, E4M3, p99, Llama 3 70B, FlashAttention-3 | names | Names of formats, models, percentiles and settings, never operands. |
+
+Interactive (not multiple choice; the widget does the arithmetic, the learner moves a knob and watches what changes):
+
+| Item | Why it stays |
+|---|---|
+| `tune-sampler`, `fit-sixteen`, `llama2-calc`, `blow-the-budget`, `climb-the-roof`, `faster-single-user`, `gap-slider`, `ttft-slider` | Their goals are thresholds the widget checks (e.g. "16 or more sequences fit"); the learner discovers which knob matters (KV dtype, batch, chunk size) rather than computing. Rewriting them means changing the widgets, which is out of scope for a content patch. |
+| `wrong-heads`, `min-vs-max` (Debug) | The prompt quotes the estimator's wrong output; the task is to spot the buggy line (KV heads vs query heads; min vs max), not to compute. |
+
+Concept-page formulas (`bytes per token = 2 × L × n_kv × d_head × bytes`, the 2-FLOPs-per-parameter rule, the speculative tokens-per-pass formula, the step-time formula in lesson 18) stay as reference statements of the mechanism; no question asks you to evaluate them.
+
+### Coding exercises: mechanisms, not formulas
+
+| Id | Lesson | Before | Now |
+|---|---|---|---|
+| `capacity-code` | 13 | `max_sequences` formula | `kv_shape(config)`: read layers, KV heads and head size from a HF config (GQA vs MHA fallback, explicit `head_dim`), and show that parameter count doesn't matter |
+| `intensity-code` | 16 | batch for a target intensity | `batched_matvec`: reorder loops so each weight is read once for the whole batch, with a read counter |
+| `step-code` | 21 | step-time formula | `max_batch(step_time, max_step, limit)`: pick a batch cap from a measured step-time curve and a memory limit |
+| `fits-code` | 26 | `blocks_needed` / `can_admit` (ceil arithmetic) | `append_slot`: the block manager's move — use the last block, take a free block, or return None so the scheduler preempts |
+| `kv-code` | 31 | KV-cache sizing | `quantize_keys`: KIVI-style per-channel key quantization so an outlier channel can't wipe the small ones |
+| `gamma-code` | 38 | best γ from the speedup formula | `accept` and `residual`: the exact speculative-sampling accept rule and the leftover distribution |
+| `tp-code` | 41 | TP/replica plan from GB per GPU | `tp_mlp`: column-then-row split MLP whose shard sum equals the unsplit result (activation inside each shard) |
+| `touched-code` | 43 | expected-experts formula | `route` + `experts_read`: top-k routing and the union of experts a batch must read |
+| `getaway-plan` | 44 (boss) | GB-based split plan | `choose_layout(fits_one_gpu, fits_one_node, need_lower_latency)` → replicas / tp / tp+pp |
+
+Mechanism exercises kept from before: `softmax-code`, `attend-code`, `getaway-scheduler`, `getaway-allocator`, `quant-code`, `getaway-groups`, `combine-code`, `getaway-tiled`, `getaway-verify`, `getaway-metrics`, `sched-code`, `pct-code`, `getaway-sim`. The validator runs every one: solutions pass, starters fail.
+
+### Four example questions
+
+1. `bound-fill` (lesson 4): *A team swaps its GPU for one with much more compute but the same memory bandwidth. For one user, what happens to long-prompt prefill and to token streaming?* Correct: prefill gets faster because it is compute-bound; streaming barely changes because decode is memory-bound. Distractors: both get faster (both are matmuls); only streaming gets faster (prefill reads the prompt from memory); neither changes (one user leaves the GPU idle).
+2. `formula` (lesson 12): *The model with fewer parameters turns out to use more KV cache per token. How can that be?* Correct: cache per token depends on layers, KV heads and head size, so the smaller model likely uses MHA and the bigger one GQA. Distractors: impossible, the measurement is wrong; its larger vocabulary is cached; its queries are cached.
+3. `shard#2` (lesson 44 module test): *A huge model doesn't fit in one node, so it must span two nodes linked by a slower network. Which plan fits best?* Correct: TP inside each node, PP across the nodes. Distractors: TP across both nodes; PP only; two data-parallel copies.
+4. `concept-check@61` (lesson 61): *Same draft model, same acceptance rate: a large speedup at batch 1 but only a small one at a large batch. Why?* Correct: at a large batch there's little spare compute, so verifying extra positions slows each pass. Distractors: acceptance falls with batch; the theory stops holding; the bonus token is dropped.
+
 ## Round 2 (Sreyas: "questions that make me think", deeper text)
 
 Base for this round: `origin/main` at `4d28a80` (PR #19 merged as `0abd72a`, then #21 and #22). Applied on top of round 1 by `cqgen/apply3.py`.

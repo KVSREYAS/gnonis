@@ -43,19 +43,21 @@ Little's law tells you how many sequences you'll hold at once, and so how many K
 
 Source: [vLLM architecture overview](https://docs.vllm.ai/en/latest/design/arch_overview.html)
 
-## A worked capacity plan
+## A capacity plan with Little's law
 
-Little's law links three numbers: requests in the system = arrival rate × time each request spends there.
+Little's law links three things: requests in the system = arrival rate × time each request spends there.
 
-At 5 requests/s and 10 s per request, about 50 requests are in flight at once. If each holds about 2,000 tokens of context in Llama 3 8B (128 KiB per token), that is 50 × 2,000 × 128 KiB ≈ 13 GB of KV cache.
+- If answers get longer, each request stays longer, so more requests are in flight at once.
+- If the server slows down under load, the same thing happens, which is why load feeds on itself.
+- Each request in flight holds a KV cache, so memory needed = requests in flight × cache per request.
 
-The same law works in reverse for planning: measure arrivals and time in system, and you know how many requests (and how much KV cache) must fit at peak.
+The same law works in reverse for planning: measure the arrival rate and the time in system at peak, and you know how many requests, and how much KV cache, must fit at once.
 
 <MCQ
   id="littles-law"
   devices={["phone","desktop"]}
-  prompt={"Traffic stays at 5 requests/s, but answers get twice as long, so each request spends twice as long in the system. What happens to the number of requests held at once, and to the KV memory you need?"}
-  options={["Concurrency doubles (L = λ × W), and KV memory more than doubles.", "Nothing changes, because the arrival rate is the same and that sets concurrency.", "Concurrency halves, because each request now takes twice as long to get through.", "Concurrency doubles, but KV memory stays the same, because the cache is per request."]}
-  answer={0}
-  explanation={"Little's law: L = 5 × 2W, so twice as many requests are in flight. Each of them is also longer, so KV per request grows too. Arrival rate alone does not set concurrency, and more concurrent, longer sequences cannot use the same memory."}
+  prompt={"Traffic stays the same, but answers get longer, so each request spends longer in the system. What happens to the number of requests held at once, and to the KV memory you need?"}
+  options={["Nothing changes, because the arrival rate is the same and that alone sets concurrency.", "Fewer requests are in flight, because each one takes longer to get through.", "More requests are in flight, each with a bigger cache, so KV memory grows even faster.", "More requests are in flight, but KV memory stays the same, because the cache is per request."]}
+  answer={2}
+  explanation={"Little's law: requests in the system = arrival rate × time each spends there. Longer stays mean more requests held at once. Each of them also has a longer context, so total cache grows on both counts."}
 />

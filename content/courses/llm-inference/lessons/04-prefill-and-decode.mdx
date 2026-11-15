@@ -51,10 +51,10 @@ $$T \approx \text{TTFT} + (N - 1) \times \text{TPOT}$$
 <MCQ
   id="total-latency"
   devices={["phone","desktop"]}
-  prompt={"Server A: TTFT 150 ms, TPOT 40 ms. Server B: TTFT 600 ms, TPOT 15 ms. You run code autocomplete (about 5 output tokens) and long chat answers (about 300 tokens). Which server suits which?"}
-  options={["A for both: the lower TTFT always wins.", "B for both: the lower TPOT always wins.", "A for autocomplete, B for long chat answers.", "B for autocomplete, A for long chat answers."]}
-  answer={2}
-  explanation={"Total time ≈ TTFT + (N − 1) × TPOT. With 5 tokens, TTFT is most of the wait: A takes about 0.3 s and B about 0.66 s. With 300 tokens the TPOT term dominates: A takes about 12 s and B about 5 s. Which number matters depends on how long the output is, so neither 'always' answer holds, and the last option has both choices backwards."}
+  prompt={"Server A starts answering quickly but streams each token slowly. Server B takes longer to start but streams fast. You run code autocomplete (a few tokens) and long chat answers. Which server suits which?"}
+  options={["A for both, because a fast start is what users notice, whatever the answer length.", "B for both, because fast streaming always wins once the answer gets going, whatever its length.", "B for autocomplete and A for long answers, because short answers hide a slow start.", "A for autocomplete, where the start dominates; B for long answers, where per-token time does."]}
+  answer={3}
+  explanation={"Total wait ≈ time to first token + (number of tokens × time per token). With only a few tokens, the start dominates, so the quick starter wins. With hundreds of tokens, the per-token time is paid over and over, so the fast streamer wins. Neither number wins for every workload."}
 />
 
 ## Different bottlenecks
@@ -66,21 +66,21 @@ Decode at batch size 1 loads **every weight** to process **one token**. The tens
 units that do matrix multiplication, covered in module 4) sit mostly idle, waiting on memory. That one fact drives batching, quantization and speculative decoding,
 which you will meet later.
 
-## A worked example
+## Why each phase has its own limit
 
-Take an 8B model in fp16 on an H100 (about 989 TFLOP/s of dense fp16 compute and 3.35 TB/s of memory bandwidth).
+Both phases do roughly the same maths per token. What differs is how often each weight is reused once it has been read from memory.
 
-**Prefill of 1,000 tokens**: about 2 × 8 × 10⁹ × 1,000 = 1.6 × 10¹³ FLOPs. Each weight is loaded once and reused for all 1,000 tokens. At a realistic 400 TFLOP/s that is about 40 ms. The time is set by compute.
+**Prefill**: all prompt tokens go through the model together, so each weight is loaded once and used for every prompt token. Lots of maths per byte read, so the tensor cores are the bottleneck. Prefill is **compute-bound**.
 
-**One decode step**: about 2 × 8 × 10⁹ = 1.6 × 10¹⁰ FLOPs, which the tensor cores could finish in well under a millisecond. But the step also reads all 16 GB of weights: 16 GB / 3.35 TB/s ≈ 4.8 ms. The time is set by bandwidth.
+**Decode**: one new token per step, and the step must still read every weight. The tensor cores finish their small share almost at once and then wait for memory. Decode is **memory-bound**.
 
-So a faster chip only helps the phase whose limit it raises: more FLOP/s speeds up prefill, more bandwidth speeds up decode.
+So a faster chip only helps the phase whose limit it raises: more compute speeds up prefill, more memory bandwidth speeds up decode. When you read a GPU spec sheet, ask which phase your users mostly wait on.
 
 <MCQ
   id="bound-fill"
   devices={["phone","desktop"]}
-  prompt={"An 8B model serves one user on an H100. A 4,000-token prompt prefills in about 0.2 s, then tokens stream at about 5 ms each. The team swaps to a GPU with 2x the FLOP/s but the same memory bandwidth. What changes?"}
-  options={["Both get about 2x faster: prefill and decode are both matrix multiplications, and the tensor cores do all of them.", "Prefill gets close to 2x faster, since it is compute-bound; streaming barely changes, since decode is memory-bound.", "Streaming gets 2x faster but prefill doesn't, because prefill is limited by reading the long prompt from memory.", "Neither changes much: with one user the GPU is idle most of the time, so neither FLOP/s nor bandwidth is the limit."]}
+  prompt={"A team swaps its GPU for one with much more compute but the same memory bandwidth. For one user, what happens to long-prompt prefill and to token streaming?"}
+  options={["Both get faster, because prefill and decode are both matrix multiplications run by the same tensor cores.", "Prefill gets faster, because it is compute-bound; streaming barely changes, being memory-bound.", "Streaming gets faster but prefill doesn't, because prefill is limited by reading the long prompt from memory.", "Neither changes, because with a single user the GPU sits mostly idle and no hardware limit is ever reached."]}
   answer={1}
-  explanation={"Prefill: 2 × 8B × 4,000 ≈ 6.4 × 10¹³ FLOPs, and each weight is reused for 4,000 tokens, so time is set by FLOP/s; doubling FLOP/s nearly halves it. Decode at batch 1: each token reads all 16 GB of weights and does only about 1 FLOP per byte, so 16 GB / 3.35 TB/s ≈ 4.8 ms is set by bandwidth, which did not change."}
+  explanation={"Prefill reuses each weight for every prompt token, so it does a lot of maths per byte read and waits on the tensor cores. Decode at batch 1 reads every weight to produce one token and does very little maths per byte, so it waits on memory. More compute helps the phase that waits on compute. The prompt itself is tiny next to the weights."}
 />

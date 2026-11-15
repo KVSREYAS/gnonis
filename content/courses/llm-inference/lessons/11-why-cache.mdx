@@ -50,14 +50,12 @@ sequence being served. The next lesson puts a number on it.
 
 ## What the cache costs per step
 
-The cache removes repeated work, but it isn't free to read. Every decode step reads all model weights plus this sequence's whole KV cache, in every layer.
+The cache removes repeated work, but it isn't free to read. Every decode step reads all the model's weights plus this sequence's whole KV cache, in every layer.
 
-For Llama 3 8B in fp16 (16 GB of weights, 128 KiB per cached token):
+- **Early in a conversation**, the cache is tiny next to the weights, so it barely affects the step.
+- **Deep into a long conversation**, the cache can grow to a large share of the weights' size, and every step must read it all, so steps get noticeably slower.
 
-- At token 100: 16 GB + 13 MB. The cache is negligible.
-- At token 50,000: 16 GB + 6.6 GB, about 40% more bytes, so steps are about 40% slower.
-
-That is why tokens stream more slowly late in a very long answer, and why long-context serving cares so much about bytes per cached token.
+That is why tokens stream more slowly late in a very long answer, and why long-context serving cares so much about bytes per cached token: GQA, fp8 caches and shorter maximum contexts all attack the same cost.
 
 <MCQ
   id="why-not-q"
@@ -71,8 +69,8 @@ That is why tokens stream more slowly late in a very long answer, and why long-c
 <MCQ
   id="what-is-read"
   devices={["phone","desktop"]}
-  prompt={"Two requests run on Llama 3 8B in fp16 at batch 1: one is at token 100, the other at token 30,000. What does each decode step read from GPU memory?"}
-  options={["Each reads only its own KV cache: the weights stay in on-chip memory between steps, so only the cache comes from HBM.", "Both read the same: the cache is allocated for the maximum context up front, so both steps read the full allocation.", "Both read all 16 GB of weights; the KV adds about 13 MB to the first and 3.9 GB to the second.", "The second reads about 300x more, because each step reads the weights once for every cached token."]}
-  answer={2}
-  explanation={"Llama 3 8B stores 128 KiB per token. 100 tokens × 128 KiB ≈ 13 MB; 30,000 × 128 KiB ≈ 3.9 GB. The weights (16 GB) don't fit in on-chip memory, so every step streams them again. So the steps read about 16.0 GB and 19.9 GB: about 25% more bytes, and decode time follows bytes. The cache grows with tokens held, not the maximum context."}
+  prompt={"One user is deep into a very long conversation; another has just started an answer. Same model, batch 1. Why is each step slower for the first user?"}
+  options={["Each step recomputes keys and values for every earlier token, and there are more of them to redo.", "The weights grow as a conversation goes on, because every new token adds a row to the embedding table.", "The MLP mixes every earlier position together, so its work per step grows with the conversation.", "Each step reads the weights plus that user's whole KV cache, and the long conversation's cache is far bigger."]}
+  answer={3}
+  explanation={"With a KV cache nothing old is recomputed, but every step must read all cached keys and values so the new query can attend to them. Weight reads are the same for both users; cache reads grow with context. Late in a long conversation the cache can rival the weights in size. The MLP works on one position at a time."}
 />

@@ -24,10 +24,10 @@ pass, which costs about the same as one decode step because decode is memory-bou
 <MCQ
   id="exactness"
   devices={["phone","desktop"]}
-  prompt={"Compliance requires that outputs follow exactly the same distribution as the approved 70B model. Engineering proposes speculative decoding with a 1B draft. Is that allowed?"}
-  options={["No: every accepted draft token comes from the 1B model, so the output distribution shifts towards the draft's.", "Only with greedy decoding: with sampling, the draft always nudges the output distribution slightly.", "Yes, and any accept rule would do, because the target model checks every token before it is shown.", "Yes, with standard speculative sampling, which provably keeps the target's distribution; lossy accept rules wouldn't."]}
-  answer={3}
-  explanation={"The accept rule is built so that each emitted token has exactly the target's probability: accepted drafts are kept with min(1, p/q), and a rejection resamples from the part of p that q under-covered. The draft only changes how many tokens each target pass yields. Drafts do become final tokens when accepted, which is why the rule matters. Medusa's optional typical acceptance trades this guarantee for speed."}
+  prompt={"Compliance requires that outputs follow exactly the same distribution as the approved large model. Engineering proposes speculative decoding with a small draft model. Is that allowed?"}
+  options={["Yes, with standard speculative sampling, which provably keeps the target's distribution.", "No: every accepted draft token comes from the small model, so the output shifts towards the draft's.", "Only with greedy decoding: with sampling, the draft always nudges the output distribution slightly.", "Yes, and any accept rule would do, because the target model checks every token before it is shown."]}
+  answer={0}
+  explanation={"Speculative sampling accepts a draft token with probability min(1, p/q) and, on rejection, samples from the leftover part of the target's distribution. Together these make every emitted token follow the target's distribution exactly. Looser rules that accept 'close enough' tokens are faster but no longer exact."}
 />
 
 ## The accept rule
@@ -38,17 +38,19 @@ If every draft is accepted, the target's prediction at the last position is stil
 
 ## How many tokens per pass?
 
-If each draft token is accepted with probability alpha (α) and the draft proposes gamma (γ) tokens, the
-expected number of tokens per target pass is (1 - alpha^(gamma+1)) / (1 - alpha). This is the same
-formula as the concept page, with a = α and k = γ. It assumes each draft is accepted independently.
+Verification stops at the first rejection, so a draft only counts if every draft before it was
+accepted. The first draft survives often; the second needs two acceptances in a row; deep drafts need
+long unbroken runs. So each extra draft adds less than the one before, and how much drafting pays off
+depends almost entirely on the acceptance rate, α. The concept page has the exact formula for anyone
+who wants it.
 
 <MCQ
   id="expected-tokens"
   devices={["phone","desktop"]}
-  prompt={"With acceptance rate α and γ drafts, tokens per target pass = (1 − α^(γ+1)) / (1 − α). Why does each extra draft add less than the one before?"}
-  options={["A draft counts only if every earlier draft was accepted, so draft i survives with probability α^i.", "The target model gets slower with each extra draft token, so later drafts cost more time.", "Later drafts are rejected on purpose, to keep their errors out of the output.", "Each extra draft lowers α for all the others, because the draft model gets less certain."]}
-  answer={0}
-  explanation={"The first rejection throws away all drafts after it, so the i-th draft adds α^i expected tokens. With α = 0.8: 0.8, 0.64, 0.51, 0.41 and so on. The formula is a count of tokens, not of time. Nothing is rejected on purpose, and α depends on how well the draft matches the target, not on γ."}
+  prompt={"Adding more draft tokens per pass helps less and less. Why does each extra draft add less than the one before?"}
+  options={["The target model gets slower with each extra draft, so later drafts cost more time.", "Later drafts are rejected on purpose, to keep their errors out of the output.", "A draft only counts if every earlier draft was accepted, so later drafts rarely survive.", "Each extra draft lowers the acceptance rate for all the others, as the draft model gets less sure."]}
+  answer={2}
+  explanation={"Verification stops at the first rejection. So the third draft only matters if the first two were accepted, and each further draft needs one more acceptance in a row. The chance of reaching deep drafts falls fast, while each draft still costs drafting time."}
 />
 
 ## When it backfires
@@ -66,10 +68,10 @@ All of these numbers are for small batches. The speedup comes from compute that 
 <MCQ
   id="when-bad"
   devices={["phone","desktop"]}
-  prompt={"An offline job runs at batch 256 and is already compute-bound. Someone turns on speculative decoding with γ = 5. What do you predict?"}
-  options={["Throughput rises about 3x, as the papers report, because each pass now yields several tokens.", "Throughput likely drops: checking 6 positions per sequence needs compute the GPU doesn't have spare.", "No change: verification happens in one pass, so it costs the same as a normal step at any batch.", "Throughput rises, because the small draft model takes over most of the work from the big one."]}
-  answer={1}
-  explanation={"Speculation trades spare compute for fewer memory-bound steps. At batch 1 the GPU is mostly idle during a step, so checking 6 positions costs about the same as 1. At batch 256 the step is already compute-bound, so 6 positions per sequence costs close to 6x the compute, and rejected drafts are wasted work. The papers' 2–3x numbers are for small batches."}
+  prompt={"An offline job runs at a large batch and is already compute-bound. Someone turns on speculative decoding. What do you predict?"}
+  options={["Throughput rises a lot, as the papers report, because each pass now yields several tokens.", "No change: verification happens in one pass, so it costs the same as a normal step at any batch.", "Throughput likely drops: checking several positions per sequence needs compute the GPU doesn't have spare.", "Throughput rises, because the small draft model takes over most of the work from the big one."]}
+  answer={2}
+  explanation={"Speculative decoding spends spare compute to save weight reads. At batch 1 there is plenty of spare compute. At a large, compute-bound batch there is none, so checking extra positions makes each step longer, and rejected drafts are pure waste."}
 />
 
 ## Variants

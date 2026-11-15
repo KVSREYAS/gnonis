@@ -42,10 +42,10 @@ Spaces matter too: " cat" (with a leading space) and "cat" are usually different
 <MCQ
   id="what-model-sees"
   devices={["phone","desktop"]}
-  prompt={"A user asks a chatbot how many times the letter r appears in \"strawberry\". It spells the word perfectly but answers 2. Which explanation fits how the model works?"}
-  options={["The sampler's temperature was set high, so when the model reached the digit it drew a less likely number instead of the 3 it had worked out.", "The KV cache stores one entry per distinct letter, so the repeated r's share one entry and the model sees fewer of them than the word has.", "The tokenizer drops repeated letters to save tokens, so the text the model receives is closer to \"strawbery\" than to the real spelling.", "The model receives ids for chunks of several letters, so it must recall each chunk's spelling rather than look at the letters."]}
-  answer={3}
-  explanation={"Step 1: the tokenizer turns the text into ids for chunks such as a few letters each. Step 2: the model only ever sees those ids (and their embedding vectors), so the letters inside a chunk are not visible to it. Spelling the word works because it has learned which letters each chunk stands for, but counting needs it to track letters it never directly sees, which is error-prone. Temperature changes randomness, not what the input is. The KV cache stores per-token keys and values, not letters, and tokenizers do not delete letters."}
+  prompt={"A user asks a chatbot how many r's are in \"strawberry\". It spells the word perfectly but gets the count wrong. Which explanation fits how the model works?"}
+  options={["The temperature was set high, so it sampled an unlikely count even though it had worked out the right one.", "The KV cache stores one entry per distinct letter, so repeated letters share an entry and some go missing.", "It receives ids for multi-letter chunks, so it must recall each chunk's letters rather than see them.", "The tokenizer drops repeated letters to save tokens, so the model never receives the full spelling."]}
+  answer={2}
+  explanation={"The tokenizer turns text into ids for chunks, often several letters long, and the model only ever sees those ids. It has learned how each chunk is spelled, which is why spelling works, but counting letters means tracking characters it never directly sees. Temperature changes randomness, not the input. The KV cache holds per-token keys and values, not letters, and tokenizers don't delete letters."}
 />
 
 ## Where the vocabulary comes from
@@ -75,8 +75,8 @@ non-English languages tokenize less efficiently, sometimes 2 to 3 times worse.
 <MCQ
   id="tokens-per-essay"
   devices={["phone","desktop"]}
-  prompt={"You send the same 1,200-word essay to a model twice: once in English, once translated into a language the tokenizer handles poorly. What changes in the second request, and why?"}
-  options={["It may need 2 to 3 times more tokens, so prefill takes longer, the KV cache is bigger and a per-token API bills more.", "Nothing. The model reads meaning, so cost depends on words, not tokens.", "It needs fewer tokens, because rare words are stored as single whole-word tokens.", "Only the output gets slower. Prompt length has no effect on cost."]}
-  answer={0}
-  explanation={"Every cost is counted in tokens, and many non-English languages (and code) tokenize 2 to 3 times worse than English. More prompt tokens means more prefill work, more KV cache and a bigger bill. The model never sees words, only token ids, so 'cost depends on words' is wrong. Rare words are split into several pieces, not stored whole. And prompt length drives prefill time and memory, so it does affect cost."}
+  prompt={"You send the same essay twice: once in English, once translated into a language the tokenizer handles poorly. What changes for the second request, and why?"}
+  options={["Nothing: the model reads meaning, so the cost follows the number of words, not the number of tokens.", "It needs fewer tokens, because words the tokenizer doesn't know are stored as single whole-word tokens.", "It needs many more tokens, so prefill takes longer, the KV cache is bigger and a per-token bill is higher.", "Only the output gets slower: the prompt is read in one pass, so its length has no effect on cost."]}
+  answer={2}
+  explanation={"Every cost in serving is counted in tokens. A tokenizer trained mostly on English splits other languages into smaller pieces, so the same meaning becomes more tokens. More prompt tokens means more prefill work, more KV entries and a bigger bill. Unknown words are split into more pieces, not fewer, and prefill work grows with prompt length even though it happens in one pass."}
 />

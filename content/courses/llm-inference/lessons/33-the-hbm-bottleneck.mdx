@@ -43,19 +43,19 @@ Dao et al. counted HBM reads and writes. For standard attention they grow like N
 
 Source: [FlashAttention](https://arxiv.org/abs/2205.14135)
 
-## The numbers at 16k tokens
+## Why the score matrices dominate traffic
 
-At N = 16,384 tokens, one head's score matrix has N² ≈ 268 million entries. In fp16 that is 512 MiB for S and another 512 MiB for P, per head, per layer.
+At long contexts, one head's score matrix S is enormous: it has a row and a column for every token. The probability matrix P after softmax is just as big.
 
-Naive attention writes S, reads it back for the mask and softmax, writes P, and reads it again for the multiplication by V. Each of these passes moves hundreds of MB while doing only a few operations per element, so the work is memory-bound.
+Naive attention writes S to HBM, reads it back for the mask and softmax, writes P, and reads P again for the multiplication by V. Each of these passes moves a huge matrix while doing only a few operations per element, so the work is memory-bound.
 
-The output O is only N × d = 16,384 × 128 values, 4 MiB in fp16. Almost all of the traffic is intermediate data that is thrown away.
+Meanwhile the output O has only one row per token, a tiny fraction of the size of S. Almost all of the traffic is intermediate data that is thrown away. FlashAttention's whole idea is to stop that intermediate data from ever leaving the chip.
 
 <MCQ
   id="slow-why"
   devices={["phone","desktop"]}
-  prompt={"Profiling naive attention at a 16k-token context: the two matmul kernels run at high FLOP/s, but most of the time goes to the mask and softmax kernels, which run at very low FLOP/s. Why?"}
-  options={["They read and write the N × N matrices to HBM while doing little maths per element: memory-bound.", "Softmax and masking need exp and comparisons, which are much slower on a GPU than multiply-adds.", "The mask kernel computes extra scores for all the future tokens, which doubles the work at long context.", "In naive implementations the softmax runs on the CPU, so the data crosses PCIe twice."]}
+  prompt={"Profiling naive attention at long context: the two matmul kernels run near peak FLOP/s, but most of the time goes to the mask and softmax kernels, which barely use the tensor cores. Why?"}
+  options={["They move the huge score matrices to and from HBM, doing little maths per element.", "Softmax and masking need exp and comparisons, which are far slower on a GPU than multiply-adds.", "The mask kernel computes extra scores for all the future tokens, which doubles the work at long context.", "In naive implementations the softmax runs on the CPU, so the data has to cross PCIe twice per layer."]}
   answer={0}
-  explanation={"At N = 16k the score matrix has 268 million entries per head. Mask and softmax each read and write all of them from HBM but do only a handful of operations per element, so their intensity is tiny and HBM bandwidth sets their time. exp is fast on GPUs. The fix is to keep scores on chip, which is what FlashAttention does."}
+  explanation={"The score matrix grows with the square of the context. The mask and softmax kernels each read it from HBM and write it back, doing only a few operations per element. That is very low arithmetic intensity, so they wait on memory. Fusing everything into one kernel that keeps scores on chip is FlashAttention's fix."}
 />

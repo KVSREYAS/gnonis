@@ -27,15 +27,11 @@ Per token, every layer stores one key and one value vector for each KV head:
 
 bytes per token = 2 x L x n_kv x d_head x bytes per number
 
-The 2 is for K and V.
+The 2 is for K and V. Query heads, the MLP and the vocabulary don't appear, which is why parameter
+count is a poor guide to cache size.
 
-**Llama-3-8B** in FP16 (2 bytes): L = 32, n_kv = 8, d_head = 128.
-2 x 32 x 8 x 128 x 2 = 131,072 bytes = **128 KiB per token**.
-
-- one 8K-token request: 8,192 x 128 KiB = 1 GiB
-- 32 such requests: 32 GiB
-
-For comparison, the weights are about 16 GB. The cache can easily be larger than the model.
+For **Llama-3-8B** in FP16 this is roughly a hundred kilobytes per token, so one long request needs
+around a gigabyte and a few dozen of them can need more memory than the weights themselves.
 
 ![KV size formula with each factor](/diagrams/llm-inference/03-kv-cache/02-sizing-the-cache.png)
 
@@ -43,31 +39,32 @@ For comparison, the weights are about 16 GB. The cache can easily be larger than
 
 A GPU's main memory (HBM, high-bandwidth memory, covered in module 4) holds three things:
 
-1. **weights**: fixed, e.g. 16 GB for 8B parameters in FP16
-2. **activations and workspace**: temporary buffers, a few GB
+1. **weights**: fixed, set by parameter count and bytes per parameter
+2. **activations and workspace**: temporary buffers, usually small
 3. **KV cache**: everything left
 
-On an 80 GB GPU: 80 - 16 - about 4 = about 60 GB for KV. At 128 KiB (131,072 bytes) per token that is 60 × 10^9 / 131,072 ≈ 458,000 tokens of cache, shared by all active requests: about 55 requests at 8K tokens, or 13 at 32K.
-
-That number sets the **maximum batch size**, and batch size sets throughput. So every technique that shrinks KV (GQA, KV quantization, paging to waste less) turns directly into more concurrent users.
+What is left, divided by the cache each request needs, sets the **maximum batch size**, and batch
+size sets throughput. So every technique that shrinks KV (GQA, KV quantization, paging to waste less)
+turns directly into more concurrent users.
 
 ![HBM split into weights, activations and KV](/diagrams/llm-inference/03-kv-cache/03-the-memory-budget.png)
 
 ## Worked scenario: a capacity plan
 
-Llama 3 8B in fp16 on one 80 GB GPU, at 90% memory use: 72 GB usable, minus 16 GB of weights, leaves about 56 GB for the cache (a few GB more go to activations in practice).
+Every capacity question has the same shape: free memory for the cache divided by the cache each sequence needs.
 
-- 8k-token conversations at 128 KiB per token: about 1.07 GB each, so about 52 at once.
-- Move the cache to fp8: about 0.54 GB each, so about 104.
-- Raise the context to 32k instead: about 4.3 GB each in fp16, so about 13.
+- **Start**: GPU memory minus the weights minus working space gives the KV pool.
+- **Store the cache in fp8**: each token takes half the bytes, so about twice as many sequences fit.
+- **Raise the maximum context** for users who really use it: each sequence needs more cache, so fewer fit.
+- **Quantize the weights**: the pool grows by the freed memory, but each sequence costs the same, so the gain is smaller than the weight saving suggests.
 
-The cache depends on total tokens held, so 13 users at 32k or 52 users at 8k take the same memory. Every capacity question reduces to: free memory divided by bytes per sequence.
+The cache depends on total tokens held, not on how many users hold them: a few very long conversations can take the same memory as many short ones.
 
 <MCQ
   id="concept-check"
   devices={["phone","desktop"]}
-  prompt={"Same model: which needs more KV cache memory, 32 users with 1,000-token chats or 1 user with a 32,000-token document?"}
-  options={["About the same: the cache depends on the total tokens held, not on how many users hold them.", "The 32 users, because each request has a large fixed cost.", "The single user, because long sequences store a bigger entry per token.", "Neither: the cache size depends only on the model."]}
-  answer={0}
-  explanation={"Bytes per token is fixed by the model: 2 × L × n_kv × d_head × bytes. Both cases hold 32,000 tokens, so both need about 32,000 × 128 KiB ≈ 4 GiB for Llama 3 8B. There is no large fixed cost per request, a token's entry does not grow with sequence length, and the cache grows with tokens, not just with the model."}
+  prompt={"Same model and same total number of tokens: many users with short chats, or one user with a single very long document. Which needs more KV cache memory, and which is slower per decode step for that user?"}
+  options={["The many users need far more, because each user keeps a full-size cache whatever their conversation's length.", "The single document needs far more, because attention stores a score for every pair of tokens in the document.", "About the same cache, since it is counted per token; the long document's steps are slower, as each reads its whole cache.", "The cache is about the same, and per-step speed is the same too, because the same tokens are read."]}
+  answer={2}
+  explanation={"Cache memory is per token, so equal total tokens means about equal memory. Speed per step differs: one step for the long-document user reads that user's whole cache, while each short-chat user's step reads only a short cache, and a batched step shares the weight reads among all of them. Scores are never stored."}
 />

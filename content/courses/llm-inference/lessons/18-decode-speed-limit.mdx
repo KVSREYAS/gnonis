@@ -15,16 +15,16 @@ keyIdeas:
     proportionally.
 ---
 
-## Back-of-envelope decode
+## The decode speed limit
 
-At batch 1 every decode step reads all the weights once. If memory is the bottleneck (it is), the
-step time is about:
+At batch 1 every decode step reads all the weights once, and memory is the bottleneck. So the step
+time is set by how many bytes must be read divided by how fast memory delivers them:
 
 $$t_{step} \approx \frac{\text{weight bytes} + \text{KV bytes}}{BW}$$
 
-For an 8B fp16 model on an H100, $16\text{ GB} / 3.35\text{ TB/s} \approx 4.8$ ms per token,
-which is about **209 tokens/s**. That is the ceiling. Kernel launch gaps, the KV reads and
-sampling all eat into it.
+This gives a ceiling, not a prediction. For an 8B fp16 model on an H100 it is a few milliseconds per
+token, on the order of two hundred tokens per second. Kernel launch gaps, the KV reads and sampling all
+eat into it. Fewer bytes or more bandwidth raise the ceiling; more FLOP/s do not.
 
 ![Bar chart of batch-1 decode ceilings on A100 and H100 at fp16, int8 and int4](/diagrams/llm-inference/04-gpu-memory-roofline/04-decode-speed-limit.png)
 
@@ -41,10 +41,10 @@ The share of the bandwidth ceiling you actually reach is called **MBU** (memory 
 <MCQ
   id="a100-limit"
   devices={["phone","desktop"]}
-  prompt={"You move an 8B fp16 model's batch-1 decode from an H100 (989 TFLOP/s, 3.35 TB/s) to an A100 (312 TFLOP/s, 2.0 TB/s). About how much slower does it get?"}
-  options={["About 3.2x slower, the FLOP/s ratio.", "No slower: an 8B model is small for both GPUs.", "About 5x slower: both ratios multiplied.", "About 1.7x slower, the bandwidth ratio: roughly 209 → 125 tokens/s."]}
-  answer={3}
-  explanation={"At batch 1 each step reads all 16 GB of weights and does very little maths, so speed ≈ bandwidth / bytes: 3.35 TB/s gives about 209 tokens/s and 2.0 TB/s about 125. The FLOP/s gap barely matters while you are memory-bound. Model size does matter, because it sets the bytes read. And the two limits never multiply: the slower one sets the step time."}
+  prompt={"You move batch-1 decode of the same model from an H100 to an older A100, which has much less compute and noticeably less bandwidth. What sets the slowdown?"}
+  options={["The bandwidth gap, because batch-1 decode is memory-bound; the compute gap barely matters.", "The compute gap, because decode's matmuls run on tensor cores, which the A100 has fewer of.", "Both gaps together, because time depends on FLOPs and bytes added up.", "Neither: the same model runs at the same speed on any GPU it fits on."]}
+  answer={0}
+  explanation={"A memory-bound kernel runs at about bandwidth times intensity. Batch-1 decode is far left of either GPU's ridge, so its speed follows bandwidth, and the much larger gap in compute never shows up. Prefill, which is compute-bound, would feel the compute gap."}
 />
 
 ## Pulling the levers

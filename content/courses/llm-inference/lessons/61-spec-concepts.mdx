@@ -35,17 +35,13 @@ This rule is proven to give exactly the target model's output distribution. Qual
 
 ## Expected speedup
 
-Let a be the chance each draft token is accepted, and assume independence. Expected tokens per target pass with k drafts:
+A draft token only counts if every draft before it was accepted, so the expected tokens per target pass
+grow with the acceptance rate a and the number of drafts k, but each extra draft adds less. Assuming
+each draft is accepted independently, the expected count is (1 - a^(k+1)) / (1 - a).
 
-(1 - a^(k+1)) / (1 - a)
-
-| a | k = 4 |
-| --- | --- |
-| 0.6 | 2.3 tokens |
-| 0.8 | 3.4 tokens |
-| 0.9 | 4.1 tokens |
-
-Real speedup is lower, because the draft costs time and the verify pass is slightly slower than a single step. Typical wins are 2-3 times. Batching reduces the benefit, since large batches already use the spare compute.
+Real speedup is lower, because the draft costs time and the verify pass is slightly slower than a
+single step. Typical wins are 2-3 times at small batch. Batching reduces the benefit, since large
+batches already use the spare compute.
 
 ![Expected accepted tokens vs acceptance rate](/diagrams/llm-inference/09-speculative-decoding/02-acceptance-and-speedup.png)
 
@@ -60,19 +56,19 @@ Several of these propose a **tree** of candidates, verified in one pass with a s
 
 ## Worked scenario: tuning speculation
 
-A coding assistant runs a 70B target with a 1B draft, at batch 1. Measured α ≈ 0.8.
+A coding assistant runs a large target with a small draft model at batch 1. Three things set the real speedup:
 
-- With γ = 4, expected tokens per pass = (1 − 0.8⁵) / (1 − 0.8) ≈ 3.4.
-- Drafting 4 tokens costs 4 small-model steps. If each costs about 5% of a target step, that adds about 20%.
-- The verify pass costs a little more than a normal step, say 10% more.
+- **Acceptance**: how often the draft guesses what the target would pick. Code that repeats its context, or a draft distilled on the target, raises it.
+- **Draft length**: a draft only counts if all earlier ones were accepted, so long drafts help when acceptance is high and waste time when it is low.
+- **Costs per pass**: the draft model's own steps, and a verify pass that is a little slower than a normal step.
 
-Speedup ≈ 3.4 / (1 + 0.2 + 0.1) ≈ 2.6x.
+So the measured speedup is always below the tokens-per-pass figure. Tune the draft length on real traffic, and turn speculation down as the batch grows, because spare compute disappears.
 
 <MCQ
   id="concept-check"
   devices={["phone","desktop"]}
-  prompt={"With α = 0.8 and γ = 4, theory gives about 3.4 tokens per target pass. A team measures a 2.5x speedup at batch 1 but only 1.3x at batch 64. Why the drop?"}
-  options={["α falls at larger batches, because the draft model sees fewer tokens of each conversation.", "At batch 64 there is less spare compute, so checking 5 positions per sequence slows each pass.", "The tokens-per-pass formula stops holding above batch 1, so the 3.4 is wrong there.", "The bonus token is dropped at larger batches, so each pass yields one token fewer."]}
-  answer={1}
-  explanation={"Tokens per pass depends only on α and γ, so it stays about 3.4. What changes is the cost of a pass: at batch 1 checking 5 positions costs about the same as 1, but at batch 64 the step already does more compute, so 5x the positions per sequence adds real time. The speedup is tokens per pass divided by the relative cost of a pass."}
+  prompt={"Same draft model, same acceptance rate. A team measures a large speedup at batch 1 but only a small one at a large batch. Why the drop?"}
+  options={["At a large batch there's little spare compute, so verifying extra positions slows each pass.", "Acceptance falls at larger batches, because the draft sees less of each conversation.", "The theory of tokens per pass stops holding above batch 1, so the estimate is wrong there.", "The target's own token at the end of each pass is dropped at larger batches to save time."]}
+  answer={0}
+  explanation={"Acceptance doesn't depend on batch size, so each pass still yields the same tokens on average. What changes is the cost: at batch 1 verifying extra positions is nearly free because the GPU waits on memory; at a large batch the GPU is busier, so the extra positions add real time."}
 />

@@ -7,26 +7,31 @@ fun: 5
 missionIntro: Expected tokens per pass is only half the story. The draft model
   isn't free, so count its cost too.
 keyIdeas:
-  - Expected tokens per target pass = (1 − α^(γ+1)) / (1 − α).
-  - Wall-clock speedup = that / (γc + 1), where c is the draft's cost relative
-    to the target.
+  - A draft counts only if every earlier draft was accepted, so each extra
+    draft adds less, and less still when acceptance (α) is low.
+  - Drafting and the slightly slower verify pass cost time, so the real
+    speedup is always below the tokens per pass.
+  - The accept rule, min(1, p / q) plus resampling from what the draft
+    under-proposed, keeps the output exactly the target's.
   - "α is higher when the draft matches the target well: low temperature,
     repetitive text, a distilled draft."
 ---
 
 ## Tokens per pass
 
-If each drafted token is accepted with probability α and you draft γ, the target emits on average (1 − α^(γ+1)) / (1 − α) tokens per pass, counting the correction token.
+High acceptance means long runs of accepted drafts, so each target pass yields several tokens. Low
+acceptance means most passes stop early, often after the first draft, and the pass yields little more
+than a normal step. Counting the correction token, every pass yields at least one token.
 
 ![Expected tokens per target pass against γ for α = 0.6, 0.8 and 0.9](/diagrams/llm-inference/09-speculative-decoding/02-acceptance-and-speedup.png)
 
 <MCQ
   id="low-alpha"
   devices={["phone","desktop"]}
-  prompt={"Your draft model is a poor match and α drops from 0.8 to 0.6. What should you do with γ, the number of drafts per pass?"}
-  options={["Raise it: more drafts per pass make up for each one's lower acceptance.", "Lower it: late drafts rarely survive (0.6⁴ ≈ 0.13) but still cost drafting time.", "Keep it the same: γ has no effect on speed once α is known.", "Raise it, or else the output distribution will drift towards the draft."]}
-  answer={1}
-  explanation={"Each extra draft adds α^i tokens but always costs one more draft step. When α falls, the gain from late drafts shrinks faster than their cost, so the best γ gets smaller. More drafts cannot fix a poor match, γ clearly affects speed, and the accept rule keeps the output distribution exact at any γ."}
+  prompt={"Your draft model is a poor match, and its acceptance rate falls. What should you do with the number of drafts per pass?"}
+  options={["Raise it: more drafts per pass make up for each one's lower acceptance.", "Keep it the same: the number of drafts has no effect on speed once acceptance is known.", "Lower it: late drafts now rarely survive, but they still cost drafting time.", "Raise it, or else the output distribution will drift towards the draft."]}
+  answer={2}
+  explanation={"A deep draft only pays off if all earlier ones are accepted. When acceptance falls, the chance of reaching deep drafts falls much faster, so drafting them is mostly wasted. A shorter draft keeps the useful part. Output quality is unaffected either way; the accept rule guarantees it."}
 />
 
 ## What controls α
@@ -42,37 +47,44 @@ The draft must use the same tokenizer as the target, or its tokens can't be chec
 <MCQ
   id="raise-alpha"
   devices={["phone","desktop"]}
-  prompt={"Your 1B draft for a 70B chat model gets an acceptance rate α of about 0.5 on your traffic. Which change is most likely to raise α?"}
-  options={["Raise γ, the number of drafts per pass, so more of the target's choices are covered by a guess.", "Fine-tune (distil) the draft on the 70B model's own outputs for your kind of traffic.", "Raise the sampling temperature, so the target spreads its probability and accepts more drafts.", "Swap in a stronger draft from a different family, even though its tokenizer splits text differently."]}
-  answer={1}
-  explanation={"α measures how often the draft predicts what the target would. Training the draft to imitate the target on your traffic directly raises that agreement. Raising γ changes how many guesses are tried, not how good each is. Higher temperature makes both models less predictable. A draft with a different tokenizer produces different tokens, so standard verification can't even compare them."}
+  prompt={"Your small draft for a large chat model gets a mediocre acceptance rate on your traffic. Which change is most likely to raise it?"}
+  options={["Draft more tokens per pass, so more of the target's choices are covered by a guess.", "Raise the sampling temperature, so the target spreads its probability and accepts more drafts.", "Swap in a stronger draft from a different family, even though its tokenizer splits text differently.", "Fine-tune (distil) the draft on the large model's own outputs for your kind of traffic."]}
+  answer={3}
+  explanation={"Acceptance measures how often the draft predicts what the target would choose. Training the draft on the target's own outputs, on your traffic, teaches it exactly that. Drafting more tokens doesn't make each one likelier to match, and a different tokenizer breaks token-by-token checking."}
 />
 
 ## The cost of drafting
 
-Drafting γ tokens costs γc target-passes of time, where c is the time of one draft step divided by the time of one target step. One iteration therefore costs γc + 1 target-passes and yields (1 − α^(γ+1)) / (1 − α) tokens. The speedup is the ratio of the two. Larger γ helps only while α^γ is still meaningful.
+Drafting isn't free. Every draft token costs a step of the draft model, and the verify pass, which
+checks several positions at once, is a little slower than a normal one-token step. So the real speedup
+is always below the number of tokens per pass, and drafting more tokens only helps while late drafts
+still have a fair chance of surviving.
 
 **Distilling** a draft means training the small model to imitate the target's output probabilities. Its guesses then agree with the target more often, which raises α.
+
+The accept rule from the last lesson is what keeps all of this exact: a draft is accepted with
+probability min(1, p / q), and a rejected one is replaced by a sample from what the draft
+under-proposed. The exercise below builds both pieces.
 
 Source: [Leviathan et al. 2023](https://arxiv.org/abs/2211.17192)
 
 <MCQ
   id="speedup"
   devices={["phone","desktop"]}
-  prompt={"α = 0.8 and γ = 4 give about 3.4 tokens per target pass, but the measured speedup is about 2.2x. Why lower?"}
-  options={["Rejected tokens are shown to the user and then deleted, which takes extra time.", "The output distribution changed, so some accepted tokens have to be regenerated.", "The target model runs γ times per iteration, once to check each draft.", "Drafting takes time too, and the verify pass is a little slower than a normal step."]}
-  answer={3}
-  explanation={"Speedup = tokens per pass / time per iteration, and an iteration costs γ × c draft steps plus one target pass. With c ≈ 0.13 that is about 3.4 / 1.5 ≈ 2.2. Rejected drafts are never shown, the distribution is unchanged, and the target runs once per iteration."}
+  prompt={"Theory says each target pass should yield several tokens on average, but the measured speedup is clearly smaller than that number. Why?"}
+  options={["Drafting takes time too, and the verify pass is a bit slower than a normal step.", "Rejected tokens are shown to the user and then deleted, which takes extra time.", "The output distribution changed, so some accepted tokens have to be regenerated.", "The target model runs once per draft token, to check each draft separately."]}
+  answer={0}
+  explanation={"Tokens per pass counts only output. Each pass also pays for running the draft model several times and for verifying several positions, which is slightly slower than a one-token step. Rejected drafts are never shown, and verification is one pass over all drafts."}
 />
 
 <Code
   id="gamma-code"
   devices={["desktop"]}
   language="python"
-  prompt={"Write best_gamma(alpha, c, max_gamma=10), which returns the γ in 1..max_gamma that maximises speedup = (1 − α^(γ+1)) / ((1 − α)(γc + 1)). On ties, return the smallest γ."}
-  starter={"def best_gamma(alpha, c, max_gamma=10):\n    return 1\n"}
-  tests={"def test_good_draft():\n    assert best_gamma(0.8, 0.05) == 8\n\ndef test_poor_draft():\n    assert best_gamma(0.5, 0.1) == 2\n\ndef test_cheap_great_draft():\n    assert best_gamma(0.95, 0.01) == 10\n"}
-  solution={"def best_gamma(alpha, c, max_gamma=10):\n    def s(g):\n        return (1 - alpha ** (g + 1)) / ((1 - alpha) * (g * c + 1))\n    return max(range(1, max_gamma + 1), key=lambda g: (s(g), -g))\n"}
-  hints={["Try every γ and keep the best.","max with a key works well here."]}
-  explanation="Production engines tune γ (num_speculative_tokens) this way, often adaptively."
+  prompt={"Speculative sampling keeps the target's distribution exactly. For one draft token, the target gives it probability p and the draft gave it q. Write accept(p, q, u): accept when u < min(1, p / q), where u is a uniform random number in [0, 1). If a draft is rejected, the replacement is sampled from residual(p_dist, q_dist): max(0, p_i − q_i) for each token, rescaled to add up to 1. Write both."}
+  starter={"def accept(p, q, u):\n    # Greedy habit: accept only if the target likes it at least as much.\n    return p >= q\n\ndef residual(p_dist, q_dist):\n    # Resample from the target as-is.\n    return list(p_dist)\n"}
+  tests={"def close(a, b):\n    return all(abs(x - y) < 1e-9 for x, y in zip(a, b))\n\ndef test_target_likes_it_more_always_accept():\n    assert accept(0.5, 0.25, 0.99) is True\n\ndef test_partial_acceptance():\n    \"\"\"target likes it a quarter as much as the draft did\"\"\"\n    assert accept(0.1, 0.4, 0.2) is True\n    assert accept(0.1, 0.4, 0.3) is False\n\ndef test_residual_keeps_only_what_draft_undersold():\n    assert close(residual([0.5, 0.3, 0.2], [0.2, 0.6, 0.2]), [1.0, 0.0, 0.0])\n\ndef test_residual_rescales():\n    assert close(residual([0.4, 0.4, 0.2], [0.2, 0.2, 0.6]), [0.5, 0.5, 0.0])\n"}
+  solution={"def accept(p, q, u):\n    return u < min(1.0, p / q)\n\ndef residual(p_dist, q_dist):\n    r = [max(0.0, p - q) for p, q in zip(p_dist, q_dist)]\n    total = sum(r)\n    return [x / total for x in r]\n"}
+  hints={["When p >= q, the ratio is at least 1, so every u is accepted.", "Sum the clipped differences, then divide each by the sum."]}
+  explanation={"Tokens the draft over-proposes are accepted only part of the time, and on rejection the replacement comes only from tokens the draft under-proposed. The two pieces add up to exactly the target's distribution, which is why lossless speculative decoding is allowed even where outputs must match the approved model."}
 />

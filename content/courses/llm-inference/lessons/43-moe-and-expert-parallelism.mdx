@@ -23,10 +23,10 @@ A router (a small linear layer with a softmax) scores every expert for each toke
 <MCQ
   id="mixtral-mem"
   devices={["phone","desktop"]}
-  prompt={"Mixtral 8x7B has about 47B parameters, about 13B of them active per token. At batch 1 it needs memory like a ___ model and decodes at a speed like a ___ model."}
-  options={["13B for both.", "47B for memory, about 13B for speed.", "47B for both.", "13B for memory, 47B for speed."]}
-  answer={1}
-  explanation={"Every expert must be stored, because any token may pick any expert: memory follows the total. At batch 1 each step reads only the active experts plus the shared layers: speed follows the active count. You need memory for the total and bandwidth for the active."}
+  prompt={"Mixtral has many experts per layer, but each token uses only a couple of them. At batch 1, its memory needs are like a model of which size, and its decode speed like which?"}
+  options={["Both like its active size, because only the chosen experts are ever loaded.", "Both like its total size, because every expert is read at every step.", "Memory like its total size; speed like its much smaller active size.", "Memory like its active size, because inactive experts can stay on disk, and speed like its total size."]}
+  answer={2}
+  explanation={"Every expert must sit in memory, because any token might pick any expert. But at batch 1 only the chosen experts' weights are read for each token, so decode, which is memory-bound, moves far fewer bytes than a dense model of the same total size."}
 />
 
 ## MoE at today's scale
@@ -42,10 +42,10 @@ Sources: [Mixtral](https://arxiv.org/abs/2401.04088), [DeepSeek-V3](https://arxi
 <MCQ
   id="moe-saves"
   devices={["phone","desktop"]}
-  prompt={"You compare Mixtral 8x7B (about 47B parameters, about 13B active per token) with a dense 47B model on the same GPUs at batch 1. Which costs are about the same, and which differ?"}
-  options={["Both memory and per-token cost are about 3.6x lower for Mixtral, because only active experts are loaded.", "Weight memory is about the same; per-token FLOPs and bytes read are about 3.6x lower for Mixtral.", "Memory is about 3.6x lower for Mixtral, but per-token cost is the same as the dense model's.", "Everything is about the same, because both models have about 47B parameters in total."]}
-  answer={1}
-  explanation={"All experts must sit in memory, because any token may pick any of them, so memory follows the 47B total. Each token runs only 2 of 8 experts per layer, about 13B parameters, so at batch 1 it does and reads about 47 / 13 ≈ 3.6x less. Larger batches touch more experts, which erodes that saving."}
+  prompt={"You compare Mixtral with a dense model of the same total parameter count, on the same GPUs at batch 1. Which costs are about the same, and which differ?"}
+  options={["Both memory and per-token cost are much lower for Mixtral, because only active experts are loaded.", "Memory is much lower for Mixtral, but per-token cost is the same as the dense model's.", "Weight memory is about the same; per-token FLOPs and bytes read are much lower for Mixtral.", "Everything is about the same, because both models have the same number of parameters."]}
+  answer={2}
+  explanation={"Total parameters set memory, and both models must keep all of theirs resident. Active parameters set per-token work: Mixtral computes and reads only the experts it picked, while the dense model uses every weight for every token."}
 />
 
 ## Batches touch more experts
@@ -56,21 +56,21 @@ At batch 1 only k experts are read. At larger batches, different tokens pick dif
   id="touched-code"
   devices={["desktop"]}
   language="python"
-  prompt={"Write expected_experts_touched(E, k, B): with E experts, top-k routing and B tokens routed independently and uniformly, return the expected number of distinct experts used: E × (1 − (1 − k/E)^B)."}
-  starter={"def expected_experts_touched(E, k, B):\n    return 0.0\n"}
-  tests={"def test_mixtral_b1():\n    assert abs(expected_experts_touched(8, 2, 1) - 2.0) < 1e-9\n\ndef test_mixtral_b4():\n    assert abs(expected_experts_touched(8, 2, 4) - 5.46875) < 1e-9\n\ndef test_deepseek_b64():\n    assert abs(expected_experts_touched(256, 8, 64) - 222.44) < 0.01\n"}
-  solution={"def expected_experts_touched(E, k, B):\n    return E * (1 - (1 - k / E) ** B)\n"}
-  hints={["Probability an expert is missed by one token = 1 − k/E."]}
-  explanation="By batch 64, DeepSeek-V3 touches about 222 of 256 experts per layer, so the bandwidth advantage fades at scale."
+  prompt={"Why MoE's batch-1 advantage fades. scores[t] holds token t's router score for each expert. Write route(scores, k), which returns for each token the indices of its k highest-scoring experts (on ties, the lower index first). Then write experts_read(routes), the sorted list of distinct experts whose weights the step must read."}
+  starter={"def route(scores, k):\n    return [sorted(range(len(s)), key=lambda e: (-s[e], e))[:k] for s in scores]\n\ndef experts_read(routes):\n    # Only looks at the first token.\n    return sorted(routes[0]) if routes else []\n"}
+  tests={"S = [[0.9, 0.1, 0.5, 0.2],\n     [0.1, 0.8, 0.2, 0.7],\n     [0.3, 0.3, 0.9, 0.1]]\n\ndef test_route_top2():\n    assert route(S, 2) == [[0, 2], [1, 3], [2, 0]]\n\ndef test_ties_pick_lower_index():\n    assert route([[0.5, 0.5, 0.1]], 1) == [[0]]\n\ndef test_one_token_reads_k():\n    assert experts_read(route(S[:1], 2)) == [0, 2]\n\ndef test_batch_reads_union():\n    \"\"\"three tokens already touch every expert\"\"\"\n    assert experts_read(route(S, 2)) == [0, 1, 2, 3]\n\ndef test_empty_batch():\n    assert experts_read([]) == []\n"}
+  solution={"def route(scores, k):\n    return [sorted(range(len(s)), key=lambda e: (-s[e], e))[:k] for s in scores]\n\ndef experts_read(routes):\n    return sorted({e for r in routes for e in r})\n"}
+  hints={["A set collects distinct experts across all tokens."]}
+  explanation={"At batch 1 a step reads only the chosen experts, which is why MoE decodes fast. Different tokens choose different experts, so the union grows quickly with the batch, and soon nearly every expert is read each step. Memory always holds all of them, because any token might pick any expert."}
 />
 
 <MCQ
   id="mixtral-speed"
   devices={["phone","desktop"]}
-  prompt={"At batch 1, Mixtral decodes much faster than a dense 47B model. At batch 64 the advantage mostly disappears. Why?"}
-  options={["The router's work grows with the batch, and at batch 64 routing takes longer than the experts themselves.", "Different tokens pick different experts, so at batch 64 nearly every expert is read each step.", "Above a certain batch size MoE layers switch to a dense mode that runs every expert for every token.", "Batching never helps MoE models, because each token's experts have to be loaded separately."]}
+  prompt={"At batch 1, Mixtral decodes much faster than a dense model of the same total size. At a large batch the advantage mostly disappears. Why?"}
+  options={["The router's work grows with the batch until routing takes longer than the experts themselves.", "Different tokens pick different experts, so at a large batch nearly every expert is read each step.", "Above a certain batch size MoE layers switch to a dense mode that runs every expert for every token.", "Batching never helps MoE models, because each token's experts have to be loaded separately."]}
   answer={1}
-  explanation={"With 8 experts and top-2 routing, 64 tokens almost surely touch all 8 experts, so a step reads almost all the weights, like a dense model. The router is one tiny layer, there is no dense mode, and batching still helps MoE: the same reads serve more tokens."}
+  explanation={"With one token, a step reads only a couple of experts. With many tokens, their choices cover nearly all the experts, so the step reads nearly all the weights, just like the dense model. Each expert's read is still shared by all the tokens that chose it."}
 />
 
 ## Expert parallelism

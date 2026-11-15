@@ -22,27 +22,27 @@ Each stage owns a block of layers. Stage k finishes a micro-batch and sends its 
 <MCQ
   id="pp-mem"
   devices={["phone","desktop"]}
-  prompt={"You serve a 70B model with 4 pipeline stages. Compared with one GPU big enough to hold the whole model, does one user's next token arrive faster?"}
-  options={["Yes, about 4x, because each stage reads only a quarter of the weights.", "Yes, because the stages add their partial results with an all-reduce.", "No, it is about 4x slower, because each stage waits for an all-reduce.", "No: the stages handle that token one after another, so PP mainly lets the model fit."]}
-  answer={3}
-  explanation={"Each stage reads a quarter of the weights, but stage 2 cannot start a token until stage 1 hands it over, so the times add up to about the same as one GPU plus small transfers. PP sends activations point to point between neighbours; it has no all-reduce. To make one user faster, split each layer instead (tensor parallelism)."}
+  prompt={"You serve a large model with pipeline parallelism over several GPUs. Compared with one GPU big enough to hold the whole model, does one user's next token arrive faster?"}
+  options={["Yes, much faster, because each stage reads only its own share of the weights.", "No: the stages handle that token one after another, so PP mainly lets the model fit.", "Yes, because the stages add their partial results with an all-reduce.", "No, it is much slower, because every stage waits for an all-reduce."]}
+  answer={1}
+  explanation={"A token must pass through every layer in order, so the stages work one after another and only one is busy for that token at a time. Total weight reads are the same, just spread over GPUs, plus small hand-offs. PP's gain is fitting the model and, with many requests in flight, throughput."}
 />
 
 ## How small pipeline traffic is
 
-With pipeline parallelism, weights and the KV cache stay on their stage. Between stages only the hidden vector of each token in flight moves: d_model values.
+With pipeline parallelism, weights and the KV cache stay on their stage. Between stages only the hidden vector of each token in flight moves, one vector per token: tiny next to the weights, even for a long prompt.
 
-For a model with hidden size 4,096 in bf16, that is 4,096 × 2 = 8 KB per token per stage boundary. Even a 2,000-token prefill sends only about 16 MB.
+Tensor parallelism is the opposite: two all-reduces of the activations in every block, so a deep model does many all-reduces per step, each one a moment when every GPU waits for the others.
 
-TP is the opposite: two all-reduces of the activations in every block, so an 80-layer model does 160 all-reduces per step. Pipeline traffic is small and infrequent enough to cross slower links between nodes; TP's is not.
+That is why the usual layout keeps TP inside a node, on NVLink, and uses PP across nodes, where the links are slower. Pipeline traffic is small and infrequent enough to cross them; TP's is not.
 
 <MCQ
   id="pp-vs-tp"
   devices={["phone","desktop"]}
-  prompt={"A 70B model (hidden size 8,192) runs with PP = 4 on 4 GPUs. At batch 1, what crosses from GPU 0 to GPU 1 on each decode step, and how big is it?"}
-  options={["A quarter of the weights, about 35 GB, so that GPU 1 has the layers it needs for this step.", "Only the token's activation at the stage boundary: about 16 KB, with no per-block all-reduces.", "The KV cache of the first 20 layers, so that GPU 1's layers can attend to the earlier tokens.", "An all-reduce of the activations after every layer, just as in tensor parallelism."]}
+  prompt={"A large model runs with pipeline parallelism across several GPUs. At batch 1, what crosses from one stage's GPU to the next on each decode step?"}
+  options={["A share of the weights, so that the next GPU has the layers it needs for this step.", "Only the token's activation vector at the stage boundary, with no per-block all-reduces.", "The KV cache of the earlier layers, so the next GPU's layers can attend to past tokens.", "An all-reduce of the activations after every layer, just as in tensor parallelism."]}
   answer={1}
-  explanation={"In PP each GPU owns a contiguous set of layers and their weights and KV cache, which stay put. Per token, only the hidden vector leaving the last layer of a stage is sent to the next stage: d_model × 2 bytes = 16,384 bytes. TP, by contrast, all-reduces activations twice in every block. Weights and caches never move."}
+  explanation={"Each stage keeps its own layers' weights and their KV cache, so neither moves. All that passes is the hidden vector coming out of the stage's last layer, which is tiny next to the weights. That light traffic is why PP suits slower links between nodes."}
 />
 
 ## Bubbles
@@ -56,8 +56,8 @@ Sources: [GPipe](https://arxiv.org/abs/1811.06965), [Megatron-LM PP](https://arx
 <MCQ
   id="bubble"
   devices={["phone","desktop"]}
-  prompt={"With p pipeline stages and m micro-batches, the idle share is (p − 1) / (m + p − 1). How do you shrink the bubble, and what does that need?"}
-  options={["Use more micro-batches, which needs enough requests in flight to fill them.", "Add more stages; more stages always shrink the bubble.", "Use fewer, bigger micro-batches.", "Put all the stages on one GPU."]}
+  prompt={"In pipeline parallelism, some stages sit idle while the pipeline fills and empties: the bubble. How do you shrink it, and what does that need?"}
+  options={["Use more micro-batches, which needs enough requests in flight to fill them.", "Add more stages, because more stages always shrink the bubble by giving each GPU less to do.", "Use fewer, bigger micro-batches, so each stage has more to do at once.", "Put all the stages on one GPU, so that none of the stages ever has to wait for another."]}
   answer={0}
-  explanation={"A bigger m makes the start and end gaps a smaller share of the run: p = 4 gives 43% idle with 4 micro-batches and 20% with 12. In inference the micro-batches come from different requests, so you need enough concurrent traffic. More stages raise p and grow the bubble, fewer micro-batches grow it too, and one GPU means no pipeline at all."}
+  explanation={"The bubble is the start and end of the pipeline, when only some stages have work. With more micro-batches, the busy middle part grows next to those fixed edges, so the idle share falls. More stages make the edges longer. Micro-batches need concurrent requests, which interactive serving may not have."}
 />

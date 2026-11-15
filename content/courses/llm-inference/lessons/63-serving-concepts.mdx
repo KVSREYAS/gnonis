@@ -80,20 +80,20 @@ Example: 5 requests/s, each taking 10 s end to end, gives L = 50 requests runnin
 
 ## Worked scenario: reading a goodput report
 
-Two configurations serve the same traffic with targets of TTFT under 1 s and TPOT under 50 ms:
+Two configurations serve the same traffic against the same TTFT and TPOT targets:
 
-- **Config A**: 4 GPUs, 6 requests/s within the targets. That is 1.5 requests/s per GPU.
-- **Config B**: 3 GPUs, 5 requests/s within the targets. That is about 1.67 requests/s per GPU.
+- **Config A** uses more GPUs and serves more requests per second within the targets.
+- **Config B** uses fewer GPUs and serves slightly fewer.
 
-B is cheaper to run per request, even though A serves more requests. If A also served another 3 requests/s that missed TPOT, those would not count at all.
+Which is cheaper per request depends on goodput **per GPU**: on-target requests per second divided by the GPUs used. A smaller config that does more on-target work per GPU wins even though its total is lower.
 
-Goodput rewards configurations that waste nothing on requests users will be unhappy with.
+Requests that miss a target don't count at all, however many tokens they produced. Goodput rewards configurations that waste nothing on requests users will be unhappy with.
 
 <MCQ
   id="concept-check"
   devices={["phone","desktop"]}
-  prompt={"You let more users share each GPU (a bigger batch). How do total throughput, TPOT and goodput move?"}
-  options={["Throughput rises, TPOT gets worse, and goodput rises until requests start missing targets.", "All three improve, because the GPU does more useful work per weight read.", "Throughput falls, because each user gets slower, and goodput falls with it.", "TPOT improves, because a busier GPU runs at higher clocks, and goodput rises."]}
-  answer={0}
-  explanation={"A bigger batch shares each weight read among more users, so total tokens per second rise, but each step takes longer, so every user's TPOT grows. Goodput counts only requests that meet their targets, so it peaks at the largest batch that still meets them. Busier does not mean faster per user."}
+  prompt={"You let more users share each GPU (a bigger batch). How do total throughput, time per output token and goodput move?"}
+  options={["All three improve, because the GPU does more useful work for every weight it reads from memory.", "Throughput falls, because each user gets slower, and goodput falls with it.", "Time per token improves, because a busier GPU runs at higher clocks, and goodput rises.", "Throughput rises, time per token worsens, and goodput rises until targets start to slip."]}
+  answer={3}
+  explanation={"A bigger batch shares weight reads among more users, so total throughput rises, while each step does more work, so each user's tokens come a little slower. Goodput follows throughput while requests still meet targets, then falls once they don't."}
 />

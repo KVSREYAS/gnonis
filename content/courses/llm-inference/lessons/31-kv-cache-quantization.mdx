@@ -24,22 +24,10 @@ At long contexts and high concurrency the KV cache dwarfs the weights. Halving i
 <MCQ
   id="fp8-seqs"
   devices={["phone","desktop"]}
-  prompt={"Llama 3 8B, a 40 GB KV pool and 8k-token sequences: about 37 fit with an fp16 cache. You switch the cache to fp8. Which two things improve?"}
-  options={["Twice as many fit, and prefill needs half the FLOPs, because the cache is smaller.", "About twice as many fit (about 74), and each step reads half as many KV bytes.", "The weights shrink by half too, because the model shares the cache's format.", "Nothing, unless the weights are quantized too, because weights fill the memory."]}
+  prompt={"Your KV pool is full of long sequences. You switch the cache from fp16 to fp8. Which two things improve?"}
+  options={["More sequences fit, and prefill needs fewer FLOPs, because the cache is smaller.", "About twice as many tokens fit, and each step reads half as many cache bytes.", "The weights shrink too, because the model shares the cache's format.", "Nothing, unless the weights are quantized too, because weights fill the memory."]}
   answer={1}
-  explanation={"Bytes per element go from 2 to 1, so each token's cache halves: twice the tokens fit, and the KV part of every decode step reads half as much. The values are turned back into 16-bit numbers inside the attention kernel, so the arithmetic is unchanged. The weights are separate, and KV quantization works on its own."}
-/>
-
-<Code
-  id="kv-code"
-  devices={["desktop"]}
-  language="python"
-  prompt={"Pick a KV cache precision. Write pick_kv_dtype(layers, kv_heads, head_dim, ctx, seqs, pool_gb). It returns the most precise of \"fp16\" (2 bytes), \"fp8\" (1 byte) and \"int4\" (0.5 bytes) whose cache for seqs sequences of ctx tokens fits in pool_gb decimal GB, or None if even int4 doesn't fit. Ignore the scales' overhead."}
-  starter={"def pick_kv_dtype(layers, kv_heads, head_dim, ctx, seqs, pool_gb):\n    # Try the most precise format first.\n    return \"fp16\"\n"}
-  tests={"def test_fp16_fits():\n    \"\"\"Llama 3 8B, 32 x 8k sequences: about 34 GB in fp16\"\"\"\n    assert pick_kv_dtype(32, 8, 128, 8192, 32, 40) == \"fp16\"\n\ndef test_needs_fp8():\n    \"\"\"64 sequences need about 69 GB in fp16 but 34 GB in fp8\"\"\"\n    assert pick_kv_dtype(32, 8, 128, 8192, 64, 40) == \"fp8\"\n\ndef test_needs_int4():\n    assert pick_kv_dtype(32, 8, 128, 8192, 128, 40) == \"int4\"\n\ndef test_nothing_fits():\n    assert pick_kv_dtype(32, 8, 128, 8192, 256, 40) is None\n\ndef test_70b_long():\n    \"\"\"Llama 3 70B, 8 x 32k sequences: about 86 GB in fp16, 43 GB in fp8\"\"\"\n    assert pick_kv_dtype(80, 8, 128, 32768, 8, 60) == \"fp8\"\n"}
-  solution={"def pick_kv_dtype(layers, kv_heads, head_dim, ctx, seqs, pool_gb):\n    elems = 2 * layers * kv_heads * head_dim * ctx * seqs\n    for name, nbytes in ((\"fp16\", 2), (\"fp8\", 1), (\"int4\", 0.5)):\n        if elems * nbytes <= pool_gb * 1e9:\n            return name\n    return None\n"}
-  hints={["Elements = 2 (K and V) × layers × kv_heads × head_dim × tokens.", "Check fp16, then fp8, then int4, and stop at the first that fits."]}
-  explanation={"Lower precision is a trade: each step down halves the cache but adds rounding error, so you take only as much as the workload needs. fp8 caches are widely supported and usually cost little quality; 4-bit and 2-bit caches need methods such as KIVI's per-channel keys to keep quality."}
+  explanation={"Each cached value takes half the bytes, so the same pool holds about twice the tokens, and each step's cache reads halve, which helps long-context decode speed. Prefill FLOPs and the weights are unchanged; the cache has its own format."}
 />
 
 ## Going lower
@@ -61,8 +49,20 @@ Source: [KIVI](https://arxiv.org/abs/2402.02750)
 <MCQ
   id="kivi-mcq"
   devices={["phone","desktop"]}
-  prompt={"A team quantizes the KV cache to 2 bits, per token for both keys and values, and accuracy collapses. What change does KIVI's analysis point to?"}
-  options={["Quantize both keys and values per channel, because values have the same fixed outlier channels as keys.", "Go down to 1 bit, because with fewer levels there are fewer outliers left to cause errors.", "Quantize keys per channel and values per token, and keep the most recent tokens in full precision.", "Quantize the queries too, so that attention compares numbers that were all rounded the same way."]}
+  prompt={"A team quantizes the KV cache to very few bits, per token for both keys and values, and accuracy collapses. What change does KIVI's analysis point to?"}
+  options={["Quantize both per channel, because values have the same fixed outlier channels as keys.", "Use even fewer bits, because with fewer levels there are fewer outliers left to cause errors.", "Quantize keys per channel and values per token, and keep the most recent tokens in full precision.", "Quantize the queries too, so attention compares numbers that were all rounded the same way."]}
   answer={2}
-  explanation={"KIVI found that key outliers line up in a few fixed channels, so a per-token scale is stretched by them, while a per-channel scale isolates them. Value errors matter per token, because each token's value row is mixed in with its own weight. KIVI also keeps a window of recent tokens in full precision. Queries are never cached, so there is nothing to quantize there."}
+  explanation={"Keys have a few channels with consistently large values, so a scale per channel fits them; a scale per token would be stretched by those channels. Values have no such pattern, and per-token scales keep each token's error local. Recent tokens matter most and are still arriving, so they stay in full precision."}
+/>
+
+<Code
+  id="kv-code"
+  devices={["desktop"]}
+  language="python"
+  prompt={"KIVI quantizes keys per channel because a few key channels are large for every token. K is a list of tokens, each a list of channel values. Write quantize_keys(K, qmax) that gives each channel (column) its own scale = largest |value| in that column / qmax (use 1.0 for an all-zero column), and returns (q, scales) with q[t][c] = round(K[t][c] / scales[c]). Also write dequantize(q, scales)."}
+  starter={"def quantize_keys(K, qmax):\n    # Per-token scales: one per row. An outlier channel stretches every row.\n    scales = [max(abs(v) for v in row) / qmax or 1.0 for row in K]\n    q = [[round(v / s) for v in row] for row, s in zip(K, scales)]\n    return q, scales\n\ndef dequantize(q, scales):\n    return [[v * s for v in row] for row, s in zip(q, scales)]\n"}
+  tests={"K = [[0.02, 10.0, -0.03],\n     [0.01, -8.0, 0.04],\n     [-0.03, 9.0, 0.02]]\n\ndef test_one_scale_per_channel():\n    q, scales = quantize_keys(K, 7)\n    assert len(scales) == 3, scales\n\ndef test_outlier_channel_does_not_wipe_others():\n    \"\"\"the small channels survive because the big one has its own scale\"\"\"\n    q, scales = quantize_keys(K, 7)\n    back = dequantize(q, scales)\n    for t in range(3):\n        for c in (0, 2):\n            assert abs(back[t][c] - K[t][c]) < 0.005, back\n\ndef test_zero_column():\n    q, scales = quantize_keys([[0.0, 1.0], [0.0, -1.0]], 7)\n    assert scales[0] == 1.0 and q[0][0] == 0 and q[1][0] == 0\n"}
+  solution={"def quantize_keys(K, qmax):\n    cols = len(K[0])\n    scales = []\n    for c in range(cols):\n        m = max(abs(row[c]) for row in K)\n        scales.append(m / qmax if m else 1.0)\n    q = [[round(row[c] / scales[c]) for c in range(cols)] for row in K]\n    return q, scales\n\ndef dequantize(q, scales):\n    return [[v * scales[c] for c, v in enumerate(row)] for row in q]\n"}
+  hints={["Loop over columns to find each channel's largest absolute value.", "Dequantize multiplies each value by its own column's scale."]}
+  explanation={"With per-token scales, the large channel sets every token's step, and the small channels round to zero. Giving each channel its own scale isolates the outlier channel, which is exactly what KIVI does for keys. Values have no fixed outlier channels, so KIVI quantizes them per token instead."}
 />

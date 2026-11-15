@@ -21,10 +21,10 @@ Batch-1 decode is bandwidth divided by bytes read. Halve the bytes per weight an
 <MCQ
   id="int4-70b"
   devices={["phone","desktop"]}
-  prompt={"A 70B model needs 140 GB in fp16 but about 35 GB in int4, so it fits on one 80 GB GPU. Besides fitting, what is the biggest serving win, and what is the main risk?"}
-  options={["Prefill gets 4x faster because its FLOPs drop 4x, and int4 has no accuracy risk.", "The KV cache also shrinks 4x, so 4x more sequences fit in memory.", "Nothing besides fitting: decode speed depends only on the GPU, not the weights.", "Batch-1 decode reads about 4x fewer bytes, so up to about 4x faster; the risk is accuracy."]}
-  answer={3}
-  explanation={"Decode is memory-bound, so its ceiling is bandwidth divided by bytes read: 4x fewer bytes, up to 4x more tokens/s. Quantization is lossy, so accuracy must be checked. Weight-only formats still do the matmul in 16 bits, so prefill FLOPs do not drop. The KV cache is separate and keeps its own format unless you quantize it too. Speed depends on bytes read as well as on the GPU."}
+  prompt={"A large model fits on one GPU once its weights are quantized to int4. Besides fitting, what is the biggest serving win, and what is the main risk?"}
+  options={["Prefill gets much faster because its FLOPs drop, and int4 has no accuracy risk.", "The KV cache shrinks along with the weights, so many more sequences fit in memory.", "Small-batch decode reads far fewer bytes per token, so it speeds up; the risk is accuracy.", "Nothing besides fitting: decode speed depends only on the GPU, not on the weights."]}
+  answer={2}
+  explanation={"Small-batch decode is memory-bound and mostly reads weights, so fewer bytes per weight means faster tokens. Weight-only int4 still computes in 16 bits, so prefill barely changes, and the cache keeps its own format. Fewer bits per weight always risk some accuracy, which is why methods like AWQ and GPTQ exist."}
 />
 
 ## The methods
@@ -58,10 +58,10 @@ Sources: [GPTQ](https://arxiv.org/abs/2210.17323), [AWQ](https://arxiv.org/abs/2
 <MCQ
   id="awq-idea"
   devices={["phone","desktop"]}
-  prompt={"Plain 4-bit round-to-nearest hurts a model's accuracy badly. Calibration shows that about 1% of weight channels meet very large activations. What does AWQ do with that, and what does it avoid?"}
-  options={["It keeps those 1% of channels in fp16 and the rest in int4, and uses a mixed-precision kernel to combine them.", "It retrains the whole model in 4 bits with backpropagation, so the weights learn to work around the rounding.", "It removes those salient channels before quantizing, because their large activations cause the error.", "It scales those channels up before rounding, and the matching activations down, so their error shrinks."]}
-  answer={3}
-  explanation={"Weight errors matter most where activations are large, because the error is multiplied by the activation. AWQ protects those channels by multiplying their weights by a scale before quantizing, which makes their rounding error smaller relative to their size; the activations are divided by the same scale, so the product is unchanged. The paper notes that keeping 1% in fp16 also works but is awkward for hardware; scaling keeps one format."}
+  prompt={"Plain 4-bit rounding hurts a model's accuracy badly. Calibration shows that a small fraction of weight channels meet very large activations. What does AWQ do with that, and what does it avoid?"}
+  options={["It keeps those channels in fp16 and the rest in int4, and uses a mixed-precision kernel to combine them.", "It retrains the whole model in 4 bits with backpropagation, so the weights learn around the rounding.", "It scales those channels up before rounding and the activations down, so their error shrinks.", "It removes those channels before quantizing, because their large activations are what cause the error."]}
+  answer={2}
+  explanation={"Errors in channels that meet large activations matter most. Scaling those weights up makes their rounding error smaller relative to their size, and dividing the activations by the same factor keeps the product unchanged. Everything stays in one int4 format, so the kernel stays simple and fast. No retraining is needed."}
 />
 
 ## FP8 formats

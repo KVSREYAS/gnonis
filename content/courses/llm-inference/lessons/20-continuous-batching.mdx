@@ -55,10 +55,10 @@ Sources: [Orca](https://www.usenix.org/conference/osdi22/presentation/yu), [vLLM
 <MCQ
   id="when-admit"
   devices={["phone","desktop"]}
-  prompt={"Two servers each run 8 slots. In the current batch, 7 requests have finished and 1 still has 900 decode steps to go. A new request arrives. Roughly when does it get its first token on a static-batching server, and on a continuous-batching one?"}
-  options={["Static: after the long request ends, about 900 steps later. Continuous: right after its prefill next step.", "Both start it at the next step: 7 slots are free on both servers, and a free slot is all a new request needs.", "Both make it wait about 900 steps, because the requests in a batch have to finish together on either server.", "Static starts it at once in a free slot; continuous waits for the next batch boundary to re-plan the batch."]}
-  answer={0}
-  explanation={"Static batching forms a batch and keeps it until every member is done, so free slots stay empty and new requests wait for the slowest one. Continuous (iteration-level) batching re-decides the batch every step: a finished request leaves, and a waiting one is admitted at the next iteration, as long as there is KV memory for it."}
+  prompt={"Two servers each have a fixed number of slots. In the current batch, all but one request have finished and the last has a long answer to go. Server A uses static batching; server B uses continuous batching. What happens on each?"}
+  options={["Both fill the empty slots at the next step, because every engine admits as soon as there is room.", "A leaves finished slots empty until the last request ends; B refills them at the next step.", "A fills the empty slots at once; B waits for the whole batch to finish before admitting anyone.", "Both stop the long request so a fresh batch can start together, which is fairer to waiting users."]}
+  answer={1}
+  explanation={"Static batching admits a new batch only when the whole current one is done, so one long answer keeps the rest of the GPU idle. Continuous batching makes the decision every step: finished requests leave, and waiting ones join if their memory fits. Neither stops a running request just to start a new batch."}
 />
 
 ## One scheduler tick

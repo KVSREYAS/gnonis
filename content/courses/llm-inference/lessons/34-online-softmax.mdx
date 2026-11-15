@@ -21,19 +21,19 @@ Milakov and Gimelshein (2018) showed softmax can be computed in one pass. Keep m
 
 ## Why fp16 overflows
 
-fp16's largest finite value is 65,504, and e¹¹ ≈ 59,874 is already close to it. So in fp16, exp of any score above about 11 becomes infinity, and infinity divided by infinity is NaN.
+fp16 has a small maximum value, and exp grows extremely fast, so exp of even a moderately large score is already past it. The result becomes infinity, and infinity divided by infinity is NaN.
 
-Softmax doesn't change if every score shifts by the same amount, because the common factor cancels in the division. Subtracting the row's max makes the largest term e⁰ = 1 and every other term smaller than 1, so nothing can overflow.
+Softmax doesn't change if every score shifts by the same amount, because the common factor cancels in the division. Subtracting the row's maximum makes the largest term exp(0) = 1 and every other term smaller than 1, so nothing can overflow.
 
 Online softmax keeps this safety while reading scores in tiles: it tracks the running max and rescales the running sum whenever the max grows.
 
 <MCQ
   id="why-max"
   devices={["phone","desktop"]}
-  prompt={"A custom fp16 softmax returns NaN for rows with scores around 20, but works for small scores. What is wrong, and what is the fix?"}
-  options={["fp16 can't represent large negative numbers well, so the scores should be shifted to be all positive first.", "The row sum is too small for fp16, so the sum should be multiplied by √d_k before the division.", "Scores of 20 are outside the range the model was trained for, so the model must be retrained.", "e²⁰ exceeds fp16's maximum (65,504), giving inf / inf = NaN; subtract the row max before exp."]}
+  prompt={"A custom fp16 softmax returns NaN for rows with large scores, but works for small ones. What is wrong, and what is the fix?"}
+  options={["fp16 can't represent large negative numbers well, so the scores should be shifted to be positive first.", "The row sum is too small for fp16 to hold, so the sum should be multiplied by √d_k before dividing.", "Large scores are outside what the model was trained on, so the model must be retrained.", "exp of a large score overflows fp16 to inf, and inf / inf is NaN; subtract the row max first."]}
   answer={3}
-  explanation={"fp16 tops out at 65,504, and e¹¹ is already about 59,900. Above that, exp gives inf; inf divided by a sum that is also inf is NaN. Subtracting the row max makes the largest term e⁰ = 1 and all others smaller, and the result is the same, because the common factor cancels in the division."}
+  explanation={"exp grows very fast and fp16 has a small maximum, so a moderately large score already overflows to inf. Dividing inf by an inf sum gives NaN. Subtracting the row's maximum makes the largest exponent exp(0) = 1 and every other one smaller, and the softmax result is mathematically unchanged."}
 />
 
 <MCQ

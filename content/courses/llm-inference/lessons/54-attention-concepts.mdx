@@ -73,20 +73,20 @@ Going from 8K to 32K context is 4 times longer but about 16 times more attention
 
 ## Worked scenario: two designs, one GPU
 
-Two models with 32 layers and head size 128 store an fp16 cache. One uses MHA with 32 KV heads, the other GQA with 8.
+Two models are the same except for attention: one gives every query head its own K/V head (MHA), the other shares each K/V head across a group of query heads (GQA).
 
-- MHA: 2 × 32 × 32 × 128 × 2 = 512 KiB per token.
-- GQA: 2 × 32 × 8 × 128 × 2 = 128 KiB per token.
+- **Cache per token**: each token stores a key and a value per layer per KV head, so GQA stores a fraction of what MHA stores.
+- **Users that fit**: the same memory holds proportionally more GQA tokens, so more conversations at once.
+- **Speed at long context**: each decode step reads the whole cache, so GQA's steps read fewer bytes and finish sooner.
+- **What stays the same**: both compute one attention pattern per query head. GQA changes what is stored, not how many patterns are computed.
 
-With 40 GB free for the cache, MHA holds about 76,000 tokens: nine full 8k conversations. GQA holds about 305,000: 37 of them. Each decode step also reads 4x fewer cache bytes with GQA, so at long contexts its steps are faster too.
-
-Both still compute 32 attention patterns per layer. What changed is how many different keys and values are stored.
+This is why almost every recent open model uses GQA: a small quality cost for a much cheaper cache.
 
 <MCQ
   id="concept-check"
   devices={["phone","desktop"]}
-  prompt={"Model X: 64 query heads and 8 KV heads. Model Y: 64 query heads and 64 KV heads. Same layers and head size, same GPU memory left for cache. How many times more cached tokens fit for X, and does X compute fewer attention patterns?"}
-  options={["8x more tokens, and X computes only 8 attention patterns, so it loses most of what its 64 heads learned.", "64x more tokens, because X stores a single K/V head per layer, and Y stores 64.", "The same number of tokens, because both have 64 query heads and the cache is sized by query heads.", "8x more tokens; no, X still computes 64 patterns, one per query head."]}
-  answer={3}
-  explanation={"Cache per token scales with KV heads: 64 / 8 = 8x less per token for X, so 8x more tokens fit. Each of X's 64 query heads still scores its own query against the shared keys of its group, so there are still 64 patterns. 64x would be MQA (one KV head). Query heads are never cached."}
+  prompt={"Model X shares each K/V head across a group of query heads. Model Y gives every query head its own K/V head. Same layers, same head size, same memory for the cache. Which fits more cached tokens, and does X compute fewer attention patterns?"}
+  options={["X fits more tokens, and it computes only one pattern per group, so it loses most of what its heads learned.", "Y fits more tokens, because its larger number of KV heads spreads the cache more efficiently.", "X fits more tokens; no, it still computes one pattern per query head.", "They fit the same, because the cache is sized by query heads, which both models share."]}
+  answer={2}
+  explanation={"Cache per token grows with the number of KV heads, so sharing them makes each token cheaper and more tokens fit. Every query head still scores its own query against its group's shared keys, so the number of patterns doesn't drop. Query heads are never cached."}
 />

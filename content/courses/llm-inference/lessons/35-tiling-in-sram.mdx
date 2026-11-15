@@ -23,10 +23,10 @@ Split Q into row blocks and K/V into column blocks. For each Q block, stream K/V
 <MCQ
   id="tile-bytes"
   devices={["phone","desktop"]}
-  prompt={"Why does FlashAttention use tiles of about 128 rows instead of much bigger ones, such as 1,024 × 1,024?"}
-  options={["Bigger tiles would change the result, because online softmax is exact only for small tiles.", "HBM can only transfer 128 rows at a time, so bigger tiles would need several transfers.", "The Q, K and V tiles plus their scores must fit in one SM's SRAM, which is a few hundred KB.", "Bigger tiles would need more FLOPs, because each score would be computed more than once."]}
+  prompt={"Why does FlashAttention use modest tiles instead of much bigger ones that would cover more of the sequence at once?"}
+  options={["Bigger tiles would change the result, because online softmax is exact only for small tiles.", "HBM can only transfer a fixed number of rows at once, so bigger tiles need several transfers.", "The Q, K and V tiles plus their scores must fit in one SM's on-chip SRAM, which is small.", "Bigger tiles would need more FLOPs, because each score would be computed more than once."]}
   answer={2}
-  explanation={"Three 128 × 128 fp16 tiles take 96 KiB, which fits in an H100 SM's roughly 228 KB of shared memory. One 1,024 × 1,024 fp16 tile alone is 2 MiB. The result is exact at any tile size, HBM has no 128-row limit, and the FLOPs are the same however you tile."}
+  explanation={"The point of tiling is to keep the working set on chip, where reads are fast. Each SM has only a small amount of shared memory, so a tile must fit in it. Online softmax is exact for any tile size; the size is about fitting SRAM and keeping enough tiles to occupy every SM."}
 />
 
 ## FlashAttention in real engines
@@ -35,9 +35,11 @@ FlashAttention is the default attention kernel family in current serving engines
 
 Each version targets newer hardware:
 
-- FlashAttention-1 (2022) removed the N × N traffic.
-- FlashAttention-2 (2023) improved how work is split across thread groups, reaching about 2x the speed of version 1. Version 1 reached only 25–40% of peak FLOP/s.
-- FlashAttention-3 (2024) uses Hopper features. FlashAttention-2 reached only about 35% of an H100's peak; version 3 is 1.5–2x faster, reaching about 740 TFLOP/s in fp16 (75%) and close to 1.2 PFLOP/s in fp8.
+- **FlashAttention-1** (2022) removed the score-matrix traffic to HBM.
+- **FlashAttention-2** (2023) split work better across thread groups, roughly doubling speed.
+- **FlashAttention-3** (2024) uses Hopper features: TMA copies tiles without using threads, and warp specialisation lets some warps load while others compute. It reaches a much larger share of an H100's peak, and also supports fp8.
+
+All three compute exact attention. The speedups come from moving fewer bytes and keeping the tensor cores busy, not from skipping work.
 
 Sources: [FA2](https://arxiv.org/abs/2307.08691), [FA3](https://arxiv.org/abs/2407.08608)
 

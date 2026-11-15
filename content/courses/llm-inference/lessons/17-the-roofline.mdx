@@ -28,10 +28,10 @@ intensity. On the right, the flat roof: you are **compute-bound** at peak FLOP/s
 <MCQ
   id="roof-fill"
   devices={["phone","desktop"]}
-  prompt={"A kernel on an H100 (989 TFLOP/s, 3.35 TB/s) runs at an intensity of 100 FLOP/byte. Roughly what FLOP/s can it reach, and what would it take to reach peak?"}
-  options={["The full 989 TFLOP/s: any intensity above 1 FLOP/byte is compute-bound, so it already runs at peak.", "About 335 TFLOP/s, a third of peak; it needs about 3x more reuse per byte to reach the ridge.", "About 100 TFLOP/s, because the intensity in FLOP/byte is also the FLOP/s it reaches, in TFLOP/s.", "About 335 TFLOP/s, and only more HBM capacity, not more reuse per byte, can raise it."]}
-  answer={1}
-  explanation={"Attainable FLOP/s = min(peak, intensity × bandwidth) = min(989, 100 × 3.35) = 335 TFLOP/s, so the bandwidth roof binds. The ridge is 989 / 3.35 ≈ 295 FLOP/byte, so the kernel needs about 3x more FLOPs per byte (more reuse, such as a bigger batch or tiling) to become compute-bound. Memory capacity is not bandwidth."}
+  prompt={"A kernel sits well left of the H100's ridge point on a roofline plot. A teammate proposes buying a GPU with more peak FLOP/s. What does the roofline say?"}
+  options={["It will help a lot: anything below the roof speeds up in step with peak FLOP/s.", "It won't help, and nothing else can either, because a kernel's position is fixed.", "It will help, as long as the new GPU also has more HBM capacity than the old one to hold the data.", "Not much: the kernel is memory-bound, so it needs more bandwidth or more reuse per byte."]}
+  answer={3}
+  explanation={"Left of the ridge, the ceiling is bandwidth times intensity, so extra FLOP/s don't raise it. Two things do: more bandwidth lifts the sloped roof, and more reuse per byte (batching, fusing kernels) moves the kernel right. Capacity, the size of memory, isn't on the plot at all."}
 />
 
 ## The ridge point
@@ -70,21 +70,22 @@ Drag the batch size and watch the dot climb the slope.
   explanation={"In fp16, intensity ≈ batch, so you need a batch of about 300 to pass the H100 ridge (≈ 295). The first power-of-two batch past it is 512. With int4 weights, intensity ≈ 4 × batch, so about 74 sequences are enough, and a batch of 128 crosses it. Attention's KV reads are ignored here, and in practice they stay memory-bound."}
 />
 
-## Reading a roofline: a worked example
+## Reading a roofline
 
-Take an H100: peak 989 TFLOP/s, bandwidth 3.35 TB/s, ridge ≈ 295 FLOP/byte.
+A roofline plot has arithmetic intensity (FLOPs per byte) on the x-axis and achievable FLOP/s on the y-axis. It has two roofs:
 
-A kernel at 50 FLOP/byte can reach min(989, 50 × 3.35) ≈ 168 TFLOP/s, about 17% of peak. Faster tensor cores would not help it at all; more bandwidth or more reuse per byte would.
+- A **sloped roof** on the left, set by memory bandwidth: the more maths per byte, the higher you can go.
+- A **flat roof** on the right, set by peak FLOP/s.
 
-A kernel at 1,000 FLOP/byte reaches the full 989. More bandwidth would not help it; only more FLOP/s would.
+They meet at the **ridge point**. Left of it, a kernel is memory-bound: more bandwidth or more reuse per byte helps, extra FLOP/s don't. Right of it, a kernel is compute-bound: only more FLOP/s, or cheaper maths such as 8-bit matmuls, helps.
 
-Two ways to move a kernel right: reuse each loaded byte more (bigger batch, bigger tiles), or make each value smaller (fp8 or int4 weights), which raises FLOPs per byte without changing the maths.
+Two ways to move a kernel right: reuse each loaded byte more (bigger batch, bigger tiles), or store values in fewer bits (fp8 or int4 weights), which raises FLOPs per byte without changing the maths.
 
 <MCQ
   id="int4-effect"
   devices={["phone","desktop"]}
-  prompt={"Batch-8 decode with fp16 weights sits at about 8 FLOP/byte on an H100 (ridge about 295). You switch to int4 weights, same batch. Where does it land, and what happens to the step time?"}
-  options={["About 32 FLOP/byte, still memory-bound, so the step gets up to about 4x shorter.", "About 32 FLOP/byte, which is now compute-bound, so the step time stays about the same as in fp16.", "Still about 8 FLOP/byte: each weight does the same multiply-adds, so FLOPs per byte can't change.", "About 2 FLOP/byte, because unpacking int4 adds work, so the step gets slower than in fp16."]}
-  answer={0}
-  explanation={"Each weight still does the same multiply-adds for 8 tokens, but now takes half a byte instead of 2, so FLOPs per byte rise 4x, to about 32. That is still far left of the 295 ridge, so the step time follows bytes read, which fell about 4x for the weights. Unpacking int4 adds a little work inside the kernel, but it doesn't lower the FLOPs per byte."}
+  prompt={"Small-batch decode is memory-bound. You switch the weights from fp16 to int4. On the roofline, what happens?"}
+  options={["It moves left, because unpacking int4 costs extra FLOPs for every weight.", "It moves right and gets faster, but it usually stays memory-bound.", "It doesn't move, because quantization changes the bytes but not the FLOPs.", "It moves right past the ridge, so decode becomes compute-bound."]}
+  answer={1}
+  explanation={"Same FLOPs, far fewer bytes, so intensity rises and each step reads less, which makes it faster. But small-batch decode starts far left of the ridge, so even a large shift usually leaves it on the memory-bound side. Unpacking is cheap next to the saved traffic."}
 />

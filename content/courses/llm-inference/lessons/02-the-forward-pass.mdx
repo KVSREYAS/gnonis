@@ -25,10 +25,10 @@ point is matrix maths on that hidden state.
 <MCQ
   id="embedding-params"
   devices={["phone","desktop"]}
-  prompt={"A team serves a chat app whose Hindi users' messages cost about 3x more tokens than the same message in English. A newer model offers a 128k-token vocabulary (vs 32k) with many more Hindi tokens. What do Hindi users gain, and what does every request pay?"}
-  options={["Hindi requests get fewer tokens, but nothing else changes: the vocabulary only affects the tokenizer, which runs on the CPU and costs no GPU time.", "Hindi requests get faster, but each transformer block grows with the vocabulary, so every token in every language does about 4x more maths.", "Fewer Hindi tokens: less prefill, fewer decode steps, smaller cache. Every request pays for a larger embedding table and LM head.", "Hindi requests need fewer tokens, and the model also gets smaller overall, because each embedding row can be shorter when there are more of them."]}
-  answer={2}
-  explanation={"Every serving cost is counted in tokens: fewer Hindi tokens means less prefill work, fewer decode steps and fewer KV entries. The price is in the two vocabulary-sized matrices: the embedding table and the LM head both have one row per token, so a 4x larger vocabulary makes them about 4x larger, and the final logits step computes 4x more scores. The transformer blocks themselves do not change width with vocabulary size."}
+  prompt={"Hindi users' messages take far more tokens than the same message in English. A newer model has a much larger vocabulary that includes many Hindi tokens. What do Hindi users gain, and what does every request pay for it?"}
+  options={["Fewer tokens per Hindi message: less prefill, fewer decode steps, a smaller cache. Every request pays for a bigger embedding table and LM head.", "Hindi messages get fewer tokens, but nothing else changes, because the vocabulary only affects the tokenizer on the CPU.", "Hindi gets faster, but every transformer block widens with the vocabulary, so all languages do much more maths per token.", "Hindi needs fewer tokens and the model also gets smaller, because each embedding row can be shorter in a bigger table."]}
+  answer={0}
+  explanation={"Every serving cost is counted in tokens, so a vocabulary that covers Hindi better makes Hindi requests cheaper in every phase. The price sits in the two vocabulary-sized matrices: the embedding table and the LM head each have one row per token, so both grow, and the final logits step scores more entries every time. The transformer blocks don't change width with the vocabulary."}
 />
 
 ## The block, repeated
@@ -65,11 +65,11 @@ roughly 16 GFLOPs for every token it processes.
 
 ## Only the last position needs logits
 
-The LM head is big. For Llama 3 8B it is a 4,096 × 128,256 matrix, about 525 million weights, roughly 6.5% of the model. During prefill, the forward pass produces a hidden vector for every prompt position, but only the last one predicts the next token.
+The LM head is one of the biggest single matrices in the model: it has a row for every entry in the vocabulary. During prefill, the forward pass produces a hidden vector for every prompt position, but only the last one predicts the next token.
 
-So serving engines run the LM head only on the positions they will sample from: the last position of each sequence in the batch. For a 2,000-token prompt that skips 1,999 large matrix multiplications, and the output is exactly the same.
+So serving engines run the LM head only on the positions they will sample from: the last position of each sequence in the batch. Every other row of logits would be thrown away, so skipping them saves real work and changes nothing in the output.
 
-The keys and values of every prompt position are still needed. They are stored in the KV cache, because each later token attends to all of them.
+Don't confuse this with the KV cache. The keys and values of every prompt position are still computed and stored, because each later token attends to all of them.
 
 <Ordering
   id="pipeline-order"

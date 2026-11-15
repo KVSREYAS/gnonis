@@ -30,33 +30,31 @@ $$\text{bytes/token} = 2 \times L \times H_{kv} \times d_{head} \times b$$
 <MCQ
   id="formula"
   devices={["phone","desktop"]}
-  prompt={"You compare two 70B-class models for a long-context product, both with an fp16 cache and head size 128. A: 80 layers, 8 KV heads. B: 64 layers, 64 KV heads (MHA). Which stores less per token, and by how much?"}
-  options={["B, because it has 16 fewer layers, and layers are the biggest factor in the cache size.", "A, by exactly 8x, because it has 8x fewer KV heads and nothing else in the formula matters as much.", "Both store the same: two models with about 70B parameters need about the same cache per token.", "A, about 6.4x less per token: 320 KiB against 2 MiB, because layers × KV heads is 640 against 4,096."]}
-  answer={3}
-  explanation={"Bytes per token = 2 × layers × KV heads × head size × 2 bytes. A: 2 × 80 × 8 × 128 × 2 = 327,680 B = 320 KiB. B: 2 × 64 × 64 × 128 × 2 = 2,097,152 B = 2 MiB. The ratio is (64 × 64) / (80 × 8) = 6.4, not 8, because A has more layers. Parameter count says nothing about the cache: the attention shape decides it."}
+  prompt={"For a long-context product you compare two models of similar quality. The one with fewer parameters turns out to use more KV cache per token. How can that be?"}
+  options={["Cache per token depends on layers, KV heads and head size; the smaller one likely uses MHA.", "It can't be: cache per token always grows with parameter count, so the measurement must be wrong somewhere.", "The smaller model has a larger vocabulary, and every vocabulary entry is cached for each token.", "The smaller model has more query heads, and queries are stored in the cache along with keys and values."]}
+  answer={0}
+  explanation={"Each cached token stores a key and a value for every layer and every KV head. Parameter count barely enters: a model can be large but share few KV heads (GQA), or small but give every head its own K and V (MHA). Queries and vocabulary entries are never cached."}
 />
 
-## A real model
+## What the formula leaves out
 
-Llama 3 8B: $L = 32$, $H_{kv} = 8$, $d_{head} = 128$, with an fp16 cache:
-$2 \times 32 \times 8 \times 128 \times 2 = 131{,}072$ bytes, or 128 KiB per token.
-
-Notice what is missing from the formula: query heads. Queries are never cached, so only the
-KV heads count.
+Notice what is missing from the formula: query heads, the MLP's width and the vocabulary. Queries are
+never cached, and the MLP and vocabulary never touch the cache, so only layers, KV heads, head size and
+the number format count. For Llama 3 8B in fp16 this comes to roughly a hundred kilobytes per token.
 
 ## Comparing real models
 
-The same formula gives very different answers for real models (fp16 cache, head size 128):
+The cache per token is set by the attention shape, not by the parameter count:
 
-| Model | Layers | KV heads | Per token |
-|---|---|---|---|
-| Llama 2 7B | 32 | 32 (MHA) | 512 KiB |
-| Llama 3 8B | 32 | 8 (GQA) | 128 KiB |
-| Llama 3 70B | 80 | 8 (GQA) | 320 KiB |
+| Model | Attention | Cache per token |
+|---|---|---|
+| Llama 2 7B | MHA: a K/V head per query head | Largest of the three |
+| Llama 3 8B | GQA: few KV heads | Small |
+| Llama 3 70B | GQA, many more layers | Between the two |
 
-Llama 3 70B has nearly 9x the parameters of Llama 3 8B, but only 2.5x the cache per token, because only layers and KV heads matter. Llama 2 7B, a smaller model, needs 4x more cache per token than Llama 3 8B, because it uses MHA.
+Llama 3 70B is far bigger than Llama 3 8B, but its cache per token grows only with its extra layers. Llama 2 7B, the smallest model here, has the biggest cache per token, because it uses MHA.
 
-Parameter count tells you the weight memory. The attention shape tells you the cache.
+Parameter count tells you the weight memory. Layers, KV heads, head size and the cache's number format tell you the cache.
 
 <MCQ
   id="llama3-per-token"
@@ -69,8 +67,9 @@ Parameter count tells you the weight memory. The attention shape tells you the c
 
 ## Per sequence
 
-At 128 KiB per token, an 8,192-token conversation needs
-$131{,}072 \times 8{,}192 \approx 1.07$ GB, just for one sequence's cache.
+A sequence's cache is that per-token cost times its length, so it grows steadily with every token. A
+single long conversation on Llama 3 8B already needs around a gigabyte of cache, and very long
+contexts need several. That is why the cache, not the weights, usually decides how many users fit.
 
 ## Play with it
 
