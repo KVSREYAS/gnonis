@@ -24,10 +24,10 @@ Total bytes per step = weights + Σ (context × KV bytes per token).
 <MCQ
   id="latency-mcq"
   devices={["phone","desktop"]}
-  prompt="Short prompts, memory-bound decode. You raise the batch from 1 to 16. What mostly happens?"
-  options={["Per-token latency rises about 16x","Throughput rises about 16x while per-token latency barely moves","Nothing, because the GPU was already saturated","The model's answers get worse"]}
-  answer={1}
-  explanation={"The 16 GB weight read dominates and is shared, so each step costs about the same. You get 16 tokens per step instead of 1."}
+  prompt={"A chat service with short prompts runs memory-bound decode at batch 4 per GPU. To halve the GPU count, ops proposes batch 8 per GPU. What happens to each user's tokens per second?"}
+  options={["Almost unchanged: the weight read is shared, so steps get only slightly longer while throughput nearly doubles.", "It roughly halves: each GPU now serves twice as many users, so each one gets half of its time.", "It roughly doubles: the GPU is used more efficiently at batch 8, so every sequence moves faster.", "It halves at first, then recovers once the KV caches of the new users have warmed up."]}
+  answer={0}
+  explanation={"A memory-bound step costs about the time to read the weights (plus each sequence's small KV cache at short context). Going from 4 to 8 sequences adds only a little KV reading, so the step time barely moves and each user still gets about one token per step. Total tokens per step doubles. This only holds while the weights dominate the bytes read; long contexts change it."}
 />
 
 ## The KV cache cost
@@ -40,32 +40,43 @@ Long contexts change the maths. At batch 64 with 2k tokens each, the KV cache is
   id="step-time"
   devices={["phone","desktop"]}
   prompt={"At short context, going from batch 1 to batch 16 barely changes the decode step time. At 2,048 tokens of context, batch 64 roughly doubles it. What changed?"}
-  options={["The step became compute-bound at batch 64.", "The weights are read once per sequence at large batch sizes.", "The KV cache: 64 sequences × 2,048 tokens of cache is more bytes than the weights, and every step reads all of it.", "The scheduler's overhead grows with the batch size."]}
+  options={["The step became compute-bound at batch 64, so it now waits on the tensor cores.", "The weights are read once per sequence at large batch sizes instead of once per step.", "The KV cache: 64 × 2,048 tokens of cache is more bytes than the weights, read every step.", "The scheduler's overhead grows with the batch size and takes over the step."]}
   answer={2}
   explanation={"Bytes per step = weights + Σ(context × KV bytes per token). For Llama 3 8B: 16 GB of weights plus 64 × 2,048 × 128 KiB ≈ 17 GB of KV, so each step reads about twice as much. The weight matmuls run at about 64 FLOP/byte, still well below the H100 ridge of about 295, so the step is not compute-bound. The weights are still read once per step for the whole batch, and scheduler overhead is not what doubles the time."}
 />
+
+## Picking a batch cap
+
+Every step serves each running sequence one token, so per-user speed is 1 / step time, and total throughput is batch / step time. Step time grows with batch because of the KV cache:
+
+step time ≈ (weight bytes + batch × context × KV bytes per token) / bandwidth
+
+For Llama 3 8B in fp16 on an H100 at 2,048 tokens of context: batch 16 reads about 20.3 GB per step (about 6.1 ms, 165 tokens/s per user), and batch 128 reads about 50 GB (about 15 ms, 67 tokens/s per user).
+
+The cap you want is the largest batch whose step time still meets the per-user target and whose caches still fit in memory. In vLLM it is set with `max_num_seqs`.
 
 <MCQ
   id="batch-throughput"
   devices={["phone","desktop"]}
   prompt={"Your product promises every user at least 100 tokens/s. From the batching table: batch 64 gives about 101 tokens/s per user and 6,465 in total; batch 128 gives about 67 per user and 8,530 in total. What batch cap do you set?"}
-  options={["64. Batch 128 has more total throughput, but each user falls below the 100 tokens/s promise.", "128, because higher total throughput is always better.", "1, because that gives each user the most speed.", "No cap: per-user speed does not depend on batch size."]}
+  options={["64: batch 128 has more total throughput, but each user drops below 100.", "128, because higher total throughput always serves users better.", "1, because that gives each individual user the most speed.", "No cap, because per-user speed doesn't depend on batch size."]}
   answer={0}
   explanation={"Bigger batches raise total throughput with diminishing returns, but every step gets longer, so each user gets slower. The right cap is the largest batch that still meets the per-user target: 64 here. Batch 1 meets the target but wastes most of the GPU (about 204 tokens/s in total). The table shows per-user speed falling as the batch grows."}
 />
 
 ## Write the spreadsheet
 
-Turn the bargain into code so you can sweep batch sizes.
+Turn the bargain into a decision: given a latency target and a memory pool, how big can the batch
+be, and which limit stops it first?
 
 <Code
   id="step-code"
   devices={["desktop"]}
   language="python"
-  prompt={"Write decode_step_ms(weight_gb, kv_kib_per_token, batch, ctx, bw_tbs). It returns the memory-bound decode step time in milliseconds. Use decimal GB and TB, and 1 KiB = 1,024 bytes."}
-  starter={"def decode_step_ms(weight_gb, kv_kib_per_token, batch, ctx, bw_tbs):\n    # bytes read = weights + batch * ctx * kv bytes per token\n    return 0.0\n"}
-  tests={"def test_batch1():\n    assert abs(decode_step_ms(16, 128, 1, 0, 3.35) - 4.776) < 0.01\n\ndef test_batch64():\n    assert abs(decode_step_ms(16, 128, 64, 2048, 3.35) - 9.904) < 0.02\n\ndef test_a100():\n    assert abs(decode_step_ms(16, 128, 8, 4096, 2.0) - 10.147) < 0.02\n"}
-  solution={"def decode_step_ms(weight_gb, kv_kib_per_token, batch, ctx, bw_tbs):\n    total = weight_gb * 1e9 + batch * ctx * kv_kib_per_token * 1024\n    return total / (bw_tbs * 1e12) * 1e3\n"}
-  hints={["Convert everything to bytes first.","Seconds to ms: multiply by 1,000."]}
-  explanation="This one-liner is the core of every serving capacity spreadsheet, and it explains why long contexts hurt throughput."
+  prompt={"Pick a batch cap. Write max_batch_for_slo(weight_gb, kv_kib_per_token, ctx, bw_tbs, tpot_ms, kv_pool_gb). Every sequence holds ctx tokens. A memory-bound decode step reads the weights plus every sequence's KV cache, so step time = (weight_gb·10⁹ + batch·ctx·kv_kib_per_token·1,024) / (bw_tbs·10¹²) seconds. Return (batch, limit): the largest batch whose step time is at most tpot_ms and whose caches fit in kv_pool_gb (decimal GB), and which limit stopped it, \"slo\" or \"memory\". If even batch 1 misses the TPOT target, return (0, \"slo\")."}
+  starter={"def max_batch_for_slo(weight_gb, kv_kib_per_token, ctx, bw_tbs, tpot_ms, kv_pool_gb):\n    # Two limits: the TPOT target and the KV pool. Which one binds?\n    return (0, \"slo\")\n"}
+  tests={"def test_slo_binds():\n    \"\"\"8B fp16, 2k context, 10 ms target: latency caps it at 65 before memory (149)\"\"\"\n    assert max_batch_for_slo(16, 128, 2048, 3.35, 10, 40) == (65, \"slo\")\n\ndef test_memory_binds():\n    \"\"\"Relax the target to 20 ms: now the 40 GB pool (149 sequences) is the limit\"\"\"\n    assert max_batch_for_slo(16, 128, 2048, 3.35, 20, 40) == (149, \"memory\")\n\ndef test_long_context():\n    \"\"\"8k context, 15 ms target: 31 by latency, 37 by memory\"\"\"\n    assert max_batch_for_slo(16, 128, 8192, 3.35, 15, 40) == (31, \"slo\")\n\ndef test_impossible():\n    \"\"\"Reading 16 GB takes ~4.8 ms, so a 4 ms target can't be met\"\"\"\n    assert max_batch_for_slo(16, 128, 2048, 3.35, 4, 40) == (0, \"slo\")\n"}
+  solution={"def max_batch_for_slo(weight_gb, kv_kib_per_token, ctx, bw_tbs, tpot_ms, kv_pool_gb):\n    per_seq = ctx * kv_kib_per_token * 1024\n    budget = tpot_ms / 1e3 * bw_tbs * 1e12 - weight_gb * 1e9\n    if budget < per_seq:\n        return (0, \"slo\")\n    by_slo = int(budget // per_seq)\n    by_mem = int(kv_pool_gb * 1e9 // per_seq)\n    if by_mem < by_slo:\n        return (by_mem, \"memory\")\n    return (by_slo, \"slo\")\n"}
+  hints={["Bytes you can afford per step = tpot_ms / 1,000 × bandwidth in bytes/s.", "Subtract the weights, then divide by one sequence's KV bytes.", "Compare that with how many sequences fit in the pool."]}
+  explanation={"This is the core of a serving capacity plan. Short contexts and tight targets are limited by latency; long contexts and relaxed targets are limited by memory. Knowing which one binds tells you which lever to pull: fewer bytes per step (quantization) for latency, fewer bytes per token (an fp8 cache, GQA) for memory."}
 />

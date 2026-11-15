@@ -9,8 +9,8 @@ missionIntro: Weights are a fixed cost. The KV cache decides how many users you
 keyIdeas:
   - Usable memory minus weights is your KV budget. It sets the maximum number of
     concurrent sequences.
-  - Engines like vLLM reserve a fraction of GPU memory (0.9 by default) and hand
-    the rest to the cache.
+  - Engines like vLLM load the weights, measure working memory, and hand the
+    rest to the cache.
   - Smaller KV dtypes (fp8), GQA, shorter contexts or bigger GPUs all raise
     concurrency.
 ---
@@ -23,10 +23,22 @@ A serving GPU's memory splits into three parts:
 2. **Activations and workspace**: temporary buffers, usually small.
 3. **KV cache**: everything that is left.
 
-vLLM, for example, claims `gpu_memory_utilization = 0.9` of the GPU by default. After loading
-weights and profiling activations, the remainder becomes the pool of KV blocks.
+vLLM, for example, loads the weights, measures what activations and warm-up need, and turns the
+remaining memory into the pool of KV blocks. Older versions capped the total at a fraction of the GPU
+(`gpu_memory_utilization`, 0.9 by default); recent versions on NVIDIA and AMD GPUs size the pool from
+the memory actually left free.
 
 ![Stacked bars of 16 GB weights plus KV cache for 1, 16 and 48 sequences against an 80 GB limit](/diagrams/llm-inference/03-kv-cache/03-the-memory-budget.png)
+
+## How vLLM sizes its pool
+
+At startup vLLM loads the weights, runs warm-up passes (including CUDA graph capture) and measures how much memory those need. On NVIDIA and AMD GPUs, recent versions then size the KV cache from the memory that is actually still free, keeping a safety margin. Older versions, and other platforms, instead take a fixed fraction of the GPU set by `gpu_memory_utilization` and give what is left of it to the cache.
+
+The startup log reports how much KV cache it got and how many requests of the maximum length could run at once. If even one sequence of `max_model_len` tokens can't fit, it refuses to start.
+
+A common pitfall is setting `max_model_len` to the model's full advertised context (such as 128k) on a small GPU when users never send more than 8k.
+
+Source: [vLLM docs: optimization](https://docs.vllm.ai/en/latest/configuration/optimization.html)
 
 <MCQ
   id="max-seqs"

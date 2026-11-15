@@ -29,13 +29,23 @@ A router (a small linear layer with a softmax) scores every expert for each toke
   explanation={"Every expert must be stored, because any token may pick any expert: memory follows the total. At batch 1 each step reads only the active experts plus the shared layers: speed follows the active count. You need memory for the total and bandwidth for the active."}
 />
 
+## MoE at today's scale
+
+Mixtral 8x7B routes each token to 2 of 8 experts per layer: about 47B parameters in total, about 13B active. DeepSeek-V3 goes much further: 671B parameters in total, about 37B active per token.
+
+The serving consequence is the same at both scales. Memory must hold every expert, because any token may pick any of them. Compute and bytes read per token follow the active count, at least at small batch.
+
+At DeepSeek-V3's scale, the weights alone (about 671 GB in fp8) need a multi-GPU node, so expert parallelism places different experts on different GPUs, and tokens are sent to the GPU that holds their chosen expert.
+
+Sources: [Mixtral](https://arxiv.org/abs/2401.04088), [DeepSeek-V3](https://arxiv.org/abs/2412.19437)
+
 <MCQ
   id="moe-saves"
   devices={["phone","desktop"]}
-  prompt="What does MoE save compared with a dense model of the same total size?"
-  options={["Memory for weights","FLOPs and bytes read per token","KV cache size","Tokenizer size"]}
+  prompt={"You compare Mixtral 8x7B (about 47B parameters, about 13B active per token) with a dense 47B model on the same GPUs at batch 1. Which costs are about the same, and which differ?"}
+  options={["Both memory and per-token cost are about 3.6x lower for Mixtral, because only active experts are loaded.", "Weight memory is about the same; per-token FLOPs and bytes read are about 3.6x lower for Mixtral.", "Memory is about 3.6x lower for Mixtral, but per-token cost is the same as the dense model's.", "Everything is about the same, because both models have about 47B parameters in total."]}
   answer={1}
-  explanation="You still store everything. You just touch less of it per token, at least at small batch."
+  explanation={"All experts must sit in memory, because any token may pick any of them, so memory follows the 47B total. Each token runs only 2 of 8 experts per layer, about 13B parameters, so at batch 1 it does and reads about 47 / 13 ≈ 3.6x less. Larger batches touch more experts, which erodes that saving."}
 />
 
 ## Batches touch more experts
@@ -58,7 +68,7 @@ At batch 1 only k experts are read. At larger batches, different tokens pick dif
   id="mixtral-speed"
   devices={["phone","desktop"]}
   prompt={"At batch 1, Mixtral decodes much faster than a dense 47B model. At batch 64 the advantage mostly disappears. Why?"}
-  options={["The router gets slower at larger batches.", "Different tokens pick different experts, so at batch 64 nearly every expert is read each step, and the bytes read approach the full 47B.", "At batch 64 MoE switches to a dense mode.", "Batching does not help MoE models."]}
+  options={["The router's work grows with the batch, and at batch 64 routing takes longer than the experts themselves.", "Different tokens pick different experts, so at batch 64 nearly every expert is read each step.", "Above a certain batch size MoE layers switch to a dense mode that runs every expert for every token.", "Batching never helps MoE models, because each token's experts have to be loaded separately."]}
   answer={1}
   explanation={"With 8 experts and top-2 routing, 64 tokens almost surely touch all 8 experts, so a step reads almost all the weights, like a dense model. The router is one tiny layer, there is no dense mode, and batching still helps MoE: the same reads serve more tokens."}
 />

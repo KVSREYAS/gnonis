@@ -23,18 +23,26 @@ Each stage owns a block of layers. Stage k finishes a micro-batch and sends its 
   id="pp-mem"
   devices={["phone","desktop"]}
   prompt={"You serve a 70B model with 4 pipeline stages. Compared with one GPU big enough to hold the whole model, does one user's next token arrive faster?"}
-  options={["Yes, about 4x, because each stage reads only a quarter of the weights.", "Yes, because the stages add their partial results with an all-reduce.", "No, it is about 4x slower, because each stage waits for an all-reduce.", "No. The stages work on that token one after another, so PP mainly lets the model fit and keeps throughput up with micro-batches."]}
+  options={["Yes, about 4x, because each stage reads only a quarter of the weights.", "Yes, because the stages add their partial results with an all-reduce.", "No, it is about 4x slower, because each stage waits for an all-reduce.", "No: the stages handle that token one after another, so PP mainly lets the model fit."]}
   answer={3}
   explanation={"Each stage reads a quarter of the weights, but stage 2 cannot start a token until stage 1 hands it over, so the times add up to about the same as one GPU plus small transfers. PP sends activations point to point between neighbours; it has no all-reduce. To make one user faster, split each layer instead (tensor parallelism)."}
 />
 
+## How small pipeline traffic is
+
+With pipeline parallelism, weights and the KV cache stay on their stage. Between stages only the hidden vector of each token in flight moves: d_model values.
+
+For a model with hidden size 4,096 in bf16, that is 4,096 × 2 = 8 KB per token per stage boundary. Even a 2,000-token prefill sends only about 16 MB.
+
+TP is the opposite: two all-reduces of the activations in every block, so an 80-layer model does 160 all-reduces per step. Pipeline traffic is small and infrequent enough to cross slower links between nodes; TP's is not.
+
 <MCQ
   id="pp-vs-tp"
   devices={["phone","desktop"]}
-  prompt="Compared with TP, PP communication is…"
-  options={["all-reduce every layer","point-to-point activation sends between neighbouring stages only","none at all","all-to-all"]}
+  prompt={"A 70B model (hidden size 8,192) runs with PP = 4 on 4 GPUs. At batch 1, what crosses from GPU 0 to GPU 1 on each decode step, and how big is it?"}
+  options={["A quarter of the weights, about 35 GB, so that GPU 1 has the layers it needs for this step.", "Only the token's activation at the stage boundary: about 16 KB, with no per-block all-reduces.", "The KV cache of the first 20 layers, so that GPU 1's layers can attend to the earlier tokens.", "An all-reduce of the activations after every layer, just as in tensor parallelism."]}
   answer={1}
-  explanation="That's why PP is the go-to for spanning nodes."
+  explanation={"In PP each GPU owns a contiguous set of layers and their weights and KV cache, which stay put. Per token, only the hidden vector leaving the last layer of a stage is sent to the next stage: d_model × 2 bytes = 16,384 bytes. TP, by contrast, all-reduces activations twice in every block. Weights and caches never move."}
 />
 
 ## Bubbles

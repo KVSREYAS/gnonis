@@ -58,10 +58,21 @@ Real speedup is lower, because the draft costs time and the verify pass is sligh
 
 Several of these propose a **tree** of candidates, verified in one pass with a special attention mask.
 
+## Worked scenario: tuning speculation
+
+A coding assistant runs a 70B target with a 1B draft, at batch 1. Measured α ≈ 0.8.
+
+- With γ = 4, expected tokens per pass = (1 − 0.8⁵) / (1 − 0.8) ≈ 3.4.
+- Drafting 4 tokens costs 4 small-model steps. If each costs about 5% of a target step, that adds about 20%.
+- The verify pass costs a little more than a normal step, say 10% more.
+
+Speedup ≈ 3.4 / (1 + 0.2 + 0.1) ≈ 2.6x.
+
 <MCQ
   id="concept-check"
-  prompt="Speculative sampling with the correct accept/reject rule changes the output distribution how?"
-  options={["Makes it match the draft model", "Not at all: it equals the target model's distribution", "Makes it greedier", "Adds noise"]}
+  devices={["phone","desktop"]}
+  prompt={"With α = 0.8 and γ = 4, theory gives about 3.4 tokens per target pass. A team measures a 2.5x speedup at batch 1 but only 1.3x at batch 64. Why the drop?"}
+  options={["α falls at larger batches, because the draft model sees fewer tokens of each conversation.", "At batch 64 there is less spare compute, so checking 5 positions per sequence slows each pass.", "The tokens-per-pass formula stops holding above batch 1, so the 3.4 is wrong there.", "The bonus token is dropped at larger batches, so each pass yields one token fewer."]}
   answer={1}
-  explanation="The min(1, p/q) acceptance plus residual sampling is provably exact."
+  explanation={"Tokens per pass depends only on α and γ, so it stays about 3.4. What changes is the cost of a pass: at batch 1 checking 5 positions costs about the same as 1, but at batch 64 the step already does more compute, so 5x the positions per sequence adds real time. The speedup is tokens per pass divided by the relative cost of a pass."}
 />

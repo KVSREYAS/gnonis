@@ -20,13 +20,24 @@ keyIdeas:
 
 ![Latency timeline with TTFT and TPOT marked, and a radix tree of requests sharing a cached system prompt](/diagrams/llm-inference/11-serving-systems/01-ttft-tpot-and-prefix-caching.png)
 
+## Where TTFT and TPOT come from
+
+TTFT = time waiting in the queue + prefill time (+ network). TPOT = decode step time, which depends on the batch and on context lengths.
+
+Each has its own levers:
+
+- **TTFT**: shorter queues (more capacity, better admission), less prefill work (prefix caching, shorter prompts), faster prefill (more tensor parallelism, FP8).
+- **TPOT**: fewer bytes per step (quantized weights, an FP8 KV cache), fewer steps (speculative decoding), smaller batches, and no prefill stalls (chunked prefill or disaggregation).
+
+Measure the queue wait separately. A TTFT spike at peak hours with normal prefill times is a capacity problem, not a kernel problem.
+
 <MCQ
   id="metric-match"
   devices={["phone","desktop"]}
-  prompt={"A chatbot feels \"laggy before it starts typing\". Which metric is bad?"}
-  options={["TTFT","TPOT","Total throughput","Model FLOPs utilisation"]}
-  answer={0}
-  explanation="Slow start = TTFT. Long prompts, queueing and big prefills hurt it; chunked prefill and prefix caching help."
+  prompt={"Two complaints: (a) \"it takes forever to start\", (b) \"it starts fast but types slowly\". Which metric is each about, and which lever fits?"}
+  options={["(a) is TPOT and (b) is TTFT; raising the batch size fixes both at once.", "Both are TTFT problems; prefix caching fixes both, because it skips repeated work.", "Both are TPOT problems; speculative decoding fixes both, because it makes tokens faster.", "(a) TTFT: prefix caching or more prefill capacity. (b) TPOT: smaller batches, quantization, speculation."]}
+  answer={3}
+  explanation={"TTFT is the wait until the first token: queue time plus prefill. TPOT is the gap between later tokens: decode step time. Prefix caching skips prefill work for shared prefixes, which helps (a). Fewer bytes per step (quantization), fewer steps (speculation) or smaller batches shorten decode steps, which helps (b). A larger batch usually makes TPOT worse."}
 />
 
 ## End-to-end latency
@@ -54,7 +65,7 @@ vLLM calls this automatic prefix caching. SGLang keeps cached prefixes in a radi
   id="prefix-saving"
   devices={["phone","desktop"]}
   prompt={"Prefix caching worked well until someone put the current timestamp at the very start of the system prompt. Now the hit rate is near zero. Why?"}
-  options={["Timestamps cannot be tokenized.", "Each block's hash covers all tokens before it, so a change in the first block changes every block's hash and no prompt matches the cache.", "The cache only stores prompts below a fixed length.", "Prefix caching only reuses the last block of a prompt."]}
+  options={["The timestamp can't be tokenized consistently, so the prompt's tokens differ even when the text matches.", "Each block's hash covers all tokens before it, so changing the first block changes every hash.", "The cache only stores prompts below a fixed length, and the timestamp pushed the prompt over it.", "Prefix caching only reuses a prompt's last block, and that block now always contains the timestamp."]}
   answer={1}
   explanation={"Keys and values depend on every earlier token, so the cache can only reuse a block when everything before it matches too. A timestamp in the first block makes every request's prefix unique. Moving the changing part to the end of the prompt restores the hits. Timestamps tokenize like any text, there is no length cutoff, and reuse runs from the first block forward."}
 />

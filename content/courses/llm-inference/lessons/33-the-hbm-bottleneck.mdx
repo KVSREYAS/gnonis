@@ -24,7 +24,7 @@ Naive attention runs as separate kernels, and each one writes its N×N result to
   id="s-size"
   devices={["phone","desktop"]}
   prompt={"Naive attention writes S and P (both N × N) to HBM, but its output O is only N × d. What happens as the context grows?"}
-  options={["S and P stay the same size, so nothing changes.", "The HBM traffic for S and P grows with N² while the output grows only with N, so the kernels spend more and more of their time moving data.", "The FLOPs grow with N², but the HBM traffic stays constant.", "O grows with N², so the output dominates the traffic."]}
+  options={["S and P stay the same size as the context grows, so the balance between kernels doesn't change.", "S and P traffic grows with N² while the output grows with N, so the kernels mostly move data.", "The FLOPs grow with N², but the HBM traffic stays constant, so the kernels become compute-bound.", "O grows with N², so writing the output comes to dominate the traffic."]}
   answer={1}
   explanation={"S and P have one entry per query-key pair, so they grow as N², and each is written and read back. O has one d-sized row per token. At 4k tokens and 32 heads, S alone is about a GiB per layer. That traffic, not the FLOPs, is what makes naive attention slow at long context."}
 />
@@ -43,11 +43,19 @@ Dao et al. counted HBM reads and writes. For standard attention they grow like N
 
 Source: [FlashAttention](https://arxiv.org/abs/2205.14135)
 
+## The numbers at 16k tokens
+
+At N = 16,384 tokens, one head's score matrix has N² ≈ 268 million entries. In fp16 that is 512 MiB for S and another 512 MiB for P, per head, per layer.
+
+Naive attention writes S, reads it back for the mask and softmax, writes P, and reads it again for the multiplication by V. Each of these passes moves hundreds of MB while doing only a few operations per element, so the work is memory-bound.
+
+The output O is only N × d = 16,384 × 128 values, 4 MiB in fp16. Almost all of the traffic is intermediate data that is thrown away.
+
 <MCQ
   id="slow-why"
   devices={["phone","desktop"]}
-  prompt="Why is standard attention slow on GPUs at long context?"
-  options={["Too many FLOPs in QKᵀ","The N² intermediates go back and forth to HBM, and the elementwise steps are memory-bound","Softmax needs fp64","GPUs can't do matmuls on attention"]}
-  answer={1}
-  explanation="The matmuls are fine. Shuttling S and P through HBM is what hurts."
+  prompt={"Profiling naive attention at a 16k-token context: the two matmul kernels run at high FLOP/s, but most of the time goes to the mask and softmax kernels, which run at very low FLOP/s. Why?"}
+  options={["They read and write the N × N matrices to HBM while doing little maths per element: memory-bound.", "Softmax and masking need exp and comparisons, which are much slower on a GPU than multiply-adds.", "The mask kernel computes extra scores for all the future tokens, which doubles the work at long context.", "In naive implementations the softmax runs on the CPU, so the data crosses PCIe twice."]}
+  answer={0}
+  explanation={"At N = 16k the score matrix has 268 million entries per head. Mask and softmax each read and write all of them from HBM but do only a handful of operations per element, so their intensity is tiny and HBM bandwidth sets their time. exp is fast on GPUs. The fix is to keep scores on chip, which is what FlashAttention does."}
 />

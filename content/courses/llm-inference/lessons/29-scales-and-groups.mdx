@@ -48,20 +48,28 @@ With one scale per tensor, a single big outlier makes every step huge. Per-chann
 
 Sources: [GPTQ](https://arxiv.org/abs/2210.17323), [AWQ](https://arxiv.org/abs/2306.00978)
 
+## How one outlier wrecks a scale
+
+With symmetric quantization, the scale is max|w| divided by the largest level (127 for int8, 7 for the int4 used here). Any weight smaller than half a step rounds to 0.
+
+Take a row of 4,096 int8 weights, all within ±0.05, plus one outlier of 1.27. The step is 1.27 / 127 = 0.01, so a weight of 0.004 rounds to 0 and 0.026 is stored as 3 (0.03). About a 15% error on a small weight.
+
+With int4 there are far fewer levels, so the same outlier does much more damage. Groups contain it: each group of 128 weights gets its own scale, so the outlier only coarsens its own group, at a cost of one fp16 scale (16 bits) per 128 weights.
+
 <MCQ
   id="why-groups"
   devices={["phone","desktop"]}
-  prompt="Why do GPTQ and AWQ checkpoints typically use group size 128 instead of one scale per tensor?"
-  options={["It makes the file smaller","Outliers in one region no longer blow up the scale for the whole tensor","GPUs need groups of 128","It removes the need to dequantize"]}
-  answer={1}
-  explanation="Local scales track local ranges. The cost is a few extra bits for the scales."
+  prompt={"One row of 4,096 weights has a single value of 2.0; the rest lie within ±0.05. You quantize to symmetric int4 with levels −7 to 7. What happens to the small weights with one scale for the whole row, and with groups of 128?"}
+  options={["Nothing is lost either way: int4 has 15 levels, which is plenty for weights within ±0.05.", "Both lose the small weights: int4 is too coarse for values within ±0.05, with or without groups.", "One scale gives a step of about 0.29, so all small weights become 0; groups confine that to one group.", "One scale is better: groups add an extra rounding error from storing each group's scale."]}
+  answer={2}
+  explanation={"Scale = max|w| / 7. For the row: 2.0 / 7 ≈ 0.29, and anything below half a step (≈ 0.14) rounds to 0: all 4,095 small weights vanish. With groups of 128, 31 of the 32 groups have max ≈ 0.05, so a step of 0.05 / 7 ≈ 0.007, fine enough to keep them. The extra fp16 scale per group costs 16 / 128 = 0.125 bits per weight."}
 />
 
 <MCQ
   id="group-bits"
   devices={["phone","desktop"]}
   prompt={"You change int4 group size from 128 to 32 (one fp16 scale per group). What is the trade-off?"}
-  options={["Both better: smaller error and less memory.", "Smaller rounding error, because an outlier stretches the step of only 32 weights, but scales now cost 0.5 extra bits per weight instead of 0.125.", "Larger error, because each group has fewer weights to average over.", "No change: group size only affects kernel speed."]}
+  options={["Both get better: smaller rounding error and less memory, because the scales are smaller.", "Smaller rounding error, but scales now cost 0.5 extra bits per weight instead of 0.125.", "Larger error, because each group has fewer weights to average the rounding over.", "No change in error or memory: group size only affects how fast the kernel runs."]}
   answer={1}
   explanation={"A 16-bit scale shared by 128 weights adds 16 / 128 = 0.125 bits per weight; shared by 32 it adds 0.5. In return, each scale fits a smaller, more uniform set of weights, so steps are smaller. Rounding does not average over the group: each weight rounds on its own, using the group's step."}
 />

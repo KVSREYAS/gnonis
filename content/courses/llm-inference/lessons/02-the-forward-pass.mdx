@@ -25,10 +25,10 @@ point is matrix maths on that hidden state.
 <MCQ
   id="embedding-params"
   devices={["phone","desktop"]}
-  prompt={"Llama 3 grew the vocabulary from Llama 2's 32,000 tokens to 128,256. What does a bigger vocabulary buy, and what does it cost?"}
-  options={["Nothing at inference. Vocabulary size only matters during training.", "Each token covers more text, so an answer needs fewer forward passes. The cost is a bigger embedding table and a bigger LM head.", "It makes every transformer block wider, so each block does about 4 times more maths.", "It removes the need for a tokenizer, because every word now has its own id."]}
-  answer={1}
-  explanation={"More text per token means fewer decode steps for the same answer. The price is paid at both ends of the model: the embedding table and the LM head ([d_model × vocab]) both grow with the vocabulary. It does matter at inference, because fewer tokens means fewer passes. The blocks depend on d_model, not on vocabulary size. And a tokenizer is still needed: even 128k entries cannot cover every word, so rare words still split."}
+  prompt={"A team serves a chat app whose Hindi users' messages cost about 3x more tokens than the same message in English. A newer model offers a 128k-token vocabulary (vs 32k) with many more Hindi tokens. What do Hindi users gain, and what does every request pay?"}
+  options={["Hindi requests get fewer tokens, but nothing else changes: the vocabulary only affects the tokenizer, which runs on the CPU and costs no GPU time.", "Hindi requests get faster, but each transformer block grows with the vocabulary, so every token in every language does about 4x more maths.", "Fewer Hindi tokens: less prefill, fewer decode steps, smaller cache. Every request pays for a larger embedding table and LM head.", "Hindi requests need fewer tokens, and the model also gets smaller overall, because each embedding row can be shorter when there are more of them."]}
+  answer={2}
+  explanation={"Every serving cost is counted in tokens: fewer Hindi tokens means less prefill work, fewer decode steps and fewer KV entries. The price is in the two vocabulary-sized matrices: the embedding table and the LM head both have one row per token, so a 4x larger vocabulary makes them about 4x larger, and the final logits step computes 4x more scores. The transformer blocks themselves do not change width with vocabulary size."}
 />
 
 ## The block, repeated
@@ -62,6 +62,14 @@ token. Turning them into an actual choice is the next lesson.
 
 Cost check: a forward pass does about **2 FLOPs per parameter per token**, so an 8B model needs
 roughly 16 GFLOPs for every token it processes.
+
+## Only the last position needs logits
+
+The LM head is big. For Llama 3 8B it is a 4,096 × 128,256 matrix, about 525 million weights, roughly 6.5% of the model. During prefill, the forward pass produces a hidden vector for every prompt position, but only the last one predicts the next token.
+
+So serving engines run the LM head only on the positions they will sample from: the last position of each sequence in the batch. For a 2,000-token prompt that skips 1,999 large matrix multiplications, and the output is exactly the same.
+
+The keys and values of every prompt position are still needed. They are stored in the KV cache, because each later token attends to all of them.
 
 <Ordering
   id="pipeline-order"

@@ -71,10 +71,22 @@ Going from 8K to 32K context is 4 times longer but about 16 times more attention
 
 ![Attention cost growing with T squared](/diagrams/llm-inference/02-attention/04-the-quadratic-bill.png)
 
+## Worked scenario: two designs, one GPU
+
+Two models with 32 layers and head size 128 store an fp16 cache. One uses MHA with 32 KV heads, the other GQA with 8.
+
+- MHA: 2 × 32 × 32 × 128 × 2 = 512 KiB per token.
+- GQA: 2 × 32 × 8 × 128 × 2 = 128 KiB per token.
+
+With 40 GB free for the cache, MHA holds about 76,000 tokens: nine full 8k conversations. GQA holds about 305,000: 37 of them. Each decode step also reads 4x fewer cache bytes with GQA, so at long contexts its steps are faster too.
+
+Both still compute 32 attention patterns per layer. What changed is how many different keys and values are stored.
+
 <MCQ
   id="concept-check"
-  prompt="A model has 32 query heads and 8 KV heads. Compared with full MHA, how big is the stored K and V?"
-  options={["The same", "1/2", "1/4", "1/32"]}
-  answer={2}
-  explanation="K and V scale with the number of KV heads: 8/32 = 1/4."
+  devices={["phone","desktop"]}
+  prompt={"Model X: 64 query heads and 8 KV heads. Model Y: 64 query heads and 64 KV heads. Same layers and head size, same GPU memory left for cache. How many times more cached tokens fit for X, and does X compute fewer attention patterns?"}
+  options={["8x more tokens, and X computes only 8 attention patterns, so it loses most of what its 64 heads learned.", "64x more tokens, because X stores a single K/V head per layer, and Y stores 64.", "The same number of tokens, because both have 64 query heads and the cache is sized by query heads.", "8x more tokens; no, X still computes 64 patterns, one per query head."]}
+  answer={3}
+  explanation={"Cache per token scales with KV heads: 64 / 8 = 8x less per token for X, so 8x more tokens fit. Each of X's 64 query heads still scores its own query against the shared keys of its group, so there are still 64 patterns. 64x would be MQA (one KV head). Query heads are never cached."}
 />

@@ -25,21 +25,29 @@ Megatron-LM shards the first MLP weight by columns (each GPU computes part of th
   id="allreduce-count"
   devices={["phone","desktop"]}
   prompt={"In Megatron's MLP split, why is there an all-reduce after the second (row-split) matrix but no communication after the first (column-split) one?"}
-  options={["After the column split each GPU holds complete values for its slice of the hidden layer, so the activation runs locally; after the row split each GPU holds a partial sum of the whole output, and the parts must be added.", "The first matrix is small enough to skip communication.", "The all-reduce sends the second matrix's weights to every GPU.", "The activation can only run on one GPU, so the first result is gathered there."]}
+  options={["Each GPU has complete values for its slice after the column split, but only a partial sum after the row split.", "The first matrix is small enough that skipping communication after it costs no accuracy.", "The all-reduce sends the second matrix's weights to every GPU, and the first needs no weights moved.", "The activation can only run on one GPU, so the first result is gathered there without an all-reduce."]}
   answer={0}
   explanation={"Splitting A by columns gives each GPU whole columns of X A, and the activation works element by element, so no data needs to move. Splitting B by rows means each GPU's product is a partial sum of Y, so an all-reduce adds them. Attention splits the same way by heads, giving two all-reduces per block. The first matrix is not small, weights never move, and the activation runs on every GPU."}
 />
+
+## TP in practice
+
+In vLLM, TP is one flag: `--tensor-parallel-size 4` splits every layer across 4 GPUs. TensorRT-LLM sets the TP degree when it builds the engine.
+
+Weights per GPU shrink by the TP degree, and so do the bytes each GPU reads per step, which is why TP speeds up a single user. The memory that is freed goes to the KV cache, which is also split by heads across the GPUs.
+
+The usual choice is the smallest TP degree whose per-GPU weights leave enough room for the KV cache you need. Spare GPUs then run extra **replicas** (data parallelism), which add throughput with no communication between them.
 
 <Code
   id="tp-code"
   devices={["desktop"]}
   language="python"
-  prompt={"Write per_gpu_weight_gb(params_b, bytes_per_param, tp), the weight memory per GPU in decimal GB when weights are split evenly across tp GPUs."}
-  starter={"def per_gpu_weight_gb(params_b, bytes_per_param, tp):\n    return 0.0\n"}
-  tests={"def test_70b_tp4():\n    assert abs(per_gpu_weight_gb(70, 2, 4) - 35.0) < 1e-9\n\ndef test_8b_tp1():\n    assert abs(per_gpu_weight_gb(8, 2, 1) - 16.0) < 1e-9\n\ndef test_405b_fp8_tp8():\n    assert abs(per_gpu_weight_gb(405, 1, 8) - 50.625) < 1e-9\n"}
-  solution={"def per_gpu_weight_gb(params_b, bytes_per_param, tp):\n    return params_b * bytes_per_param / tp\n"}
-  hints={["Billions × bytes gives GB."]}
-  explanation="TP also divides the bytes read per decode step, so batch-1 latency drops too (minus the communication)."
+  prompt={"Plan a server of n_gpus GPUs. Write split_plan(params_b, bytes_per_param, gpu_gb, n_gpus, reserve=0.3). Choose the smallest tensor-parallel degree tp from 1, 2, 4, 8 (and at most n_gpus) whose weights per GPU (params_b × bytes_per_param / tp, in GB) fit in gpu_gb × (1 − reserve), keeping the reserve for the KV cache. Use the remaining GPUs as data-parallel replicas: return (tp, n_gpus // tp). Return None if no allowed tp fits."}
+  starter={"def split_plan(params_b, bytes_per_param, gpu_gb, n_gpus, reserve=0.3):\n    # Smallest TP that fits, then as many replicas as the GPUs allow.\n    return None\n"}
+  tests={"def test_8b_replicas():\n    \"\"\"8B fits on one GPU, so 8 independent copies\"\"\"\n    assert split_plan(8, 2, 80, 8) == (1, 8)\n\ndef test_70b_fp16():\n    \"\"\"140 GB: TP 2 gives 70 GB > 56, TP 4 gives 35 GB\"\"\"\n    assert split_plan(70, 2, 80, 8) == (4, 2)\n\ndef test_70b_fp8():\n    \"\"\"fp8 halves the weights, so TP 2 and 4 replicas\"\"\"\n    assert split_plan(70, 1, 80, 8) == (2, 4)\n\ndef test_too_few_gpus():\n    assert split_plan(70, 2, 80, 2) is None\n\ndef test_too_big():\n    \"\"\"405B in bf16 doesn't fit even at TP 8\"\"\"\n    assert split_plan(405, 2, 80, 8) is None\n"}
+  solution={"def split_plan(params_b, bytes_per_param, gpu_gb, n_gpus, reserve=0.3):\n    budget = gpu_gb * (1 - reserve)\n    for tp in (1, 2, 4, 8):\n        if tp > n_gpus:\n            break\n        if params_b * bytes_per_param / tp <= budget:\n            return (tp, n_gpus // tp)\n    return None\n"}
+  hints={["Billions of parameters × bytes per parameter gives GB.", "Stop trying once tp is larger than n_gpus."]}
+  explanation={"More TP than needed adds all-reduce cost to every step and buys only latency. Replicas add throughput with no communication at all. So the usual plan is the smallest TP that fits with room for the cache, then as many replicas as the GPUs allow. fp8 weights often halve the TP degree and double the replicas."}
 />
 
 ## Communication cost
@@ -54,7 +62,7 @@ Source: [Megatron-LM](https://arxiv.org/abs/1909.08053)
   id="ring-bytes"
   devices={["phone","desktop"]}
   prompt={"In a ring all-reduce each GPU sends 2(N − 1)/N times the tensor size. What happens to each GPU's traffic as you go from TP = 2 to TP = 8?"}
-  options={["It rises from 1x to 1.75x the tensor size, close to the 2x limit, while each GPU's share of the maths shrinks, so communication becomes a bigger part of each step.", "It shrinks to 1/8, because each GPU holds less of the model.", "It stays exactly the same as at TP = 2.", "It grows 4x, in proportion to the number of GPUs."]}
+  options={["It rises from 1x to 1.75x the tensor size, while each GPU's share of the maths shrinks.", "It shrinks to 1/8 of the tensor, because each GPU holds an eighth of the model.", "It stays exactly the same as at TP = 2, because the ring always sends each piece once.", "It grows 4x, in proportion to the number of GPUs, because every GPU talks to every other."]}
   answer={0}
   explanation={"The tensor being reduced is the activation, which has the same size at any TP degree. 2(N − 1)/N is 1 at N = 2 and 1.75 at N = 8, so each GPU sends a bit more while doing a quarter of the maths. That is one reason TP stops scaling well and stays on fast NVLink. Weights never move in an all-reduce, and the traffic never grows in proportion to N."}
 />
@@ -62,8 +70,8 @@ Source: [Megatron-LM](https://arxiv.org/abs/1909.08053)
 <MCQ
   id="keep-in-node"
   devices={["phone","desktop"]}
-  prompt="Why is tensor parallelism usually kept within one node?"
-  options={["CUDA forbids cross-node TP","It needs frequent, latency-sensitive all-reduces, and NVLink (900 GB/s on H100) is far faster than the network","It uses less memory across nodes","Pipeline parallelism needs NVLink instead"]}
+  prompt={"A team runs TP = 16 across two 8-GPU nodes linked by InfiniBand (about 50 GB/s per GPU) instead of TP = 8 within each node with PP = 2. Decode latency gets worse. Why?"}
+  options={["TP = 16 holds more weight bytes per GPU than TP = 8, so each GPU's share no longer fits well.", "Two all-reduces per block every step now run at InfiniBand speed instead of NVLink speed.", "PP would have needed no communication at all, while TP = 16 needs some.", "CUDA runs kernels at half speed whenever they are part of a cross-node group."]}
   answer={1}
-  explanation="Many small all-reduces per token over InfiniBand would dominate latency."
+  explanation={"Each transformer block in TP ends its attention and MLP with an all-reduce, so an 80-layer model does 160 of them per step, each waiting for the slowest link. Over InfiniBand at about 50 GB/s against 900 GB/s for NVLink, those small, frequent transfers take far longer. TP = 16 actually uses less memory per GPU. PP does communicate, but only one activation hand-off per stage boundary."}
 />

@@ -24,18 +24,28 @@ If each drafted token is accepted with probability α and you draft γ, the targ
   id="low-alpha"
   devices={["phone","desktop"]}
   prompt={"Your draft model is a poor match and α drops from 0.8 to 0.6. What should you do with γ, the number of drafts per pass?"}
-  options={["Raise it: more drafts make up for the lower acceptance.", "Lower it: late drafts rarely survive (0.6⁴ ≈ 0.13), but each one still costs drafting time.", "Keep it: γ has no effect on speed.", "Raise it, or the output distribution will change."]}
+  options={["Raise it: more drafts per pass make up for each one's lower acceptance.", "Lower it: late drafts rarely survive (0.6⁴ ≈ 0.13) but still cost drafting time.", "Keep it the same: γ has no effect on speed once α is known.", "Raise it, or else the output distribution will drift towards the draft."]}
   answer={1}
   explanation={"Each extra draft adds α^i tokens but always costs one more draft step. When α falls, the gain from late drafts shrinks faster than their cost, so the best γ gets smaller. More drafts cannot fix a poor match, γ clearly affects speed, and the accept rule keeps the output distribution exact at any γ."}
 />
 
+## What controls α
+
+α is how often the draft's token survives the accept rule. It depends on three things:
+
+- **How well the draft matches the target.** A draft distilled on the target's own outputs agrees with it much more often than an off-the-shelf small model does.
+- **How predictable the text is.** Code, structured output and quoted material score high α. Creative writing at high temperature scores low.
+- **Sampling settings.** With sampling, the chance of acceptance is min(1, p/q) per token, so a draft that is overconfident where the target is unsure gets rejected more often.
+
+The draft must use the same tokenizer as the target, or its tokens can't be checked position by position.
+
 <MCQ
   id="raise-alpha"
   devices={["phone","desktop"]}
-  prompt="Which change usually raises the acceptance rate α?"
-  options={["Using a draft from a different model family","Higher sampling temperature","Distilling the draft on the target's outputs","Increasing γ"]}
-  answer={2}
-  explanation="α measures how similar the two distributions are. Increasing γ doesn't change α, it just risks more wasted guesses."
+  prompt={"Your 1B draft for a 70B chat model gets an acceptance rate α of about 0.5 on your traffic. Which change is most likely to raise α?"}
+  options={["Raise γ, the number of drafts per pass, so more of the target's choices are covered by a guess.", "Fine-tune (distil) the draft on the 70B model's own outputs for your kind of traffic.", "Raise the sampling temperature, so the target spreads its probability and accepts more drafts.", "Swap in a stronger draft from a different family, even though its tokenizer splits text differently."]}
+  answer={1}
+  explanation={"α measures how often the draft predicts what the target would. Training the draft to imitate the target on your traffic directly raises that agreement. Raising γ changes how many guesses are tried, not how good each is. Higher temperature makes both models less predictable. A draft with a different tokenizer produces different tokens, so standard verification can't even compare them."}
 />
 
 ## The cost of drafting
@@ -50,7 +60,7 @@ Source: [Leviathan et al. 2023](https://arxiv.org/abs/2211.17192)
   id="speedup"
   devices={["phone","desktop"]}
   prompt={"α = 0.8 and γ = 4 give about 3.4 tokens per target pass, but the measured speedup is about 2.2x. Why lower?"}
-  options={["Rejected tokens are shown to the user and then deleted.", "The output distribution changed, so some tokens are wasted.", "The target model runs γ times per iteration.", "Drafting takes time too (γ draft steps per iteration), and the verify pass is a little slower than a normal decode step."]}
+  options={["Rejected tokens are shown to the user and then deleted, which takes extra time.", "The output distribution changed, so some accepted tokens have to be regenerated.", "The target model runs γ times per iteration, once to check each draft.", "Drafting takes time too, and the verify pass is a little slower than a normal step."]}
   answer={3}
   explanation={"Speedup = tokens per pass / time per iteration, and an iteration costs γ × c draft steps plus one target pass. With c ≈ 0.13 that is about 3.4 / 1.5 ≈ 2.2. Rejected drafts are never shown, the distribution is unchanged, and the target runs once per iteration."}
 />

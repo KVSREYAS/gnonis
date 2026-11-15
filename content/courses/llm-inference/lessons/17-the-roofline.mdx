@@ -25,13 +25,13 @@ intensity. On the right, the flat roof: you are **compute-bound** at peak FLOP/s
 
 ![H100 roofline with batch-1 decode, batch-32 decode and prefill marked](/diagrams/llm-inference/04-gpu-memory-roofline/03-the-roofline.png)
 
-<Fill
+<MCQ
   id="roof-fill"
   devices={["phone","desktop"]}
-  text={"Attainable FLOP/s = min({{0}}, arithmetic intensity × {{1}})"}
-  chips={["peak FLOP/s","memory bandwidth","clock speed","number of SMs"]}
-  answers={["peak FLOP/s","memory bandwidth"]}
-  explanation="Below the ridge you get intensity x bandwidth, and above it you hit the flat compute roof."
+  prompt={"A kernel on an H100 (989 TFLOP/s, 3.35 TB/s) runs at an intensity of 100 FLOP/byte. Roughly what FLOP/s can it reach, and what would it take to reach peak?"}
+  options={["The full 989 TFLOP/s: any intensity above 1 FLOP/byte is compute-bound, so it already runs at peak.", "About 335 TFLOP/s, a third of peak; it needs about 3x more reuse per byte to reach the ridge.", "About 100 TFLOP/s, because the intensity in FLOP/byte is also the FLOP/s it reaches, in TFLOP/s.", "About 335 TFLOP/s, and only more HBM capacity, not more reuse per byte, can raise it."]}
+  answer={1}
+  explanation={"Attainable FLOP/s = min(peak, intensity × bandwidth) = min(989, 100 × 3.35) = 335 TFLOP/s, so the bandwidth roof binds. The ridge is 989 / 3.35 ≈ 295 FLOP/byte, so the kernel needs about 3x more FLOPs per byte (more reuse, such as a bigger batch or tiling) to become compute-bound. Memory capacity is not bandwidth."}
 />
 
 ## The ridge point
@@ -49,7 +49,7 @@ right of it waste bandwidth.
   id="ridge-h100"
   devices={["phone","desktop"]}
   prompt={"New GPU generations have added peak FLOP/s faster than memory bandwidth. What does that do to the ridge point, and to batch-1 decode?"}
-  options={["The ridge moves left, so decode becomes compute-bound.", "The ridge stays put; it is a property of the model, not the GPU.", "The ridge moves right, so batch-1 decode (about 1 FLOP/byte) uses an even smaller share of the compute and still runs at bandwidth speed.", "Batch-1 decode speeds up in proportion to the extra FLOP/s."]}
+  options={["The ridge moves left, so batch-1 decode finally becomes compute-bound.", "The ridge stays put: it is a property of the model, not of the GPU.", "The ridge moves right, so batch-1 decode uses an even smaller share of compute.", "Batch-1 decode speeds up in proportion to the extra FLOP/s of each generation."]}
   answer={2}
   explanation={"Ridge = peak FLOP/s / bandwidth. If FLOP/s grows faster, the ridge rises: about 156 FLOP/byte on the A100 and about 295 on the H100. Batch-1 decode stays near 1 FLOP/byte, so it sits even further left on the slope. It does not become compute-bound, the ridge belongs to the GPU, and decode speed follows bandwidth, not FLOP/s."}
 />
@@ -70,11 +70,21 @@ Drag the batch size and watch the dot climb the slope.
   explanation={"In fp16, intensity ≈ batch, so you need a batch of about 300 to pass the H100 ridge (≈ 295). The first power-of-two batch past it is 512. With int4 weights, intensity ≈ 4 × batch, so about 74 sequences are enough, and a batch of 128 crosses it. Attention's KV reads are ignored here, and in practice they stay memory-bound."}
 />
 
+## Reading a roofline: a worked example
+
+Take an H100: peak 989 TFLOP/s, bandwidth 3.35 TB/s, ridge ≈ 295 FLOP/byte.
+
+A kernel at 50 FLOP/byte can reach min(989, 50 × 3.35) ≈ 168 TFLOP/s, about 17% of peak. Faster tensor cores would not help it at all; more bandwidth or more reuse per byte would.
+
+A kernel at 1,000 FLOP/byte reaches the full 989. More bandwidth would not help it; only more FLOP/s would.
+
+Two ways to move a kernel right: reuse each loaded byte more (bigger batch, bigger tiles), or make each value smaller (fp8 or int4 weights), which raises FLOPs per byte without changing the maths.
+
 <MCQ
   id="int4-effect"
   devices={["phone","desktop"]}
-  prompt="You switch weights from fp16 to int4 (with the same batch). What happens to the decode operating point on the roofline?"
-  options={["It moves left, so decode becomes more memory-bound","It moves right, because each byte of weights now feeds 4x more FLOPs","It does not move. Quantization only saves memory capacity","The roof itself drops by 4x"]}
-  answer={1}
-  explanation={"Same FLOPs, a quarter of the bytes, so intensity is 4x higher. Below the ridge that also means up to 4x more attainable FLOP/s."}
+  prompt={"Batch-8 decode with fp16 weights sits at about 8 FLOP/byte on an H100 (ridge about 295). You switch to int4 weights, same batch. Where does it land, and what happens to the step time?"}
+  options={["About 32 FLOP/byte, still memory-bound, so the step gets up to about 4x shorter.", "About 32 FLOP/byte, which is now compute-bound, so the step time stays about the same as in fp16.", "Still about 8 FLOP/byte: each weight does the same multiply-adds, so FLOPs per byte can't change.", "About 2 FLOP/byte, because unpacking int4 adds work, so the step gets slower than in fp16."]}
+  answer={0}
+  explanation={"Each weight still does the same multiply-adds for 8 tokens, but now takes half a byte instead of 2, so FLOPs per byte rise 4x, to about 32. That is still far left of the 295 ridge, so the step time follows bytes read, which fell about 4x for the weights. Unpacking int4 adds a little work inside the kernel, but it doesn't lower the FLOPs per byte."}
 />

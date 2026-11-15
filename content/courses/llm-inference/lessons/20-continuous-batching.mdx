@@ -29,7 +29,7 @@ In a static batch, every slot stays reserved until the longest request finishes.
   id="static-waste"
   devices={["phone","desktop"]}
   prompt={"Which workload loses the most throughput under static batching?"}
-  options={["Requests that all produce about the same number of tokens.", "Requests with long prompts but identical output lengths.", "Requests that all have very short outputs.", "Requests whose output lengths vary widely, such as one-line replies mixed with long essays."]}
+  options={["Requests that all produce about the same number of output tokens.", "Requests with long prompts but identical output lengths.", "Requests that all have very short outputs of a few tokens.", "Requests whose output lengths vary widely, like one-liners mixed with essays."]}
   answer={3}
   explanation={"A static batch holds every slot until its longest request ends. If one request writes 1,000 tokens and three write 100, those three slots sit idle for 900 steps: only about a third of the slots do useful work, and new requests wait the whole time. Similar output lengths finish together, so little is wasted. Prompt length does not cause this idling."}
 />
@@ -44,13 +44,21 @@ iteration, mixed with the other sequences' decode tokens. vLLM, TGI (Hugging Fac
 
 ![Static vs continuous batching: static slots sit idle as grey padding, continuous slots are refilled with new requests](/diagrams/llm-inference/05-batching/01-continuous-batching.png)
 
+## What the papers measured
+
+Orca (OSDI 2022) introduced iteration-level scheduling: the batch is re-decided at every step, so a finished request leaves at once and a waiting one can join. To mix requests at different positions, it batches the matmuls across all tokens but runs attention per request ("selective batching"), because each request has its own cache length.
+
+vLLM (SOSP 2023) combined continuous batching with paged KV memory and reported 2–4x higher throughput than FasterTransformer and Orca at the same latency, with bigger gains for longer sequences and larger models. Most of that gain came from fitting more sequences in memory, so the batch could grow.
+
+Sources: [Orca](https://www.usenix.org/conference/osdi22/presentation/yu), [vLLM](https://arxiv.org/abs/2309.06180)
+
 <MCQ
   id="when-admit"
   devices={["phone","desktop"]}
-  prompt="In iteration-level (continuous) batching, when can a new request join the running batch?"
-  options={["Only when every request in the batch has finished","At any decode iteration, as soon as there is KV memory for it","Only at fixed 1-second scheduling windows","Never; each request gets its own GPU"]}
-  answer={1}
-  explanation={"Orca schedules at the granularity of one iteration, so finished sequences leave and new ones enter every step, limited mainly by free KV-cache memory."}
+  prompt={"Two servers each run 8 slots. In the current batch, 7 requests have finished and 1 still has 900 decode steps to go. A new request arrives. Roughly when does it get its first token on a static-batching server, and on a continuous-batching one?"}
+  options={["Static: after the long request ends, about 900 steps later. Continuous: right after its prefill next step.", "Both start it at the next step: 7 slots are free on both servers, and a free slot is all a new request needs.", "Both make it wait about 900 steps, because the requests in a batch have to finish together on either server.", "Static starts it at once in a free slot; continuous waits for the next batch boundary to re-plan the batch."]}
+  answer={0}
+  explanation={"Static batching forms a batch and keeps it until every member is done, so free slots stay empty and new requests wait for the slowest one. Continuous (iteration-level) batching re-decides the batch every step: a finished request leaves, and a waiting one is admitted at the next iteration, as long as there is KV memory for it."}
 />
 
 ## One scheduler tick

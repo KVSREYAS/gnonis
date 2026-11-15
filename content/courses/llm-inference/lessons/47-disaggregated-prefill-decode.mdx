@@ -22,10 +22,10 @@ In one engine, a long prefill delays every decode step (worse TPOT), and decodes
 <MCQ
   id="why-disagg"
   devices={["phone","desktop"]}
-  prompt="What's the main reason to disaggregate?"
-  options={["Fewer GPUs overall, always","Removing prefill-decode interference and tuning each phase's resources separately","Avoiding the KV cache","Simplifying deployment"]}
-  answer={1}
-  explanation="Each pool optimises for its own SLO: TTFT for prefill, TPOT for decode."
+  prompt={"A service has a strict 50 ms TPOT target and bursty, very long prompts. With chunked prefill it meets TPOT only by using chunks so small that TTFT misses its target. What removes the tension?"}
+  options={["A larger chunk size, which finishes prefills sooner and so helps both TTFT and TPOT.", "A bigger batch cap, so that each prefill is shared by more decodes and costs each less.", "Disaggregation: separate prefill and decode GPU pools, each sized for its own target.", "Static batching, so that prefills only run between batches and never during decode."]}
+  answer={2}
+  explanation={"In one engine, every prefill token in a step makes that step longer for decoders. Small chunks protect TPOT but stretch prefill over many steps; big chunks do the reverse. Separate pools remove the coupling: the prefill pool runs whole prompts quickly, ships the KV cache, and the decode pool keeps steady steps. Bigger chunks or batches make TPOT worse."}
 />
 
 ## Two GPU pools
@@ -42,16 +42,26 @@ Sources: [DistServe](https://arxiv.org/abs/2401.09670), [Splitwise](https://arxi
   id="transfer-ms"
   devices={["phone","desktop"]}
   prompt={"What is the main new cost of disaggregating prefill and decode, and when does it hurt most?"}
-  options={["Running each prompt's prefill twice, once in each pool.", "Shipping each request's KV cache from the prefill GPU to the decode GPU; it hurts most with long prompts over a slow link.", "Decode needs twice the FLOPs on a separate GPU.", "Each pool needs its own tokenizer, which is slow."]}
+  options={["Running each prompt's prefill twice, once in each pool, so both have a copy of the cache.", "Shipping each request's KV cache to the decode GPU; it hurts most with long prompts on slow links.", "Decode needs twice the FLOPs on a separate GPU, because it can't reuse prefill's work.", "Each pool needs its own tokenizer pass, which adds CPU time to every request."]}
   answer={1}
   explanation={"The decode GPU needs the cache the prefill GPU built: about 1 GiB for an 8k-token Llama 3 8B request. Over NVLink or RDMA that takes milliseconds; over a slow network, much longer. Prefill runs once, decode FLOPs are unchanged, and tokenizing is cheap."}
 />
 
+## What DistServe measured
+
+DistServe (OSDI 2024) defines **goodput** as the highest request rate a system can serve while meeting its latency targets (TTFT and TPOT) for a chosen share of requests, measured per GPU.
+
+It reported serving up to 7.4x more requests, or targets 12.6x tighter, than state-of-the-art systems, while keeping over 90% of requests within their targets.
+
+The KV transfer is smaller than it sounds. A 512-token OPT-66B request has about 1.13 GB of KV cache. On a cluster whose nodes were linked by only 25 Gbps, DistServe placed the prefill and decode stages so that transfers stayed on NVLink inside a node, and transfer took under 0.1% of total latency.
+
+Source: [DistServe](https://arxiv.org/abs/2401.09670)
+
 <MCQ
   id="goodput"
   devices={["phone","desktop"]}
-  prompt={"DistServe optimises \"goodput\". What is it?"}
-  options={["Total tokens per second","Requests per second that meet both TTFT and TPOT SLOs","GPU utilisation","Bytes per second over the network"]}
+  prompt={"Config A uses 8 GPUs and serves 10 requests/s within the TTFT and TPOT targets. Config B uses 6 GPUs and serves 9 requests/s within the targets. Which is cheaper per request, judged the DistServe way?"}
+  options={["A, because it serves more requests per second within the targets.", "B: 1.5 requests/s per GPU of goodput against A's 1.25.", "They are equal, because both configurations meet their latency targets.", "A, because the extra GPUs give it headroom for bursts of traffic."]}
   answer={1}
-  explanation="Throughput that misses SLOs doesn't count."
+  explanation={"Goodput counts only requests that meet the latency targets; DistServe measures it per GPU. A: 10 / 8 = 1.25. B: 9 / 6 = 1.5. Higher goodput per GPU means fewer GPUs for the same traffic, so B is cheaper. Raw request rate ignores how many GPUs it took."}
 />

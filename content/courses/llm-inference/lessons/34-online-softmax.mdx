@@ -19,20 +19,28 @@ Milakov and Gimelshein (2018) showed softmax can be computed in one pass. Keep m
 
 ![Two score tiles with their own max and sum, merged by rescaling into a single running max and sum](/diagrams/llm-inference/08-flash-attention/02-online-softmax.png)
 
+## Why fp16 overflows
+
+fp16's largest finite value is 65,504, and e¹¹ ≈ 59,874 is already close to it. So in fp16, exp of any score above about 11 becomes infinity, and infinity divided by infinity is NaN.
+
+Softmax doesn't change if every score shifts by the same amount, because the common factor cancels in the division. Subtracting the row's max makes the largest term e⁰ = 1 and every other term smaller than 1, so nothing can overflow.
+
+Online softmax keeps this safety while reading scores in tiles: it tracks the running max and rescales the running sum whenever the max grows.
+
 <MCQ
   id="why-max"
   devices={["phone","desktop"]}
-  prompt="Why subtract the max before exponentiating?"
-  options={["It's faster","To avoid overflow: exp of large scores is inf in fp16/fp32","To make the result sum to 2","It changes the result"]}
-  answer={1}
-  explanation="Softmax is shift-invariant, so subtracting the max changes nothing mathematically and keeps exp() in range."
+  prompt={"A custom fp16 softmax returns NaN for rows with scores around 20, but works for small scores. What is wrong, and what is the fix?"}
+  options={["fp16 can't represent large negative numbers well, so the scores should be shifted to be all positive first.", "The row sum is too small for fp16, so the sum should be multiplied by √d_k before the division.", "Scores of 20 are outside the range the model was trained for, so the model must be retrained.", "e²⁰ exceeds fp16's maximum (65,504), giving inf / inf = NaN; subtract the row max before exp."]}
+  answer={3}
+  explanation={"fp16 tops out at 65,504, and e¹¹ is already about 59,900. Above that, exp gives inf; inf divided by a sum that is also inf is NaN. Subtracting the row max makes the largest term e⁰ = 1 and all others smaller, and the result is the same, because the common factor cancels in the division."}
 />
 
 <MCQ
   id="online-l"
   devices={["phone","desktop"]}
   prompt={"In online softmax, when a new score bigger than the running max arrives, why is the running sum l multiplied by exp(m_old − m_new)?"}
-  options={["To make the sum smaller and avoid overflow, at the cost of a small error.", "To discard the scores that came before the new max.", "The old terms were computed as exp(x − m_old); multiplying turns them into exp(x − m_new), so every term uses the new max.", "Because softmax needs the scores in sorted order."]}
+  options={["To make the sum smaller and avoid overflow, at the cost of a small error.", "To discard the contribution of scores that came before the new max.", "The old terms used exp(x − m_old); the factor turns them into exp(x − m_new).", "Because softmax needs the scores in sorted order, and this re-sorts them."]}
   answer={2}
   explanation={"exp(x − m_old) × exp(m_old − m_new) = exp(x − m_new), exactly. So after rescaling, l is the same sum you would get with the final max known from the start: no error, nothing discarded, and no sorting needed."}
 />

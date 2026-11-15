@@ -59,6 +59,16 @@ Using the module 3 formula for Llama-3-8B: 128 KiB per token in FP16 becomes 64 
 
 Keys tend to have outlier channels, so good KV schemes use per-channel scales for K and per-token scales for V. Values are dequantized inside the attention kernel as they are read, so the saving is in memory and bandwidth, not in arithmetic.
 
+## Worked scenario: picking a format
+
+Three teams, three choices:
+
+- **One user, a 70B model, one 80 GB GPU**: weight-only int4 (GPTQ or AWQ). The model fits (about 35 GB) and batch-1 decode reads 4x fewer bytes.
+- **A prefill-heavy RAG service on H100s**: W8A8 in FP8 or int8. Prefill is compute-bound, and 8-bit matmuls run at about twice the 16-bit FLOP/s.
+- **Long-context chat that runs out of KV memory**: an FP8 KV cache first, because it doubles the tokens that fit. Lower-bit caches (KIVI-style) go further, with more care.
+
+The question each time is which bytes or FLOPs are the bottleneck.
+
 <MCQ
   id="concept-check"
   devices={["phone","desktop"]}

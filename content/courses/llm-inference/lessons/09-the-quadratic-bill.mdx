@@ -25,11 +25,19 @@ dominates prefill.
 
 ![Log-scale bars of fp16 score-matrix size per head from 1k to 128k context](/diagrams/llm-inference/02-attention/04-the-quadratic-bill.png)
 
+## Where the n² shows up
+
+For a model like Llama 3 8B, the MLP and projection matmuls cost about the same per token at any context length, so their total grows in proportion to n. Attention scores grow with n² in prefill.
+
+At a few thousand tokens the matmuls dominate. Past a few tens of thousands, attention takes over most of the prefill time.
+
+Decode is different. Each step has one new query, so its attention work grows with n, not n². What grows with n is the KV cache it must read: at 128 KiB per token, a 128k-token conversation holds 16 GiB of cache, as much as the weights themselves.
+
 <MCQ
   id="quad-factor"
   devices={["phone","desktop"]}
   prompt={"Context grows from 4k to 16k tokens. Prefill's attention work grows about 16x, but the attention work for each decode token grows only about 4x. Why the difference?"}
-  options={["Decode uses the KV cache, which makes each score cheaper to compute.", "The MLP takes over part of the attention work during decode.", "Prefill scores every query against every key (n × n). A decode step has one new query, so it scores one row of n keys.", "Decode skips the causal mask, so it computes fewer scores."]}
+  options={["Decode uses the KV cache, which makes each score cheaper to compute.", "The MLP takes over part of the attention work during decode.", "Prefill scores every query against every key; decode scores one new query.", "Decode skips the causal mask, so it computes fewer scores per step."]}
   answer={2}
   explanation={"4x more tokens means 4x more rows and 4x more columns in prefill's score matrix: 16x the scores. Decode adds one row at a time, and that row is 4x longer. The KV cache saves recomputing old keys and values, not computing scores: the new query must still score every cached key. The MLP does not do attention work. Decode needs no mask only because there are no future keys, which does not cut the work."}
 />

@@ -28,6 +28,16 @@ sampling all eat into it.
 
 ![Bar chart of batch-1 decode ceilings on A100 and H100 at fp16, int8 and int4](/diagrams/llm-inference/04-gpu-memory-roofline/04-decode-speed-limit.png)
 
+## Where real engines lose time
+
+The bandwidth formula is a ceiling. Real batch-1 decode usually reaches 60–80% of it, and the rest goes to:
+
+- **Kernel launches**: a forward pass runs hundreds of small kernels. vLLM captures decode steps as **CUDA graphs**, which replay the whole sequence of kernels with one launch.
+- **Small reads**: element-wise kernels (norms, activations, rotary embeddings) move data with very little maths. Fusing them into neighbouring kernels saves HBM round trips.
+- **Python and scheduling overhead** between steps, which matters most for small models.
+
+The share of the bandwidth ceiling you actually reach is called **MBU** (memory bandwidth utilisation). It is the first number to check when decode is slower than the formula predicts.
+
 <MCQ
   id="a100-limit"
   devices={["phone","desktop"]}

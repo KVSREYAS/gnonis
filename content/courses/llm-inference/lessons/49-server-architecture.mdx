@@ -31,10 +31,10 @@ Serving engines like vLLM split cleanly into an async API front, a scheduler wit
 <MCQ
   id="brain"
   devices={["phone","desktop"]}
-  prompt="Which component decides each step which sequences run and how many prefill tokens to add?"
-  options={["Tokenizer","Scheduler","Sampler","HTTP layer"]}
-  answer={1}
-  explanation="The scheduler, together with the block manager, makes every decision about who runs. The model runner only executes the batch it is given."
+  prompt={"A small server hangs: the GPU is idle, requests sit in the waiting queue, and the KV block pool is half free. Which component do you inspect first?"}
+  options={["The tokenizer: if it stalls, requests never become token ids, so nothing reaches the GPU.", "The attention kernel: if it is too slow, the queue builds up behind it.", "The block manager: a half-free pool can still be too fragmented to admit anything.", "The scheduler: it admits waiting requests each step, and here it is admitting none."]}
+  answer={3}
+  explanation={"Requests are waiting, memory is free and the GPU is idle, so nothing is being scheduled: the decision step is stuck or wrong, for example a budget check that never passes. A slow kernel would show a busy GPU, and the block pool isn't full. A tokenizer failure would usually show errors, not a queue."}
 />
 
 ## How big?
@@ -43,11 +43,19 @@ Little's law tells you how many sequences you'll hold at once, and so how many K
 
 Source: [vLLM architecture overview](https://docs.vllm.ai/en/latest/design/arch_overview.html)
 
+## A worked capacity plan
+
+Little's law links three numbers: requests in the system = arrival rate × time each request spends there.
+
+At 5 requests/s and 10 s per request, about 50 requests are in flight at once. If each holds about 2,000 tokens of context in Llama 3 8B (128 KiB per token), that is 50 × 2,000 × 128 KiB ≈ 13 GB of KV cache.
+
+The same law works in reverse for planning: measure arrivals and time in system, and you know how many requests (and how much KV cache) must fit at peak.
+
 <MCQ
   id="littles-law"
   devices={["phone","desktop"]}
   prompt={"Traffic stays at 5 requests/s, but answers get twice as long, so each request spends twice as long in the system. What happens to the number of requests held at once, and to the KV memory you need?"}
-  options={["Concurrency doubles (L = λ × W), and KV memory more than doubles, because each request also holds more tokens.", "Nothing changes, because the arrival rate is the same.", "Concurrency halves.", "Concurrency doubles, but KV memory stays the same."]}
+  options={["Concurrency doubles (L = λ × W), and KV memory more than doubles.", "Nothing changes, because the arrival rate is the same and that sets concurrency.", "Concurrency halves, because each request now takes twice as long to get through.", "Concurrency doubles, but KV memory stays the same, because the cache is per request."]}
   answer={0}
   explanation={"Little's law: L = 5 × 2W, so twice as many requests are in flight. Each of them is also longer, so KV per request grows too. Arrival rate alone does not set concurrency, and more concurrent, longer sequences cannot use the same memory."}
 />

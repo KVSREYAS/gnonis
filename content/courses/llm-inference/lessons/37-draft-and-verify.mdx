@@ -24,10 +24,10 @@ pass, which costs about the same as one decode step because decode is memory-bou
 <MCQ
   id="exactness"
   devices={["phone","desktop"]}
-  prompt="With standard speculative sampling, how does the output distribution compare to plain sampling from the target model?"
-  options={["Identical","Slightly worse, roughly like a smaller model","It matches the draft model","Identical only at temperature 0"]}
-  answer={0}
-  explanation="The accept/reject rule plus resampling from the residual distribution makes it provably identical at any temperature."
+  prompt={"Compliance requires that outputs follow exactly the same distribution as the approved 70B model. Engineering proposes speculative decoding with a 1B draft. Is that allowed?"}
+  options={["No: every accepted draft token comes from the 1B model, so the output distribution shifts towards the draft's.", "Only with greedy decoding: with sampling, the draft always nudges the output distribution slightly.", "Yes, and any accept rule would do, because the target model checks every token before it is shown.", "Yes, with standard speculative sampling, which provably keeps the target's distribution; lossy accept rules wouldn't."]}
+  answer={3}
+  explanation={"The accept rule is built so that each emitted token has exactly the target's probability: accepted drafts are kept with min(1, p/q), and a rejection resamples from the part of p that q under-covered. The draft only changes how many tokens each target pass yields. Drafts do become final tokens when accepted, which is why the rule matters. Medusa's optional typical acceptance trades this guarantee for speed."}
 />
 
 ## The accept rule
@@ -46,7 +46,7 @@ formula as the concept page, with a = α and k = γ. It assumes each draft is ac
   id="expected-tokens"
   devices={["phone","desktop"]}
   prompt={"With acceptance rate α and γ drafts, tokens per target pass = (1 − α^(γ+1)) / (1 − α). Why does each extra draft add less than the one before?"}
-  options={["A draft only counts if every draft before it was accepted, so draft i survives with probability α^i, which shrinks fast.", "The target model gets slower with each extra draft token.", "Later drafts are rejected on purpose to protect quality.", "Each extra draft lowers α for all the others."]}
+  options={["A draft counts only if every earlier draft was accepted, so draft i survives with probability α^i.", "The target model gets slower with each extra draft token, so later drafts cost more time.", "Later drafts are rejected on purpose, to keep their errors out of the output.", "Each extra draft lowers α for all the others, because the draft model gets less certain."]}
   answer={0}
   explanation={"The first rejection throws away all drafts after it, so the i-th draft adds α^i expected tokens. With α = 0.8: 0.8, 0.64, 0.51, 0.41 and so on. The formula is a count of tokens, not of time. Nothing is rejected on purpose, and α depends on how well the draft matches the target, not on γ."}
 />
@@ -55,13 +55,21 @@ formula as the concept page, with a = α and k = γ. It assumes each draft is ac
 
 Speculation spends spare compute to save memory-bound steps.
 
+## What the papers measured
+
+Leviathan et al. (2022) reported 2–3x faster generation on T5-XXL with outputs identical to the target model. Chen et al. (2023) showed similar gains with a 70B-class model.
+
+Later methods drop the separate draft model. Medusa (2024) reported over 2.2x with Medusa-1 (heads only) and 2.3–2.8x with Medusa-2 (heads trained with the model). EAGLE (2024) reported 2.7–3.5x on LLaMA2-Chat 70B, keeping the target's output distribution.
+
+All of these numbers are for small batches. The speedup comes from compute that is sitting idle during memory-bound decode. When the batch is large enough to keep that compute busy, the gain shrinks or turns into a loss.
+
 <MCQ
   id="when-bad"
   devices={["phone","desktop"]}
-  prompt="When does speculative decoding help least?"
-  options={["Batch 1 on a big GPU","Very large batches where the GPU is already compute-bound","Code completion with repetitive text","When the draft model is very well aligned"]}
+  prompt={"An offline job runs at batch 256 and is already compute-bound. Someone turns on speculative decoding with γ = 5. What do you predict?"}
+  options={["Throughput rises about 3x, as the papers report, because each pass now yields several tokens.", "Throughput likely drops: checking 6 positions per sequence needs compute the GPU doesn't have spare.", "No change: verification happens in one pass, so it costs the same as a normal step at any batch.", "Throughput rises, because the small draft model takes over most of the work from the big one."]}
   answer={1}
-  explanation={"Speculation spends spare compute. At high batch there is no spare compute left, so the extra verification work can slow you down."}
+  explanation={"Speculation trades spare compute for fewer memory-bound steps. At batch 1 the GPU is mostly idle during a step, so checking 6 positions costs about the same as 1. At batch 256 the step is already compute-bound, so 6 positions per sequence costs close to 6x the compute, and rejected drafts are wasted work. The papers' 2–3x numbers are for small batches."}
 />
 
 ## Variants

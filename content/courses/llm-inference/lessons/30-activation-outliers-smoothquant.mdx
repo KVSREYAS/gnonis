@@ -22,10 +22,10 @@ Dettmers et al. (LLM.int8()) showed that above about 6.7B parameters, a handful 
 <MCQ
   id="why-hard"
   devices={["phone","desktop"]}
-  prompt="Why are activations harder to quantize than weights in big LLMs?"
-  options={["Activations are stored in fp32","A few channels carry values far larger than the rest, consistently across tokens","Activations are always negative","There are more weights than activations"]}
+  prompt={"A team quantizes a 13B model's weights and activations to int8, with one scale per tensor. Weight-only int8 was fine, but now accuracy collapses. What is the likely reason?"}
+  options={["int8 matmuls on GPUs are inexact, and with activations also in int8 the small errors add up layer after layer.", "A few activation channels are far larger than the rest, so one scale leaves normal channels few levels.", "Quantizing the activations changed how the weights were rounded, and the weights are the harder part.", "Activations change with every token, so one fixed int8 format can't represent them at all."]}
   answer={1}
-  explanation={"Per-tensor activation scales get dominated by those channels, and per-channel activation scales don't map onto fast int8 GEMMs."}
+  explanation={"LLM activations above a few billion parameters show outlier channels, consistently across tokens, with values far larger than the rest. With one scale per tensor, the scale is set by those outliers, so normal values use only a few of the 255 levels and lose most of their precision. Weights don't have this problem, which is why weight-only int8 was fine."}
 />
 
 ## Smooth it over
@@ -42,16 +42,24 @@ Sources: [LLM.int8()](https://arxiv.org/abs/2208.07339), [SmoothQuant](https://a
   id="smooth-s"
   devices={["phone","desktop"]}
   prompt={"In SmoothQuant, what happens if you push α from 0.5 toward 1?"}
-  options={["The layer's output changes, because XW is no longer preserved.", "More of the outlier range moves from the activations into the weights, until the weights become the hard part to quantize.", "The activations get bigger outliers.", "Nothing; α only matters during training."]}
+  options={["The layer's output changes, because XW is no longer preserved at high α.", "More of the outlier range moves into the weights, until the weights become the hard part.", "The activations get bigger outliers, because α scales them up.", "Nothing changes: α only matters while the model is being trained."]}
   answer={1}
   explanation={"α sets how much range moves: near 0 the activations keep their outliers, near 1 almost all of the range lands in the weights, and 0.5 splits it evenly so both sides quantize well. Whatever α is, X is divided by s and W multiplied by s, so XW is unchanged before rounding. Activations get smaller, not bigger, and α is chosen when the model is quantized, after training."}
 />
 
+## Why the maths is unchanged
+
+For one output, Y = Σⱼ Xⱼ Wⱼ, summing over channels j. SmoothQuant replaces Xⱼ with Xⱼ / sⱼ and Wⱼ with sⱼ · Wⱼ. Each term becomes (Xⱼ / sⱼ)(sⱼ · Wⱼ) = Xⱼ Wⱼ, so the sum is identical.
+
+In practice the division is folded into the previous layer's weights (for example the LayerNorm scale), so it costs nothing at run time.
+
+Before rounding, outputs match up to floating-point rounding, typically tiny relative differences in fp16. The accuracy effect only appears when both tensors are rounded to int8, and that is where smoothing helps: the activations no longer have outliers that stretch their scale.
+
 <MCQ
   id="equivalence"
   devices={["phone","desktop"]}
-  prompt="Why doesn't SmoothQuant change the model's output (before rounding)?"
-  options={["It retrains the model","(X / s) · (s · W) = X · W, so the scaling cancels in the matmul","It only touches the KV cache","It drops outlier channels"]}
-  answer={1}
-  explanation="It's a mathematically equivalent transform, and s can be folded into the preceding LayerNorm."
+  prompt={"After applying SmoothQuant's scaling in fp16, but before any rounding to int8, a test shows layer outputs changed by about 0.0001%. Is something broken?"}
+  options={["Yes: before rounding, smoothing should give bit-identical outputs, so the scales went onto the wrong tensor.", "Yes: smoothing always changes the outputs by about 1%, so 0.0001% means it wasn't applied.", "No: smoothing is meant to change the model slightly, and a small change shows it is working.", "No: (X / s)(s · W) = XW exactly in maths; differences that small come from floating-point rounding."]}
+  answer={3}
+  explanation={"SmoothQuant divides each activation channel by s and multiplies the matching weight row by s. In the product the two cancel, so the maths is unchanged. In fp16 every operation rounds, and doing the multiplications in a different order gives tiny differences, around the size seen here. The real accuracy effect only comes later, when the rescaled tensors are rounded to int8."}
 />

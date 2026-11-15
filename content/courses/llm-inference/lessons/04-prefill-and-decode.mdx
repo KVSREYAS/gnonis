@@ -66,11 +66,21 @@ Decode at batch size 1 loads **every weight** to process **one token**. The tens
 units that do matrix multiplication, covered in module 4) sit mostly idle, waiting on memory. That one fact drives batching, quantization and speculative decoding,
 which you will meet later.
 
-<Fill
+## A worked example
+
+Take an 8B model in fp16 on an H100 (about 989 TFLOP/s of dense fp16 compute and 3.35 TB/s of memory bandwidth).
+
+**Prefill of 1,000 tokens**: about 2 × 8 × 10⁹ × 1,000 = 1.6 × 10¹³ FLOPs. Each weight is loaded once and reused for all 1,000 tokens. At a realistic 400 TFLOP/s that is about 40 ms. The time is set by compute.
+
+**One decode step**: about 2 × 8 × 10⁹ = 1.6 × 10¹⁰ FLOPs, which the tensor cores could finish in well under a millisecond. But the step also reads all 16 GB of weights: 16 GB / 3.35 TB/s ≈ 4.8 ms. The time is set by bandwidth.
+
+So a faster chip only helps the phase whose limit it raises: more FLOP/s speeds up prefill, more bandwidth speeds up decode.
+
+<MCQ
   id="bound-fill"
   devices={["phone","desktop"]}
-  text={"At batch size 1, prefill of a long prompt is usually {{0}}-bound, while decode is usually {{1}}-bound."}
-  chips={["compute","memory-bandwidth","network","disk"]}
-  answers={["compute","memory-bandwidth"]}
-  explanation={"Prefill multiplies many tokens against each weight it loads. Decode loads every weight to process a single token, so it waits on memory. Module 4 makes this precise."}
+  prompt={"An 8B model serves one user on an H100. A 4,000-token prompt prefills in about 0.2 s, then tokens stream at about 5 ms each. The team swaps to a GPU with 2x the FLOP/s but the same memory bandwidth. What changes?"}
+  options={["Both get about 2x faster: prefill and decode are both matrix multiplications, and the tensor cores do all of them.", "Prefill gets close to 2x faster, since it is compute-bound; streaming barely changes, since decode is memory-bound.", "Streaming gets 2x faster but prefill doesn't, because prefill is limited by reading the long prompt from memory.", "Neither changes much: with one user the GPU is idle most of the time, so neither FLOP/s nor bandwidth is the limit."]}
+  answer={1}
+  explanation={"Prefill: 2 × 8B × 4,000 ≈ 6.4 × 10¹³ FLOPs, and each weight is reused for 4,000 tokens, so time is set by FLOP/s; doubling FLOP/s nearly halves it. Decode at batch 1: each token reads all 16 GB of weights and does only about 1 FLOP per byte, so 16 GB / 3.35 TB/s ≈ 4.8 ms is set by bandwidth, which did not change."}
 />

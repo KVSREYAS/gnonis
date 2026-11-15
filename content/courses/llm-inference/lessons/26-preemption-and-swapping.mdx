@@ -53,20 +53,30 @@ Sources: [vLLM paper §4.5](https://arxiv.org/abs/2309.06180), [vLLM docs: preem
 
 ![GPU block pool full; newest sequence evicted either to CPU swap space or dropped for recompute](/diagrams/llm-inference/06-paged-attention/03-preemption-and-swapping.png)
 
+## Preemption in practice
+
+Preemption keeps the server running when memory is short, but every preempted request repeats work. If it happens often, latency suffers.
+
+vLLM logs a warning each time a request is preempted for lack of KV space, and exposes a preemption count in its metrics. Its docs list the levers: give the cache more memory (leave `gpu_memory_utilization` unset or raise it), lower `max_num_seqs` or `max_num_batched_tokens` so fewer requests run at once, or raise tensor or pipeline parallelism so each GPU holds fewer weights and has more room for cache.
+
+An fp8 KV cache helps for the same reason: each token takes half the bytes, so the same pool holds twice as many tokens.
+
+Source: [vLLM docs: optimization](https://docs.vllm.ai/en/latest/configuration/optimization.html)
+
 <MCQ
   id="who-first"
   devices={["phone","desktop"]}
-  prompt="Under vLLM's first-come-first-served policy, which sequence gets preempted first?"
-  options={["The oldest request","The most recently arrived request","The longest sequence","A random one"]}
-  answer={1}
-  explanation="FCFS protects earlier arrivals, so the newest work is evicted first."
+  prompt={"Blocks run out. Three running requests arrived at 10:00:01, 10:00:05 and 10:00:09. Under vLLM's first-come-first-served policy, which is preempted first, and why that one?"}
+  options={["The 10:00:09 request: the newest has the lowest priority, so the earliest arrivals keep running.", "The 10:00:01 request, because it has been running longest, holds the most blocks and frees the most memory.", "The one with the fewest tokens, because it is the cheapest to rebuild later with a short prefill.", "One of the three at random, so that over time no request is favoured over the others."]}
+  answer={0}
+  explanation={"FCFS ranks requests by arrival time, oldest first. When a running sequence needs a block and none is free, the scheduler takes blocks from the lowest-priority one: the most recently arrived. That keeps the policy fair to people who came first. Size-based or random choices are other possible policies, but they aren't what vLLM's FCFS does."}
 />
 
 <MCQ
   id="swap-time"
   devices={["phone","desktop"]}
   prompt={"Blocks run out and two sequences must be preempted: one 200 tokens long and one 30,000 tokens long. On an engine that supports both modes, which mode fits each?"}
-  options={["Recompute the short one (a quick prefill later) and swap the long one (re-running 30,000 tokens of prefill costs more than copying its KV over PCIe).", "Swap both: copying is always cheaper than computing.", "Swap the short one and recompute the long one.", "Recompute both: PCIe is too slow to ever be worth it."]}
+  options={["Recompute the short one (a quick prefill) and swap the long one (copying beats a 30,000-token prefill).", "Swap both: copying blocks over PCIe is always cheaper than recomputing any amount of prefill.", "Swap the short one, which copies quickly, and recompute the long one, which has too many blocks to copy.", "Recompute both: PCIe is so slow compared with GPU compute that swapping is never worth it."]}
   answer={0}
   explanation={"Recompute costs a prefill over prompt plus generated tokens, which is cheap for 200 tokens because prefill is compute-efficient. For 30,000 tokens, prefill (with its quadratic attention) costs much more, while swapping costs only the PCIe copy of its KV. So short sequences are often cheaper to recompute and long ones cheaper to swap. Neither mode is always best. vLLM's V1 engine uses recompute only, trading this choice for simplicity."}
 />

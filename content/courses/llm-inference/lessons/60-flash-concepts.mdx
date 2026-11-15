@@ -59,10 +59,19 @@ HBM traffic drops from order T squared to roughly reading Q, K, V and writing O.
 
 ![Q tile staying in SRAM while K/V tiles stream through](/diagrams/llm-inference/08-flash-attention/03-tiling-in-sram.png)
 
+## Worked scenario: long-context decode
+
+Decoding at batch 1 with a 64k-token context, each head has a single query row. FlashAttention splits work by query tiles, so it makes only about one block of work per head: 32 heads give 32 blocks for a GPU with over 100 SMs. The Flash-Decoding authors measured that FlashAttention used less than 1% of an A100 in this regime.
+
+Flash-Decoding splits the cached keys and values into chunks along the sequence. Each SM computes a partial output and its log-sum-exp for its chunk, and a small final step merges them using the same rescaling as online softmax. It reported up to 8x faster decoding for very long sequences and shipped in FlashAttention 2.2.
+
+Source: [Flash-Decoding](https://crfm.stanford.edu/2023/10/12/flashdecoding.html)
+
 <MCQ
   id="concept-check"
-  prompt="Is FlashAttention an approximation of attention?"
-  options={["Yes, it drops small scores", "No, online softmax makes it mathematically exact (up to float rounding)", "Yes, it uses low-rank K", "Only for long sequences"]}
-  answer={1}
-  explanation="It reorders the computation and rescales running sums; the result equals standard attention."
+  devices={["phone","desktop"]}
+  prompt={"A service decodes at batch 1 with 64k-token contexts, and the attention kernel uses only a small fraction of the GPU's SMs. Which technique targets this?"}
+  options={["Flash-Decoding: split cached K and V along the sequence across SMs, then merge the partial results.", "More query tiles per head, so the single query row is split across more SMs.", "A larger tile size, so each SM gets more of the work at once.", "Speculative decoding, which removes the attention step for accepted tokens."]}
+  answer={0}
+  explanation={"At decode there is one query row per head, so FlashAttention's usual split by query tiles gives only batch × heads blocks of work, too few to fill 100+ SMs. Flash-Decoding splits along the keys instead; each SM handles a chunk, and the partial outputs are combined using their maxes and sums. Decode has only one query row, so more query tiles isn't possible, and bigger tiles make fewer blocks."}
 />

@@ -78,11 +78,22 @@ L = lambda x W
 
 Example: 5 requests/s, each taking 10 s end to end, gives L = 50 requests running at once on average. Multiply by tokens per request and KV bytes per token (module 3) to get the KV memory you need.
 
+## Worked scenario: reading a goodput report
+
+Two configurations serve the same traffic with targets of TTFT under 1 s and TPOT under 50 ms:
+
+- **Config A**: 4 GPUs, 6 requests/s within the targets. That is 1.5 requests/s per GPU.
+- **Config B**: 3 GPUs, 5 requests/s within the targets. That is about 1.67 requests/s per GPU.
+
+B is cheaper to run per request, even though A serves more requests. If A also served another 3 requests/s that missed TPOT, those would not count at all.
+
+Goodput rewards configurations that waste nothing on requests users will be unhappy with.
+
 <MCQ
   id="concept-check"
   devices={["phone","desktop"]}
   prompt={"You let more users share each GPU (a bigger batch). How do total throughput, TPOT and goodput move?"}
-  options={["Throughput rises, TPOT gets worse, and goodput rises only until requests start missing their SLOs, then falls.", "All three improve.", "Throughput falls, because each user gets slower.", "TPOT improves, because the GPU is busier."]}
+  options={["Throughput rises, TPOT gets worse, and goodput rises until requests start missing targets.", "All three improve, because the GPU does more useful work per weight read.", "Throughput falls, because each user gets slower, and goodput falls with it.", "TPOT improves, because a busier GPU runs at higher clocks, and goodput rises."]}
   answer={0}
   explanation={"A bigger batch shares each weight read among more users, so total tokens per second rise, but each step takes longer, so every user's TPOT grows. Goodput counts only requests that meet their targets, so it peaks at the largest batch that still meets them. Busier does not mean faster per user."}
 />

@@ -79,10 +79,23 @@ Two ways out, both covered later:
 - A **warp** is a group of 32 GPU threads that execute the same instruction together. Kernels are written per thread but scheduled per warp.
 - **MFU** (model FLOP utilization) = FLOP/s your workload achieves / peak FLOP/s. Prefill on a good engine may reach 40-60%. Decode at small batch is often under 5%, which is expected when memory-bound, not a bug.
 
+## Worked scenario: will a new GPU help?
+
+To predict whether a new chip speeds up a workload, place the workload on each chip's roofline.
+
+Take a chip with 3,000 TFLOP/s and 4.8 TB/s against an H100 (989 TFLOP/s, 3.35 TB/s):
+
+- Ridges: 625 FLOP/byte against about 295.
+- Batch-1 decode at about 1 FLOP/byte: memory-bound on both, so speedup = 4.8 / 3.35 ≈ 1.4x.
+- A long prefill at thousands of FLOP/byte: compute-bound on both, so speedup ≈ 3,000 / 989 ≈ 3x.
+
+The spec sheet's headline FLOP/s only applies to work above the ridge. For decode, read the bandwidth line first.
+
 <MCQ
   id="concept-check"
-  prompt="A GPU has 1,000 TFLOP/s and 4 TB/s. A kernel has intensity 50 FLOP/byte. What limits it?"
-  options={["Compute", "Memory bandwidth", "Neither", "Kernel launch overhead"]}
-  answer={1}
-  explanation="Ridge = 1000/4 = 250. 50 is below it, so the kernel is memory-bound at 50 x 4 = 200 TFLOP/s."
+  devices={["phone","desktop"]}
+  prompt={"A new accelerator has 2,000 TFLOP/s and 4 TB/s. Your batch-64 decode matmuls run at about 64 FLOP/byte. Compared with an H100 (989 TFLOP/s, 3.35 TB/s), how much faster are those steps?"}
+  options={["About 2x, the FLOP/s ratio, because a faster chip runs every matmul faster in proportion.", "About 1.6x, somewhere between the FLOP/s ratio and the bandwidth ratio, because both matter.", "About 1.2x, the bandwidth ratio, because at 64 FLOP/byte both chips are memory-bound.", "No faster: the new chip's ridge (500) is higher than the H100's, so memory-bound work runs slower."]}
+  answer={2}
+  explanation={"New ridge = 2,000 / 4 = 500 FLOP/byte; H100 ridge ≈ 295. 64 is below both, so time = bytes / bandwidth on both, and the speedup is 4 / 3.35 ≈ 1.19x. The extra FLOP/s only help kernels above the ridge, such as long prefills. A higher ridge doesn't make memory-bound work slower; it just means more of the work is memory-bound."}
 />

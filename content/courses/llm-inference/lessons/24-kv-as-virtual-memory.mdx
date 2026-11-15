@@ -24,7 +24,7 @@ never written. The vLLM authors measured only 20.4% to 38.2% of KV memory holdin
   id="waste-slab"
   devices={["phone","desktop"]}
   prompt={"Why did older servers reserve one contiguous KV slab sized for the maximum length, even though most of it was never used?"}
-  options={["GPUs can only allocate memory in maximum-length units.", "Attention needs the unused space as workspace for its score matrix.", "They could not know the output length in advance, and a contiguous buffer cannot grow in place once other requests sit next to it.", "Each request needs room for its own copy of the weights."]}
+  options={["GPUs can only allocate memory in maximum-length units for attention buffers.", "Attention needs the unused space as workspace for its score matrix.", "Output length is unknown in advance, and a contiguous buffer can't grow in place.", "Each request needs room for its own copy of the weights next to its cache."]}
   answer={2}
   explanation={"The output length is unknown when a request starts, and a contiguous buffer cannot be extended once neighbours are allocated after it, so servers reserved the worst case. That is where the reservation waste and fragmentation came from. GPUs can allocate any size, the score matrix is not stored in the KV slab, and all requests share one copy of the weights."}
 />
@@ -41,7 +41,7 @@ blocks mean longer block tables and smaller, more scattered reads for the attent
   id="blocks-needed"
   devices={["phone","desktop"]}
   prompt={"You change the KV block size from 16 tokens to 256. What happens?"}
-  options={["Block tables get shorter, but each sequence can now waste up to 255 slots in its last block, so fewer sequences fit.", "Waste goes down, because there are fewer blocks to track.", "Nothing changes for memory; block size only affects speed.", "Prefix sharing stops working."]}
+  options={["Tables get shorter, but each sequence can waste up to 255 slots, so fewer fit.", "Waste goes down, because there are fewer blocks per sequence to leave partly empty.", "Nothing changes for memory: block size only affects how fast the kernel runs.", "Prefix sharing stops working, because prompts rarely fill a 256-token block exactly."]}
   answer={0}
   explanation={"A sequence wastes at most one partly filled block, so the worst-case waste per sequence grows from 15 slots to 255. Across many short sequences that adds up and cuts concurrency. Fewer blocks to track does not mean less waste. Block size clearly affects memory. Full blocks can still be shared at any block size."}
 />
@@ -55,13 +55,21 @@ Physical blocks can sit anywhere, and two sequences can point at the same block 
 
 ![Two sequences' logical blocks mapped through block tables to scattered physical blocks, with shared prefix blocks highlighted](/diagrams/llm-inference/06-paged-attention/01-kv-as-virtual-memory.png)
 
+## How the kernel reads scattered blocks
+
+The PagedAttention kernel receives each sequence's block table. To compute attention for a new query, it walks through the table: for logical block i it looks up the physical block, loads that block's keys and values, and computes the scores for those 16 tokens. Then it moves on to the next entry.
+
+Token index t lives in logical block t // 16, at slot t % 16. Physical blocks can sit anywhere in GPU memory, so a sequence never needs a contiguous region.
+
+The extra lookup costs a little time compared with one contiguous buffer, but it lets almost the whole pool be used and lets sequences share blocks.
+
 <MCQ
   id="block-table"
   devices={["phone","desktop"]}
-  prompt="What does a sequence's block table map?"
-  options={["Token ids to vocabulary strings","Logical KV block numbers to physical GPU memory blocks","Attention heads to GPUs","Layers to CUDA streams"]}
-  answer={1}
-  explanation={"It is the same structure as an operating system page table. Physical blocks need not be contiguous, and two sequences can point at the same block to share a prefix (copy-on-write)."}
+  prompt={"Two chats share the same 1,600-token system prompt, and the server shares prefixes (block size 16). What do their block tables look like?"}
+  options={["Each table points to its own 100 private copies of the prompt blocks, because block tables can't share entries.", "One table holds all 100 shared prompt blocks, and the other holds only its own chat-specific blocks.", "Their first 100 entries point to the same physical blocks; the entries after that point to different blocks.", "Both tables have a single entry pointing to one big physical block that holds all 1,600 prompt tokens."]}
+  answer={2}
+  explanation={"1,600 / 16 = 100 blocks of prompt. A block table maps a sequence's logical blocks, in order, to physical blocks; two tables can map to the same physical block, with a reference count tracking how many do. Each sequence keeps a complete table, so it sees an ordinary continuous cache. Every block holds 16 tokens, so the prompt is 100 blocks, not one."}
 />
 
 ## Background

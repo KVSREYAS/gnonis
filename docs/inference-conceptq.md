@@ -1,10 +1,169 @@
-# LLM inference: calculation questions replaced with concept questions
+# LLM inference: calculation questions replaced with concept and scenario questions
 
 Request from Sreyas: "for llm inference.. get rid of this stupid calculation questions.. give me real questions which test the concept".
 
-Base: PR #19 head `b7db51d72a99e02b192aca9e2e3e40faf27b1b6b` (the chunked-prefill and inference-review branch; it was not merged into main yet when this was built).
+Base: `origin/main` at `4d28a80` (after PR #22; PR #19 merged as `0abd72a`). Round 1 was first built on PR #19's head `b7db51d`, then rebased.
 
-## Summary
+Follow-up from Sreyas: "just replace them with questions that make me think … something like: some people have this, so what would they require?" and "expand a little bit more, go into a bit more detail", with no analogies. That is round 2, below.
+
+## Round 2 (Sreyas: "questions that make me think", deeper text)
+
+Base for this round: `origin/main` at `4d28a80` (PR #19 merged as `0abd72a`, then #21 and #22). Applied on top of round 1 by `cqgen/apply3.py`.
+
+### Counts
+
+| What | Count |
+| --- | --- |
+| Graded items in the course (MCQ, Fill, Ordering, Predict, incl. module-test parts) | 189 |
+| Rewritten as scenario/reasoning questions | 91 (56 standalone, 35 module-test parts) |
+| ...of which were Fill blanks, now MCQs | 17 (5 standalone, 12 module-test parts) |
+| Kept (already reasoning) | 98 |
+| ...kept, but options reworded so the right answer isn't the obviously longest one (same answer slot) | 62 |
+| Coding exercises reframed as decision tasks (same ids, new tests) | 5 |
+| New teaching cards | 52 (40 lessons, 12 concept pages) |
+
+The course keeps exactly one standalone Fill (`budget-fill`) because a unit test requires every original widget type to appear in the LLM course.
+
+### What changed in the questions
+
+- Every rewritten question gives a concrete situation: a team, a model and its size, the GPU, traffic, a latency target, a memory pool, or a symptom on a dashboard. You have to decide what happens, what is wrong, or what to do. Most combine two ideas, such as KV size with GQA, roofline with quantization, or batching with latency targets.
+- All four options are plausible. Wrong options carry the reasoning a person might actually use ("…because the weights are read once per token"), so you can't pick the answer by spotting the only option with an explanation. The correct option is the strictly longest in 75 of 175 MCQs (43%), and more than 1.3x the next longest in only 9. Before this round, the 90 rewritten questions' correct options averaged 2x the length of the wrong ones.
+- Each explanation works through the steps and says why the tempting wrong answers fail.
+- **Answer positions:** the renderer doesn't shuffle, so slots were assigned to the rewritten questions to even out the whole course. Kept questions keep their slot. Final spread over all 175 MCQs (standalone and module-test parts): 44 / 44 / 44 / 43 for options 1–4.
+- Module-test time limits stay at 45 s per question.
+
+### Ids and progress
+
+No id or slug changed. Every rewritten or reworded item changes answer-bearing fields (options or answer), so it shows **Updated** for anyone who solved the old version.
+
+**Rewritten standalone questions:** `01-what-is-a-token#what-model-sees`, `02-the-forward-pass#embedding-params`, `03-logits-to-tokens#temperature-effect`, `04-prefill-and-decode#bound-fill`, `06-queries-keys-values#formula-fill`, `06-queries-keys-values#why-scale`, `07-causal-masking#mask-order`, `08-heads-mha-gqa#gqa-why`, `08-heads-mha-gqa#head-fill`, `11-why-cache#what-is-read`, `11-why-cache#why-not-q`, `12-sizing-the-cache#formula`, `15-memory-hierarchy#where-weights`, `17-the-roofline#int4-effect`, `17-the-roofline#roof-fill`, `20-continuous-batching#when-admit`, `21-batch-size-vs-latency#latency-mcq`, `22-chunked-prefill#budget-fill`, `22-chunked-prefill#what-improves`, `24-kv-as-virtual-memory#block-table`, `25-block-tables-and-copy-on-write#beam-why`, `25-block-tables-and-copy-on-write#cow-when`, `26-preemption-and-swapping#who-first`, `28-fewer-bytes-faster-tokens#awq-idea`, `29-scales-and-groups#why-groups`, `30-activation-outliers-smoothquant#equivalence`, `30-activation-outliers-smoothquant#why-hard`, `31-kv-cache-quantization#kivi-mcq`, `33-the-hbm-bottleneck#slow-why`, `34-online-softmax#why-max`, `35-tiling-in-sram#exact-mcq`, `37-draft-and-verify#exactness`, `37-draft-and-verify#when-bad`, `38-acceptance-and-speedup#raise-alpha`, `39-medusa-eagle-and-lookup#no-training`, `39-medusa-eagle-and-lookup#tree-why`, `41-tensor-parallelism#keep-in-node`, `42-pipeline-parallelism#pp-vs-tp`, `43-moe-and-expert-parallelism#moe-saves`, `45-ttft-tpot-and-prefix-caching#metric-match`, `46-engines-tour#laptop`, `46-engines-tour#pick-engine`, `47-disaggregated-prefill-decode#goodput`, `47-disaggregated-prefill-decode#why-disagg`, `49-server-architecture#brain`, `50-build-the-scheduler#hol`, `51-benchmark-and-profile#why-p99`, `53-tokens-concepts#concept-check`, `54-attention-concepts#concept-check`, `56-roofline-concepts#concept-check`, `57-batching-concepts#concept-check`, `58-paged-concepts#concept-check`, `60-flash-concepts#concept-check`, `61-spec-concepts#concept-check`, `62-parallel-concepts#concept-check`, `64-capstone-concepts#concept-check`, `22-chunked-prefill#budget-fill (still a Fill, now a worked step-budget calculation)`
+
+**Rewritten module-test parts (1-based):**
+
+| Test | Parts |
+| --- | --- |
+| `boulevard` | 1, 4, 6 |
+| `docks` | 1, 2, 3, 5 |
+| `gardens` | 2, 4, 5 |
+| `heist` | 1, 4, 5 |
+| `peak` | 3, 5 |
+| `pier` | 2, 4, 5 |
+| `quarter` | 1, 2, 4, 6 |
+| `ridge` | 2, 5 |
+| `row` | 2, 4, 5 |
+| `shard` | 3, 5 |
+| `showdown` | 1, 3, 4 |
+| `strip` | 2, 4, 5 |
+
+**Kept questions with reworded options (same idea, same answer slot):** `08-heads-mha-gqa#group-size`, `09-the-quadratic-bill#quad-factor`, `16-arithmetic-intensity#square-ai`, `17-the-roofline#ridge-h100`, `20-continuous-batching#static-waste`, `21-batch-size-vs-latency#batch-throughput`, `21-batch-size-vs-latency#step-time`, `22-chunked-prefill#budget-left`, `22-chunked-prefill#stall-ms`, `22-chunked-prefill#vllm-knob`, `24-kv-as-virtual-memory#blocks-needed`, `24-kv-as-virtual-memory#waste-slab`, `25-block-tables-and-copy-on-write#cow-blocks`, `26-preemption-and-swapping#swap-time`, `28-fewer-bytes-faster-tokens#e4m3-max`, `28-fewer-bytes-faster-tokens#int4-70b`, `29-scales-and-groups#group-bits`, `30-activation-outliers-smoothquant#smooth-s`, `31-kv-cache-quantization#fp8-seqs`, `33-the-hbm-bottleneck#s-size`, `34-online-softmax#online-l`, `35-tiling-in-sram#fa3-util`, `35-tiling-in-sram#tile-bytes`, `37-draft-and-verify#expected-tokens`, `38-acceptance-and-speedup#low-alpha`, `38-acceptance-and-speedup#speedup`, `39-medusa-eagle-and-lookup#tree-nodes`, `41-tensor-parallelism#allreduce-count`, `41-tensor-parallelism#ring-bytes`, `42-pipeline-parallelism#pp-mem`, `43-moe-and-expert-parallelism#mixtral-speed`, `45-ttft-tpot-and-prefix-caching#prefix-saving`, `46-engines-tour#q4-bits`, `47-disaggregated-prefill-decode#transfer-ms`, `49-server-architecture#littles-law`, `50-build-the-scheduler#admit-count`, `51-benchmark-and-profile#mbu`, `63-serving-concepts#concept-check`; module-test parts `boulevard` 2, 5; `docks` 4; `gardens` 1; `heist` 3; `peak` 1, 2, 4, 6, 8; `pier` 1, 3; `quarter` 3, 5; `ridge` 3, 6; `row` 1, 3; `shard` 2, 6; `showdown` 2; `strip` 1, 3, 6.
+
+### Coding exercises: from formulas to decisions
+
+| Id | Before | Now |
+| --- | --- | --- |
+| `intensity-code` | compute matmul intensity | `min_compute_bound_batch`: smallest power-of-2 batch that reaches a chip's ridge (or None); the intensity helper is given |
+| `step-code` | compute decode step time | `max_batch_for_slo`: largest batch that meets a TPOT target and fits the KV pool, and which limit binds (`"slo"` or `"memory"`) |
+| `kv-code` | compute KV size in GB | `pick_kv_dtype`: most precise of fp16 / fp8 / int4 that fits a workload, or None |
+| `tp-code` | weights per GPU | `split_plan`: smallest TP that fits with a KV reserve, then data-parallel replicas on the remaining GPUs |
+| `getaway-plan` | smallest TP | `plan`: TP inside a node, PP across nodes only when needed; returns `(tp, pp)` or None |
+
+The validator runs every solution (must pass) and starter (must fail) with python3.
+
+### New teaching cards
+
+Each card goes right before the first exercise that uses it. Cards are at most 170 words, use no analogies, and add mechanisms, real-system details, pitfalls or a worked scenario.
+
+| Lesson | Card |
+| --- | --- |
+| 01-what-is-a-token | What the model cannot see |
+| 02-the-forward-pass | Only the last position needs logits |
+| 03-logits-to-tokens | Picking settings for a task |
+| 04-prefill-and-decode | A worked example |
+| 53-tokens-concepts | Counting the work in a request |
+| 06-queries-keys-values | Reading a softmax row |
+| 07-causal-masking | Masking inside real kernels |
+| 08-heads-mha-gqa | Converting MHA to GQA |
+| 09-the-quadratic-bill | Where the n² shows up |
+| 54-attention-concepts | Worked scenario: two designs, one GPU |
+| 11-why-cache | What the cache costs per step |
+| 12-sizing-the-cache | Comparing real models |
+| 13-the-memory-budget | How vLLM sizes its pool |
+| 55-kv-cache-concepts | Worked scenario: a capacity plan |
+| 15-memory-hierarchy | Why weights can't stay on chip |
+| 16-arithmetic-intensity | From intensity to a batch decision |
+| 17-the-roofline | Reading a roofline: a worked example |
+| 18-decode-speed-limit | Where real engines lose time |
+| 56-roofline-concepts | Worked scenario: will a new GPU help? |
+| 20-continuous-batching | What the papers measured |
+| 21-batch-size-vs-latency | Picking a batch cap |
+| 22-chunked-prefill | Spotting a prefill stall |
+| 57-batching-concepts | Worked scenario: one iteration |
+| 24-kv-as-virtual-memory | How the kernel reads scattered blocks |
+| 25-block-tables-and-copy-on-write | A worked copy-on-write |
+| 26-preemption-and-swapping | Preemption in practice |
+| 58-paged-concepts | Worked scenario: choosing a block size |
+| 28-fewer-bytes-faster-tokens | What the papers report |
+| 29-scales-and-groups | How one outlier wrecks a scale |
+| 30-activation-outliers-smoothquant | Why the maths is unchanged |
+| 31-kv-cache-quantization | What KIVI found |
+| 59-quant-concepts | Worked scenario: picking a format |
+| 33-the-hbm-bottleneck | The numbers at 16k tokens |
+| 34-online-softmax | Why fp16 overflows |
+| 35-tiling-in-sram | FlashAttention in real engines |
+| 60-flash-concepts | Worked scenario: long-context decode |
+| 37-draft-and-verify | What the papers measured |
+| 38-acceptance-and-speedup | What controls α |
+| 39-medusa-eagle-and-lookup | Exact or not: the accept rule decides |
+| 61-spec-concepts | Worked scenario: tuning speculation |
+| 41-tensor-parallelism | TP in practice |
+| 42-pipeline-parallelism | How small pipeline traffic is |
+| 43-moe-and-expert-parallelism | MoE at today's scale |
+| 62-parallel-concepts | Worked scenario: one model, three splits |
+| 45-ttft-tpot-and-prefix-caching | Where TTFT and TPOT come from |
+| 46-engines-tour | Choosing an engine |
+| 47-disaggregated-prefill-decode | What DistServe measured |
+| 63-serving-concepts | Worked scenario: reading a goodput report |
+| 49-server-architecture | A worked capacity plan |
+| 50-build-the-scheduler | Fair admission |
+| 51-benchmark-and-profile | Why tails matter |
+| 64-capstone-concepts | Worked scenario: a full step under pressure |
+
+Text corrections: lesson 13 used to say vLLM claims `gpu_memory_utilization = 0.9` by default. The current vLLM docs say that on CUDA and ROCm it sizes the KV cache from memory actually free after warm-up (the "extensible KV cache", default 1.0); a fixed fraction (0.92) applies elsewhere. The lesson and its key idea now describe both. Lesson 21's lead-in to `step-code` now introduces the decision task.
+
+### Sources checked for new claims
+
+- vLLM / PagedAttention (2–4x vs FasterTransformer and Orca; beam vs parallel sampling savings): https://arxiv.org/abs/2309.06180
+- vLLM docs, optimization (preemption warning and levers, KV sizing, V1 recompute): https://docs.vllm.ai/en/latest/configuration/optimization.html
+- vLLM docs, engine arguments (`gpu_memory_utilization`): https://docs.vllm.ai/en/latest/configuration/engine_args.html
+- Orca (iteration-level scheduling, selective batching): https://www.usenix.org/conference/osdi22/presentation/yu
+- GQA (mean-pooled heads, uptraining with 5% of pretraining compute): https://arxiv.org/abs/2305.13245
+- MQA (Shazeer 2019): https://arxiv.org/abs/1911.02150
+- FlashAttention-2 (FA1 at 25–40% of peak, about 2x faster): https://arxiv.org/abs/2307.08691
+- FlashAttention-3 (FA2 at 35% on H100; 1.5–2.0x; 740 TFLOP/s fp16; close to 1.2 PFLOP/s fp8): https://arxiv.org/abs/2407.08608
+- Flash-Decoding (FlashAttention under 1% of an A100 at batch-1 decode; up to 8x; FlashAttention 2.2): https://crfm.stanford.edu/2023/10/12/flashdecoding.html
+- Leviathan et al., speculative decoding (2–3x on T5-XXL, identical outputs): https://arxiv.org/abs/2211.17192
+- Chen et al., speculative sampling: https://arxiv.org/abs/2302.01318
+- Medusa (Medusa-1 over 2.2x, Medusa-2 2.3–2.8x; typical acceptance; 64-node sparse tree beats 256 dense): https://arxiv.org/abs/2401.10774
+- EAGLE (2.7–3.5x on LLaMA2-Chat 70B): https://arxiv.org/abs/2401.15077
+- GPTQ (175B in about 4 GPU hours, 3–4 bits): https://arxiv.org/abs/2210.17323
+- AWQ (1% salient channels, scaling without backpropagation): https://arxiv.org/abs/2306.00978
+- SmoothQuant (up to 1.56x speedup, 2x memory, 530B on one node): https://arxiv.org/abs/2211.10438
+- KIVI (keys per channel, values per token, recent-token window; 2.6x lower peak memory, up to 4x batch, 2.35–3.47x throughput): https://arxiv.org/abs/2402.02750
+- DistServe (goodput per GPU; 7.4x more requests or 12.6x tighter SLO at over 90% attainment; 1.13 GB KV for 512-token OPT-66B; under 0.1% transfer time): https://arxiv.org/abs/2401.09670
+- Mixtral 8x7B: https://arxiv.org/abs/2401.04088
+- DeepSeek-V3 (671B total, 37B active): https://arxiv.org/abs/2412.19437
+
+Arithmetic in questions and cards (KV bytes per token, step times, ridge points, softmax weights, block waste, goodput per GPU, p99 odds) was recomputed by script. Hardware figures: H100 SXM 989 TFLOP/s dense fp16, 3.35 TB/s, 50 MB L2, 132 SMs, 228 KB shared memory per SM; fp16 max 65,504.
+
+### Fun meter
+
+Reviewed and left unchanged. The new cards add reading, and the scenario questions take more thought than the old ones. Neither changes the interactive parts the 4–5 ratings were based on. Concept pages stay at 1: they are still reference reading with one check at the end.
+
+---
+
+## Round 1
+
+### Summary
 
 - Every graded item in the course was inventoried: 167 exercises, with the 12 module tests expanded into their 71 parts, for 226 items in total (table below).
 - **87 replaced**: all 51 standalone `Predict` number drills except one, 33 of the 34 `predict` parts in module tests, and 3 concept-page MCQs that were just a formula with the numbers filled in (KV bytes per token, an int8 scale, and end-to-end latency).
@@ -15,7 +174,7 @@ Base: PR #19 head `b7db51d72a99e02b192aca9e2e3e40faf27b1b6b` (the chunked-prefil
 - Each MCQ has 4 options. Every wrong option is a plausible misconception, and the explanation says why each one is wrong.
 - **Answer positions are now spread out.** The renderer does not shuffle options, and before this change 62 of 76 MCQ answers were option 2. The new questions place the correct answer by a hash of the exercise id, which gives 75 / 32 / 29 / 22 across positions 1–4. The kept MCQs still mostly use option 2 (see Risks).
 
-## Ids and progress
+### Ids and progress
 
 No id or slug was renamed. Each replacement reuses the old exercise id in place, so progress keys stay the same. Each replacement does change the answer-bearing fields, so anyone who solved the old version sees it marked **Updated** until they solve the new one.
 
@@ -40,7 +199,7 @@ No id or slug was renamed. Each replacement reuses the old exercise id in place,
 
 Part numbers are 1-based. The time limits are now 45 s per question, up from about 30 s, because the questions take longer to read. The briefings were updated to match.
 
-## Teaching text added (so nothing is tested before it is taught)
+### Teaching text added (so nothing is tested before it is taught)
 
 - **08 Heads, MQA and GQA:** each query head keeps its own pattern; only K and V are shared.
 - **12 Sizing the cache:** the Llama 3 8B worked example (128 KiB per token), and the point that query heads are not part of the formula.
@@ -53,20 +212,20 @@ Part numbers are 1-based. The time limits are now 45 s per question, up from abo
 
 Every other new question uses ideas that the module's concept page or an earlier lesson card already teaches.
 
-## Fun meter
+### Fun meter
 
 - 45 Serving metrics and prefix caching: 3 → 4. It now has the timestamp-breaks-the-prefix-cache diagnosis.
 - 49 Architecture of a tiny server: 3 → 4.
 
 All the other ratings stay. The lessons that were rated 5 were rated for their simulators and code, and those are unchanged.
 
-## Notes
+### Notes
 
-- **Code exercises are all kept.** A few just implement a formula: `intensity-code`, `step-code`, `tp-code`, `kv-code` and `getaway-plan`. They stay because writing the function is the exercise, and the request was about the number drills. They are candidates for a later pass if Sreyas wants it.
+- **Code exercises (superseded in round 2, where all five were reframed as decision tasks):** A few just implement a formula: `intensity-code`, `step-code`, `tp-code`, `kv-code` and `getaway-plan`. They stay because writing the function is the exercise, and the request was about the number drills. They are candidates for a later pass if Sreyas wants it.
 - **Simulators are kept.** Some, such as `llama2-calc`, set the knobs to a target, but they are interactive rather than drills.
-- **Answer bias in kept MCQs:** about 60 of the kept MCQs still have option 2 as the answer. Re-ordering their options would mark them all Updated, so it was left for a separate decision.
+- **Answer bias in kept MCQs (resolved in round 2: positions are now 44 / 44 / 44 / 43):** about 60 of the kept MCQs still have option 2 as the answer. Re-ordering their options would mark them all Updated, so it was left for a separate decision.
 
-## Full inventory
+### Full inventory
 
 Class tells you why each item was replaced or kept. "Arithmetic" means you plug numbers into a formula given on the card.
 

@@ -25,7 +25,7 @@ At long contexts and high concurrency the KV cache dwarfs the weights. Halving i
   id="fp8-seqs"
   devices={["phone","desktop"]}
   prompt={"Llama 3 8B, a 40 GB KV pool and 8k-token sequences: about 37 fit with an fp16 cache. You switch the cache to fp8. Which two things improve?"}
-  options={["Twice as many fit, and prefill needs half the FLOPs.", "About twice as many sequences fit (about 74), and each decode step reads half as many KV bytes.", "The weights shrink by half.", "Nothing, unless the weights are quantized too."]}
+  options={["Twice as many fit, and prefill needs half the FLOPs, because the cache is smaller.", "About twice as many fit (about 74), and each step reads half as many KV bytes.", "The weights shrink by half too, because the model shares the cache's format.", "Nothing, unless the weights are quantized too, because weights fill the memory."]}
   answer={1}
   explanation={"Bytes per element go from 2 to 1, so each token's cache halves: twice the tokens fit, and the KV part of every decode step reads half as much. The values are turned back into 16-bit numbers inside the attention kernel, so the arithmetic is unchanged. The weights are separate, and KV quantization works on its own."}
 />
@@ -34,12 +34,12 @@ At long contexts and high concurrency the KV cache dwarfs the weights. Halving i
   id="kv-code"
   devices={["desktop"]}
   language="python"
-  prompt={"Write kv_gb(layers, kv_heads, head_dim, tokens, bits), which returns the KV cache size in decimal GB for that many tokens at the given bits per element."}
-  starter={"def kv_gb(layers, kv_heads, head_dim, tokens, bits):\n    return 0.0\n"}
-  tests={"def test_fp16():\n    assert abs(kv_gb(32, 8, 128, 8192, 16) - 1.0737) < 1e-3\n\ndef test_fp8():\n    assert abs(kv_gb(32, 8, 128, 8192, 8) - 0.5369) < 1e-3\n\ndef test_int2():\n    assert abs(kv_gb(80, 8, 128, 100000, 2) - 4.096) < 1e-3\n"}
-  solution={"def kv_gb(layers, kv_heads, head_dim, tokens, bits):\n    return 2 * layers * kv_heads * head_dim * tokens * bits / 8 / 1e9\n"}
-  hints={["The 2 is for K and V.","bits / 8 gives bytes per element."]}
-  explanation="Ignoring the scales, int2 KV for a 70B model at 100k tokens is about 4 GB instead of about 33 GB in fp16."
+  prompt={"Pick a KV cache precision. Write pick_kv_dtype(layers, kv_heads, head_dim, ctx, seqs, pool_gb). It returns the most precise of \"fp16\" (2 bytes), \"fp8\" (1 byte) and \"int4\" (0.5 bytes) whose cache for seqs sequences of ctx tokens fits in pool_gb decimal GB, or None if even int4 doesn't fit. Ignore the scales' overhead."}
+  starter={"def pick_kv_dtype(layers, kv_heads, head_dim, ctx, seqs, pool_gb):\n    # Try the most precise format first.\n    return \"fp16\"\n"}
+  tests={"def test_fp16_fits():\n    \"\"\"Llama 3 8B, 32 x 8k sequences: about 34 GB in fp16\"\"\"\n    assert pick_kv_dtype(32, 8, 128, 8192, 32, 40) == \"fp16\"\n\ndef test_needs_fp8():\n    \"\"\"64 sequences need about 69 GB in fp16 but 34 GB in fp8\"\"\"\n    assert pick_kv_dtype(32, 8, 128, 8192, 64, 40) == \"fp8\"\n\ndef test_needs_int4():\n    assert pick_kv_dtype(32, 8, 128, 8192, 128, 40) == \"int4\"\n\ndef test_nothing_fits():\n    assert pick_kv_dtype(32, 8, 128, 8192, 256, 40) is None\n\ndef test_70b_long():\n    \"\"\"Llama 3 70B, 8 x 32k sequences: about 86 GB in fp16, 43 GB in fp8\"\"\"\n    assert pick_kv_dtype(80, 8, 128, 32768, 8, 60) == \"fp8\"\n"}
+  solution={"def pick_kv_dtype(layers, kv_heads, head_dim, ctx, seqs, pool_gb):\n    elems = 2 * layers * kv_heads * head_dim * ctx * seqs\n    for name, nbytes in ((\"fp16\", 2), (\"fp8\", 1), (\"int4\", 0.5)):\n        if elems * nbytes <= pool_gb * 1e9:\n            return name\n    return None\n"}
+  hints={["Elements = 2 (K and V) × layers × kv_heads × head_dim × tokens.", "Check fp16, then fp8, then int4, and stop at the first that fits."]}
+  explanation={"Lower precision is a trade: each step down halves the cache but adds rounding error, so you take only as much as the workload needs. fp8 caches are widely supported and usually cost little quality; 4-bit and 2-bit caches need methods such as KIVI's per-channel keys to keep quality."}
 />
 
 ## Going lower
@@ -48,11 +48,21 @@ FP8 (E4M3) KV is production-ready in vLLM and TensorRT-LLM. KIVI shows 2-bit KV 
 
 Sources: [vLLM quantized KV cache](https://docs.vllm.ai/en/latest/features/quantization/quantized_kvcache.html), [KIVI](https://arxiv.org/abs/2402.02750)
 
+## What KIVI found
+
+KIVI (2024) studied the KV cache's value distributions and found that **keys** have outlier channels, a few fixed channels with large values across tokens, while **values** don't. So it quantizes keys **per channel** (one scale per channel across a group of tokens) and values **per token**.
+
+It also keeps the most recent tokens (a window of about 128) in full precision until a full group can be quantized together.
+
+At 2 bits it reported about 2.6x lower peak memory, up to 4x larger batches and 2.35–3.47x higher throughput on real workloads, with little quality loss.
+
+Source: [KIVI](https://arxiv.org/abs/2402.02750)
+
 <MCQ
   id="kivi-mcq"
   devices={["phone","desktop"]}
-  prompt="KIVI quantizes keys per-channel but values per-token. Why?"
-  options={["Keys are smaller","Key outliers concentrate in fixed channels, while value errors matter per token in the weighted sum","Values are not cached","It's arbitrary"]}
-  answer={1}
-  explanation="Group along the axis where the values vary least."
+  prompt={"A team quantizes the KV cache to 2 bits, per token for both keys and values, and accuracy collapses. What change does KIVI's analysis point to?"}
+  options={["Quantize both keys and values per channel, because values have the same fixed outlier channels as keys.", "Go down to 1 bit, because with fewer levels there are fewer outliers left to cause errors.", "Quantize keys per channel and values per token, and keep the most recent tokens in full precision.", "Quantize the queries too, so that attention compares numbers that were all rounded the same way."]}
+  answer={2}
+  explanation={"KIVI found that key outliers line up in a few fixed channels, so a per-token scale is stretched by them, while a per-channel scale isolates them. Value errors matter per token, because each token's value row is mixed in with its own weight. KIVI also keeps a window of recent tokens in full precision. Queries are never cached, so there is nothing to quantize there."}
 />

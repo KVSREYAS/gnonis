@@ -33,7 +33,7 @@ fp16 the intensity is about 1,365 FLOP/byte.
   id="square-ai"
   devices={["phone","desktop"]}
   prompt={"A large square matmul (4096 × 4096 times 4096 × 4096) reaches over 1,000 FLOP/byte, while a batch-1 GEMV sits near 1. What makes the difference?"}
-  options={["The square matmul reads from faster memory.", "The GEMV kernel is badly written; a better one would also reach 1,000 FLOP/byte.", "The square matmul skips zero entries.", "In the square matmul every loaded number is reused in thousands of multiply-adds; in a GEMV each weight is used in exactly one."]}
+  options={["The square matmul reads its inputs from faster memory than the GEMV does.", "The GEMV kernel is badly written; a better one would also reach 1,000 FLOP/byte.", "The square matmul skips zero entries, which removes most of its memory reads.", "In the square matmul each loaded number is reused thousands of times; in a GEMV, once."]}
   answer={3}
   explanation={"FLOPs grow as n³ but the data moved grows as n², so the square matmul gets more maths out of every byte as n grows. A GEMV reads each weight once and uses it once, so no kernel can push it far past 1 FLOP/byte. Only batching, with more vectors reusing the same weights, can. Both read from the same HBM, and nothing is skipped."}
 />
@@ -70,14 +70,22 @@ data is not written to HBM and read back.
 Decode $B$ sequences together and each weight, loaded once, serves $B$ tokens. The intensity of
 the weight matmuls rises to roughly $B$ FLOP/byte in fp16. This is the core reason servers batch.
 
+## From intensity to a batch decision
+
+For a weight matmul with batch B, each weight byte feeds about B FLOPs (in fp16, 2 FLOPs per 2-byte weight per token). So the batch size is close to the arithmetic intensity, until the activations become a noticeable share of the bytes.
+
+That makes a simple planning question: what batch puts the weight matmuls at the ridge? For an H100 in fp16 the ridge is about 295 FLOP/byte, so a few hundred sequences. With fp8 weights each byte feeds twice the FLOPs. If the maths still runs at the 16-bit rate, the batch needed halves; if it also runs in fp8 at twice the FLOP/s, the ridge doubles too and the batch needed stays about the same.
+
+Real decode servers rarely reach that batch, because the KV cache and latency targets stop them first. Prefill, which has hundreds or thousands of tokens per pass, gets there easily.
+
 <Code
   id="intensity-code"
   devices={["desktop"]}
   language="python"
-  prompt={"Write matmul_intensity(m, k, n, bytes_per_elem=2) for an [m x k] @ [k x n] matmul. It counts 2·m·k·n FLOPs and moves A, B and C exactly once."}
-  starter={"def matmul_intensity(m, k, n, bytes_per_elem=2):\n    \"\"\"FLOPs per byte for C[m,n] = A[m,k] @ B[k,n], each matrix moved once.\"\"\"\n    return 0.0\n"}
-  tests={"def test_square():\n    \"\"\"4096 square fp16 -> ~1365.3\"\"\"\n    v = matmul_intensity(4096, 4096, 4096)\n    assert abs(v - 4096 / 3) < 1e-6, v\n\ndef test_gemv():\n    \"\"\"batch-1 GEMV -> just under 1\"\"\"\n    v = matmul_intensity(1, 4096, 4096)\n    assert 0.99 < v < 1.0, v\n\ndef test_batch_scales():\n    \"\"\"batch 64 decode -> ~ 63\"\"\"\n    v = matmul_intensity(64, 4096, 4096)\n    assert 60 < v < 64, v\n\ndef test_dtype():\n    \"\"\"int8 doubles intensity\"\"\"\n    assert abs(matmul_intensity(8, 1024, 1024, 1) - 2 * matmul_intensity(8, 1024, 1024, 2)) < 1e-9\n"}
-  solution={"def matmul_intensity(m, k, n, bytes_per_elem=2):\n    flops = 2 * m * k * n\n    bytes_moved = bytes_per_elem * (m * k + k * n + m * n)\n    return flops / bytes_moved\n"}
-  hints={["Bytes moved = bytes_per_elem x (m·k + k·n + m·n)."]}
-  explanation="With m = batch size and k x n = a weight matrix, you can see why batching rescues decode."
+  prompt={"A team asks: how big must the decode batch be before a weight matmul stops being memory-bound? Write min_compute_bound_batch(k, n, peak_tflops, bw_tbs, bytes_per_elem=2, max_batch=4096). For batch sizes B = 1, 2, 4, 8, … up to max_batch, treat decode as a [B x k] @ [k x n] matmul (use the helper below) and return the smallest B whose intensity reaches the chip's ridge point (peak_tflops / bw_tbs FLOP/byte). Return None if no batch up to max_batch gets there."}
+  starter={"def matmul_intensity(m, k, n, bytes_per_elem=2):\n    \"\"\"FLOPs per byte for [m x k] @ [k x n], each matrix moved once.\"\"\"\n    return 2 * m * k * n / (bytes_per_elem * (m * k + k * n + m * n))\n\ndef min_compute_bound_batch(k, n, peak_tflops, bw_tbs, bytes_per_elem=2, max_batch=4096):\n    # Decide: which batch first reaches the ridge?\n    return None\n"}
+  tests={"def test_h100_fp16():\n    \"\"\"4096 x 4096 weights on an H100: ridge ~295, batch 256 gives ~228, batch 512 ~410\"\"\"\n    assert min_compute_bound_batch(4096, 4096, 989, 3.35) == 512\n\ndef test_fp8_weights_16bit_maths():\n    \"\"\"1-byte weights with the same ridge: each byte feeds twice the FLOPs\"\"\"\n    assert min_compute_bound_batch(4096, 4096, 989, 3.35, bytes_per_elem=1) == 256\n\ndef test_a100():\n    \"\"\"A100 ridge is 156, so a smaller batch is enough\"\"\"\n    assert min_compute_bound_batch(4096, 4096, 312, 2.0) == 256\n\ndef test_never():\n    \"\"\"A tiny 64 x 64 matrix never reuses data enough\"\"\"\n    assert min_compute_bound_batch(64, 64, 989, 3.35) is None\n\ndef test_cap():\n    \"\"\"The cap is respected\"\"\"\n    assert min_compute_bound_batch(4096, 4096, 989, 3.35, max_batch=256) is None\n"}
+  solution={"def matmul_intensity(m, k, n, bytes_per_elem=2):\n    \"\"\"FLOPs per byte for [m x k] @ [k x n], each matrix moved once.\"\"\"\n    return 2 * m * k * n / (bytes_per_elem * (m * k + k * n + m * n))\n\ndef min_compute_bound_batch(k, n, peak_tflops, bw_tbs, bytes_per_elem=2, max_batch=4096):\n    ridge = peak_tflops / bw_tbs\n    b = 1\n    while b <= max_batch:\n        if matmul_intensity(b, k, n, bytes_per_elem) >= ridge:\n            return b\n        b *= 2\n    return None\n"}
+  hints={["TFLOP/s divided by TB/s is FLOP/byte, so the ridge is peak_tflops / bw_tbs.", "Double b each time, starting from 1."]}
+  explanation={"On an H100 in fp16 the weight matmuls need a batch of about 512 before the tensor cores are the limit. Real decode batches are usually far smaller, because the KV cache fills memory first, so decode stays memory-bound. Prefill, with thousands of tokens per pass, gets there easily."}
 />

@@ -35,13 +35,13 @@ Softmax runs along each row, so each row's weights sum to 1.
 
 ![Three heatmaps: Q times K transpose scores, row-wise softmax, and the weighted sum of V](/diagrams/llm-inference/02-attention/01-queries-keys-values.png)
 
-<Fill
+<MCQ
   id="formula-fill"
   devices={["phone","desktop"]}
-  text={"Attention(Q, K, V) = softmax(Q Kᵀ / {{0}}) {{1}}"}
-  chips={["√d_k","d_model","V","K","n²","Q"]}
-  answers={["√d_k","V"]}
-  explanation="Scale the scores by the square root of the key dimension, softmax each row, then use the weights to mix the values."
+  prompt={"One query gives two different heads these scores over three keys (already scaled). Head A: [8, 0, 0]. Head B: [2, 0, 0]. What does each head's output look like?"}
+  options={["Both outputs are exactly v₁: the first key has the highest score in both heads, and softmax gives the highest score all the weight.", "Both outputs are an even mix of v₁, v₂ and v₃, because softmax normalises every row of scores to add up to 1.", "A's output is almost exactly v₁ (about 99.9% weight); B's is about 79% v₁, with about 11% each of v₂ and v₃.", "A is 80% v₁ and B is 50% v₁, because the weights are proportional to the scores, as in 8 / (8 + 2) and 2 / (2 + 2)."]}
+  answer={2}
+  explanation={"Softmax turns scores into weights with exp: A gives e⁸ / (e⁸ + 2) ≈ 2,981 / 2,983 ≈ 0.999 for v₁. B gives e² / (e² + 2) ≈ 7.39 / 9.39 ≈ 0.79, leaving about 0.11 each for the others. The output is the weighted mix of the value vectors. Weights grow with the exponent of the score gap, not in proportion to the scores, and the highest score never takes 100% unless the gap is very large."}
 />
 
 ## The scale factor
@@ -51,13 +51,21 @@ push softmax into a near one-hot distribution, where it stops learning.
 
 Dividing by $\sqrt{d_k}$ keeps the scores' variance around 1, whatever the head size.
 
+## Reading a softmax row
+
+Softmax turns score gaps into weight ratios: a key whose score is higher by g gets e^g times more weight. A gap of 1 is about 2.7x, a gap of 2 about 7.4x, a gap of 5 about 148x, and a gap of 10 about 22,000x.
+
+So the scale of the scores decides how spread out attention is. If scores differ by a few tenths, weights are nearly even. If they differ by 10, one key takes almost everything.
+
+Raw dot products in d_k dimensions have a spread of about √d_k when the entries are unit-sized: about 8 at d_k = 64. Dividing by √d_k brings the spread back to about 1, so the model starts training in the range where softmax gives useful gradients.
+
 <MCQ
   id="why-scale"
   devices={["phone","desktop"]}
-  prompt="Why divide the scores by √d_k?"
-  options={["To make the matrix multiply cheaper","To keep the scores' spread around 1 so softmax does not saturate","To normalise the values to unit length","To mask future tokens"]}
+  prompt={"A student writes attention without the √d_k division. With head size d_k = 128, training is unstable and the attention weights in each row are almost all on one key. What went wrong?"}
+  options={["Without the division the scores stay too small, so softmax spreads the weight evenly over all keys and the model can't focus.", "128-dimensional dot products spread about 11x wider, so softmax puts nearly all weight on one key and gradients vanish.", "The division only keeps the numbers inside fp16's range to save memory, so leaving it out should not change what the model learns.", "Without the division, scores for future tokens grow large enough to get past the mask, so information leaks backwards."]}
   answer={1}
-  explanation={"A dot product of two random d-dimensional vectors has variance proportional to d. Without scaling, large d pushes softmax towards one-hot, and its gradients vanish during training."}
+  explanation={"A dot product of two d-dimensional vectors with unit-sized entries adds up d terms, so its spread grows like √d: about 11.3 at d = 128. Score gaps of 10 or more make softmax nearly one-hot (e¹⁰ ≈ 22,000). A one-hot softmax has almost zero gradient, so learning stalls or jumps. Dividing by √d_k brings the spread back to about 1. It is not a memory trick, and leakage is the mask's job."}
 />
 
 <MCQ

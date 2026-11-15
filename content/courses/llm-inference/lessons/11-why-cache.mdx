@@ -48,20 +48,31 @@ There is no Q cache. Only the newest query matters, so old ones are never used a
 The cache turns recomputation into memory: it grows by one entry per layer per token, for every
 sequence being served. The next lesson puts a number on it.
 
+## What the cache costs per step
+
+The cache removes repeated work, but it isn't free to read. Every decode step reads all model weights plus this sequence's whole KV cache, in every layer.
+
+For Llama 3 8B in fp16 (16 GB of weights, 128 KiB per cached token):
+
+- At token 100: 16 GB + 13 MB. The cache is negligible.
+- At token 50,000: 16 GB + 6.6 GB, about 40% more bytes, so steps are about 40% slower.
+
+That is why tokens stream more slowly late in a very long answer, and why long-context serving cares so much about bytes per cached token.
+
 <MCQ
   id="why-not-q"
   devices={["phone","desktop"]}
-  prompt="Why is there a KV cache but no Q cache?"
-  options={["Queries are too large to store","Only the newest token's query is needed, and past queries are never used again","Queries are recomputed from the keys","Queries are cached too, just inside the MLP"]}
-  answer={1}
-  explanation={"At each decode step, the new token's query is compared with every key. Old queries were only needed to produce old outputs, which already exist."}
+  prompt={"An engineer suggests caching each token's query alongside its key and value, \"so nothing needs recomputing\". What happens if you do it?"}
+  options={["Decode gets faster: old queries no longer have to be recomputed at every step, which is most of the attention work.", "Prefill gets faster: the prompt's queries are computed once and reused by every later step instead of recomputed.", "Memory per token grows and nothing gets faster, because no later step ever reads an old query.", "Nothing changes: each key already contains its token's query, so the extra cache is just a second copy of the same data."]}
+  answer={2}
+  explanation={"At decode step t, attention compares the new token's query with the keys of all earlier tokens and mixes their values. Old keys and values are reused every step, so caching them saves work. Old queries are used once, in their own step, and never again. Storing them takes memory (more than K with GQA, because there are more query heads) and saves nothing."}
 />
 
 <MCQ
   id="what-is-read"
   devices={["phone","desktop"]}
-  prompt="With a KV cache, what must a decode step still read from GPU memory?"
-  options={["Only the newest token's embedding","All model weights, plus that sequence's cached K and V for every layer","Only the attention weights","Nothing, because everything is in registers"]}
-  answer={1}
-  explanation={"The cache removes recomputation, not reading. Every step streams all weights and the whole KV history through the GPU, which is why decode is bandwidth-bound."}
+  prompt={"Two requests run on Llama 3 8B in fp16 at batch 1: one is at token 100, the other at token 30,000. What does each decode step read from GPU memory?"}
+  options={["Each reads only its own KV cache: the weights stay in on-chip memory between steps, so only the cache comes from HBM.", "Both read the same: the cache is allocated for the maximum context up front, so both steps read the full allocation.", "Both read all 16 GB of weights; the KV adds about 13 MB to the first and 3.9 GB to the second.", "The second reads about 300x more, because each step reads the weights once for every cached token."]}
+  answer={2}
+  explanation={"Llama 3 8B stores 128 KiB per token. 100 tokens × 128 KiB ≈ 13 MB; 30,000 × 128 KiB ≈ 3.9 GB. The weights (16 GB) don't fit in on-chip memory, so every step streams them again. So the steps read about 16.0 GB and 19.9 GB: about 25% more bytes, and decode time follows bytes. The cache grows with tokens held, not the maximum context."}
 />

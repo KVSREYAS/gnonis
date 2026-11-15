@@ -79,10 +79,22 @@ Lesson 3 of this module works through the numbers, the KV cache effects and how 
 
 ![Prefill split into chunks mixed with decode tokens](/diagrams/llm-inference/05-batching/03-chunked-prefill.png)
 
+## Worked scenario: one iteration
+
+Take a 16-slot continuous-batching server with 50 requests waiting. During step 77, request R9 emits its end-of-sequence token.
+
+1. R9's KV blocks go back to the free list, and its slot opens.
+2. At step 78 the scheduler first gives each of the 15 running requests its one decode token.
+3. It then looks at the head of the waiting queue. If enough free blocks exist for that request's prompt, it is admitted, and its prefill tokens join the same step.
+4. The step runs as one forward pass: 15 decode rows plus the new prompt's rows.
+
+If blocks were short, the request would keep waiting even though a slot is open. Memory, not the slot count, is the real limit.
+
 <MCQ
   id="concept-check"
-  prompt="In continuous batching, when can a new request join the running batch?"
-  options={["Only after every current request finishes", "At the next decode step, once a slot is free", "Only at the start of each minute", "Never; it gets its own GPU"]}
+  devices={["phone","desktop"]}
+  prompt={"A continuous-batching server has 8 slots, all busy, and 30 requests waiting. One request finishes during step 412. What happens at step 413?"}
+  options={["Nothing yet: the 7 others keep running until all 8 finish, and then the next 8 are admitted together.", "One waiting request is admitted, if its blocks fit, and its prefill runs alongside the 7 decodes.", "All 30 waiting requests are admitted at once, because the batch now has room to grow.", "The freed slot stays empty until the next scheduled batch boundary, a fixed number of steps later."]}
   answer={1}
-  explanation="The scheduler revisits the batch every step, so finished sequences are replaced immediately."
+  explanation={"Continuous batching decides the batch every iteration. A finished request frees its slot and its blocks at once, so the next step can admit one more from the queue, as long as its KV blocks fit. Its prefill tokens and the 7 decode tokens share that step. Only one slot was freed, so only one joins."}
 />

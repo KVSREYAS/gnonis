@@ -22,7 +22,7 @@ Batch-1 decode is bandwidth divided by bytes read. Halve the bytes per weight an
   id="int4-70b"
   devices={["phone","desktop"]}
   prompt={"A 70B model needs 140 GB in fp16 but about 35 GB in int4, so it fits on one 80 GB GPU. Besides fitting, what is the biggest serving win, and what is the main risk?"}
-  options={["Prefill gets 4x faster because the FLOPs drop 4x, and there is no risk.", "The KV cache also shrinks 4x, so 4x more sequences fit.", "Nothing besides fitting: decode speed depends only on the GPU.", "Batch-1 decode reads about 4x fewer bytes per token, so it can run up to about 4x faster. The risk is lost accuracy, which you must measure."]}
+  options={["Prefill gets 4x faster because its FLOPs drop 4x, and int4 has no accuracy risk.", "The KV cache also shrinks 4x, so 4x more sequences fit in memory.", "Nothing besides fitting: decode speed depends only on the GPU, not the weights.", "Batch-1 decode reads about 4x fewer bytes, so up to about 4x faster; the risk is accuracy."]}
   answer={3}
   explanation={"Decode is memory-bound, so its ceiling is bandwidth divided by bytes read: 4x fewer bytes, up to 4x more tokens/s. Quantization is lossy, so accuracy must be checked. Weight-only formats still do the matmul in 16 bits, so prefill FLOPs do not drop. The KV cache is separate and keeps its own format unless you quantize it too. Speed depends on bytes read as well as on the GPU."}
 />
@@ -47,13 +47,21 @@ Both are **post-training** methods: they quantize a finished model, using a few 
 
 GPTQ and AWQ are **weight-only**: weights are stored in 4 bits and turned back into 16-bit numbers inside the matmul kernel (**dequantized on the fly**), so the arithmetic still runs in 16 bits. **W8A8** means weights and activations are both 8-bit, so the matmul itself runs in int8 or fp8. Tensor cores run 8-bit matmuls at about twice the FLOP/s of 16-bit ones, so W8A8 also speeds up compute-bound work such as long prefills. Weight-only formats mainly speed up memory-bound decode.
 
+## What the papers report
+
+- **GPTQ** (2022) quantized models of up to 175B parameters to 3–4 bits in about 4 GPU hours, using a small calibration set and approximate second-order information. It quantizes a layer's weights one column at a time and adjusts the columns not yet quantized to cancel each rounding error.
+- **AWQ** (2023) found that protecting about 1% of salient weight channels, chosen by activation size, greatly reduces error. It protects them by scaling them before rounding, without backpropagation.
+- **SmoothQuant** (2022) made W8A8 work for large models, with up to 1.56x speedup and 2x memory reduction, and served a 530B model on a single node.
+
+Sources: [GPTQ](https://arxiv.org/abs/2210.17323), [AWQ](https://arxiv.org/abs/2306.00978), [SmoothQuant](https://arxiv.org/abs/2211.10438)
+
 <MCQ
   id="awq-idea"
   devices={["phone","desktop"]}
-  prompt="What is AWQ's key insight?"
-  options={["Train the model from scratch in int4","A small fraction of salient weight channels, found via activation magnitude, should be protected by scaling","Quantize only the KV cache","Remove attention layers"]}
-  answer={1}
-  explanation={"AWQ finds the ~1% of channels that matter most using activation statistics and scales them before quantizing. GPTQ instead uses approximate second-order (Hessian) information to correct errors layer by layer."}
+  prompt={"Plain 4-bit round-to-nearest hurts a model's accuracy badly. Calibration shows that about 1% of weight channels meet very large activations. What does AWQ do with that, and what does it avoid?"}
+  options={["It keeps those 1% of channels in fp16 and the rest in int4, and uses a mixed-precision kernel to combine them.", "It retrains the whole model in 4 bits with backpropagation, so the weights learn to work around the rounding.", "It removes those salient channels before quantizing, because their large activations cause the error.", "It scales those channels up before rounding, and the matching activations down, so their error shrinks."]}
+  answer={3}
+  explanation={"Weight errors matter most where activations are large, because the error is multiplied by the activation. AWQ protects those channels by multiplying their weights by a scale before quantizing, which makes their rounding error smaller relative to their size; the activations are divided by the same scale, so the product is unchanged. The paper notes that keeping 1% in fp16 also works but is awkward for hardware; scaling keeps one format."}
 />
 
 ## FP8 formats
@@ -73,7 +81,7 @@ matters more for gradients in training.
   id="e4m3-max"
   devices={["phone","desktop"]}
   prompt={"Why do inference engines usually store FP8 weights and activations as E4M3 rather than E5M2?"}
-  options={["With a scale per tensor the values fit E4M3's range, and its extra mantissa bit gives finer precision.", "E4M3 has the wider range.", "E5M2 does not run on any GPU.", "E4M3 uses fewer bits per value."]}
+  options={["With a per-tensor scale the values fit E4M3's range, and its extra mantissa bit gives finer steps.", "E4M3 has the wider range of the two, so outliers in weights and activations are less likely to overflow.", "E5M2 isn't supported by GPU tensor cores, so engines have no choice but to use E4M3.", "E4M3 uses fewer bits per value than E5M2, so it halves memory compared with the other format."]}
   answer={0}
   explanation={"Both formats are 8 bits. E4M3 trades one exponent bit for one mantissa bit: less range, more precision. Scaling brings weights and activations into E4M3's range (largest finite value 448), so precision is the better buy. E5M2 has the wider range (up to 57,344), which matters more for gradients in training, and Hopper and Ada tensor cores run both."}
 />

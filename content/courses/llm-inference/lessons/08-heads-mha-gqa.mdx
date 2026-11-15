@@ -35,20 +35,28 @@ shared. GQA keeps most of MHA's quality at a fraction of the memory. Llama 3 use
 
 ![Query heads mapped to KV heads in MHA (8), GQA (2) and MQA (1)](/diagrams/llm-inference/02-attention/03-heads-mha-gqa.png)
 
-<Fill
+## Converting MHA to GQA
+
+Changing the number of KV heads normally means a new model, but the GQA paper (Ainslie et al., 2023) showed a cheaper route. Take a trained MHA model, split its heads into groups, and build each group's K and V head by **averaging** (mean-pooling) the original heads in that group. Then continue training ("uptraining") for about **5% of the original pretraining compute**.
+
+The result keeps quality close to MHA, with speed close to MQA. MQA itself was proposed earlier (Shazeer, 2019) and shrinks the cache the most, with a larger quality drop.
+
+Sources: [GQA](https://arxiv.org/abs/2305.13245), [MQA](https://arxiv.org/abs/1911.02150)
+
+<MCQ
   id="head-fill"
   devices={["phone","desktop"]}
-  text={"In MHA every {{0}} head has its own K/V head. MQA shares {{1}} K/V head across all of them, and GQA sits in between."}
-  chips={["query","value","one","two","every"]}
-  answers={["query","one"]}
-  explanation={"MHA has h query heads and h KV heads, MQA has 1 KV head, and GQA has g KV heads where 1 < g < h."}
+  prompt={"A team has a 32-head MHA model and needs an 8x smaller KV cache for long-context serving, but can't afford to pretrain a new model. What is the proven route, and what does it cost?"}
+  options={["Keep 4 of the 32 query heads and delete the rest: fewer query heads means fewer keys and values, so the cache shrinks 8x with no training.", "Quantize only the queries to 4 bits: queries take most of the cache, so shrinking them gives the 8x without touching keys or values.", "Average each group of 8 K/V heads into one (GQA with 4 KV heads), then uptrain for about 5% of the original compute.", "It can't be done: the number of KV heads is fixed when pretraining starts, so a new model must be pretrained from scratch."]}
+  answer={2}
+  explanation={"The KV cache scales with the number of KV heads, so 32 → 4 gives 8x. The GQA paper (Ainslie et al., 2023) builds each group's K and V head by mean-pooling the original heads, then continues training for about 5% of the original compute. Deleting query heads would not shrink the cache in the right way and throws away learned patterns. Queries are never cached at all."}
 />
 
 <MCQ
   id="group-size"
   devices={["phone","desktop"]}
   prompt={"A model is converted from MHA with 32 KV heads to GQA with 8 KV heads, keeping its 32 query heads. At decode time, what changes?"}
-  options={["Everything shrinks 4x, including the number of attention patterns.", "The KV cache and the bytes read per step shrink 4x. There are still 32 attention patterns, one per query head.", "Nothing at decode time. GQA only speeds up training.", "The cache grows, because each KV head now serves 4 query heads."]}
+  options={["Everything shrinks 4x, including the number of attention patterns.", "The cache and bytes read shrink 4x; there are still 32 attention patterns.", "Nothing changes at decode time, because GQA only speeds up training.", "The cache grows, because each KV head now has to serve 4 query heads."]}
   answer={1}
   explanation={"Each group of 32 / 8 = 4 query heads shares one K/V head. Only keys and values are stored for past tokens, so the cache and the bytes read per decode step drop 4x. Every query head still computes its own scores, so there are still 32 patterns, which is why GQA keeps most of MHA's quality. The win is at decode time, and a shared head is stored once, not 4 times."}
 />
@@ -63,8 +71,8 @@ Llama 3 70B goes further: 64 query heads, 8 KV heads, a group size of 8.
 <MCQ
   id="gqa-why"
   devices={["phone","desktop"]}
-  prompt="What is the main inference win from GQA?"
-  options={["Fewer FLOPs in the MLP layers","A smaller KV cache, so more sequences fit and decode reads fewer bytes","It removes the need for softmax","It makes the vocabulary smaller"]}
-  answer={1}
-  explanation={"Query heads are cheap at decode time (one token). Keys and values are stored for every past token, so cutting KV heads cuts memory and bandwidth directly."}
+  prompt={"Two models have the same layers and head size. A uses MHA with 32 KV heads; B uses GQA with 8 KV heads. Same GPU, 60 GB free for the KV cache, long chats. Which serves more users at once, and which decodes each step faster at a long context?"}
+  options={["A on both: with 32 KV heads every query head has its own keys, so there is more parallel work and the GPU stays busier.", "B fits more users, but A decodes faster, because B's query heads have to take turns reading each shared K/V head.", "They come out equal, because both models have 32 query heads computing 32 patterns, and that is what sets memory and speed.", "B on both: each token's cache is 4x smaller, so 4x more tokens fit and each step reads 4x fewer KV bytes."]}
+  answer={3}
+  explanation={"Cache per token = 2 × layers × KV heads × head size × bytes, so 8 KV heads take a quarter of 32. In the same 60 GB that is 4x more tokens. Decode at long context is memory-bound and reads the whole cache each step, so 4x fewer bytes means faster steps. Both still compute 32 attention patterns; the shared K and V are read once and reused, not waited for."}
 />

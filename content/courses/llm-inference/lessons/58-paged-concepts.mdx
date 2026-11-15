@@ -63,10 +63,21 @@ Short sequences are often cheaper to recompute. Long ones are cheaper to swap. S
 
 All beams share the prompt, and beams that split from the same parent share their earlier generated tokens. With block tables and copy-on-write those shared parts are stored once, which is why the vLLM paper reports its largest memory savings for beam search.
 
+## Worked scenario: choosing a block size
+
+Each sequence wastes only the empty slots in its last block, so the waste depends on the block size and on how long sequences are.
+
+- 20-token sequences, block size 16: 2 blocks, 32 slots, 12 empty (38%).
+- Same sequences, block size 128: 1 block, 108 empty (84%).
+- 4,000-token sequences, block size 128: 32 blocks, 96 empty (2%).
+
+Small blocks cost a longer block table and smaller, more scattered reads. vLLM's default of 16 tokens is a middle ground. Short-sequence workloads gain the most from small blocks.
+
 <MCQ
   id="concept-check"
-  prompt="With a block size of 16 tokens, what is the most KV memory one sequence can waste in its own blocks?"
-  options={["Its maximum length", "Less than one block (at most 15 token slots)", "Half its blocks", "Nothing ever"]}
-  answer={1}
-  explanation="Only the last block can be partly empty."
+  devices={["phone","desktop"]}
+  prompt={"A service runs thousands of short sequences of about 40 tokens each. Compare block size 16 with block size 128. Which wastes more memory in partly filled blocks, and roughly how much?"}
+  options={["Block size 16 wastes more, because each sequence needs 3 blocks instead of 1, and each block has some waste.", "They waste about the same: paging removes almost all waste, whatever the block size.", "Block size 128 wastes more, but only about 2x more, because both waste at most one block.", "Block size 128: about 88 empty slots each, against 8 with blocks of 16, so about 11x more."]}
+  answer={3}
+  explanation={"40 tokens need 3 blocks of 16 (48 slots, 8 empty) or 1 block of 128 (88 empty). 88 / 8 = 11. Waste is limited to the last block, but that block's size matters, especially for short sequences. More blocks means a longer table, not more waste."}
 />

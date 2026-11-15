@@ -57,10 +57,22 @@ A **Poisson process** is the standard model for independent random arrivals. At 
 
 It creates realistic bursts: several requests close together, then pauses. Sending requests at perfectly even intervals hides queueing effects and makes latency look better than it will be in production.
 
+## Worked scenario: a full step under pressure
+
+A vLLM-style server is at step 9,001. Running: S (arrived first), T, R (arrived last). Free blocks: 0. S's last block just filled.
+
+1. The scheduler must give S a new block. None is free.
+2. It preempts the lowest-priority request, R, the newest. With recompute, R's blocks return to the free list and R goes back to the waiting queue.
+3. S gets its block, and the step runs S and T.
+4. When blocks free up later, R is admitted again, and prefill rebuilds its cache from its prompt plus the tokens it had already generated.
+
+R's user sees a pause. If this happens often, the fix is memory: an FP8 cache, a smaller batch cap, or more GPUs.
+
 <MCQ
   id="concept-check"
-  prompt="During a step, a running sequence needs a new KV block and none is free. What does a vLLM-style scheduler do?"
-  options={["Crash", "Preempt another sequence (swap or recompute) to free blocks", "Skip attention for that token", "Allocate CPU memory for attention"]}
-  answer={1}
-  explanation="Preemption frees blocks so running sequences can keep growing."
+  devices={["phone","desktop"]}
+  prompt={"On an engine that only supports recompute (like vLLM V1), sequence S (the oldest) needs a new KV block and none is free. R, the newest request, has a 2,000-token prompt and has already generated 6,000 tokens. What happens to R, and what will resuming it cost?"}
+  options={["R's blocks are copied to CPU memory, and when it resumes they are copied back over PCIe.", "R restarts from its prompt and generates all 6,000 tokens again, one decode step at a time.", "R is preempted; on resume, one prefill over all 8,000 tokens rebuilds its cache.", "S is preempted instead, because R holds more blocks and would be more expensive to rebuild."]}
+  answer={2}
+  explanation={"Under FCFS the newest request has the lowest priority, so R loses its blocks. With recompute nothing is saved to CPU memory; R goes back to the waiting queue with its prompt and its generated tokens. On resume, one prefill over all 8,000 tokens rebuilds exactly the same keys and values, which is far faster than generating 6,000 tokens again one by one. Copying to CPU is swap, which this engine doesn't do, and FCFS doesn't pick victims by size."}
 />
